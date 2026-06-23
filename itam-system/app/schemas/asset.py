@@ -21,6 +21,10 @@ class AssetCreate(BaseModel):
 class AssetStatusChange(BaseModel):
     to_status: str
     operator: str = "system"
+    owner_user_id: Optional[str] = None
+    dept_id: Optional[str] = None
+    location: Optional[str] = None
+    remark: Optional[str] = None
 
 
 class AssetUpdate(BaseModel):

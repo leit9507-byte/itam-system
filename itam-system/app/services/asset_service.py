@@ -1,6 +1,8 @@
 import csv
-from io import StringIO
+from io import BytesIO, StringIO
+from typing import Any
 
+from openpyxl import load_workbook
 from sqlalchemy.orm import Session
 
 from app.models.asset import Asset
@@ -50,13 +52,13 @@ class AssetService:
                     skipped += 1
                     errors.append({"row": index, "message": f"duplicate sn: {normalized.sn}", "data": row.model_dump()})
                     continue
-                if getattr(normalized, "asset_id", None) and db.get(Asset, normalized.asset_id):
+                if normalized.asset_id and db.get(Asset, normalized.asset_id):
                     skipped += 1
                     errors.append({"row": index, "message": f"duplicate asset_id: {normalized.asset_id}", "data": row.model_dump()})
                     continue
 
                 asset = Asset(
-                    asset_id=getattr(normalized, "asset_id", None) or AssetService.generate_asset_id(db),
+                    asset_id=normalized.asset_id or AssetService.generate_asset_id(db),
                     name=normalized.name,
                     category=normalized.category,
                     brand=normalized.brand,
@@ -73,7 +75,7 @@ class AssetService:
                 db.flush()
                 LifecycleService.record(db, asset.asset_id, "BATCH_IMPORT", None, asset.status, payload.operator)
                 created_assets.append(asset)
-            except Exception as exc:  # keep importing good rows
+            except Exception as exc:
                 errors.append({"row": index, "message": str(exc), "data": row.model_dump()})
 
         db.commit()
@@ -93,32 +95,58 @@ class AssetService:
         return AssetService.import_assets(db, AssetBatchImport(operator=payload.operator, items=items))
 
     @staticmethod
+    def import_assets_from_excel(db: Session, content: bytes, operator: str = "asset-import") -> dict:
+        items = AssetService.parse_import_excel(content)
+        return AssetService.import_assets(db, AssetBatchImport(operator=operator, items=items))
+
+    @staticmethod
     def parse_import_text(content: str) -> list[AssetImportRow]:
         cleaned = content.strip()
         if not cleaned:
             return []
-
         delimiter = "\t" if "\t" in cleaned.splitlines()[0] else ","
         reader = csv.DictReader(StringIO(cleaned), delimiter=delimiter)
-        return [AssetService.row_from_mapping(row) for row in reader]
+        return [AssetService.row_from_mapping(row) for row in reader if any(row.values())]
 
     @staticmethod
-    def row_from_mapping(row: dict) -> AssetImportRow:
+    def parse_import_excel(content: bytes) -> list[AssetImportRow]:
+        workbook = load_workbook(BytesIO(content), data_only=True, read_only=True)
+        sheet = workbook.active
+        rows = list(sheet.iter_rows(values_only=True))
+        if not rows:
+            return []
+
+        headers = [str(cell).strip() if cell is not None else "" for cell in rows[0]]
+        items: list[AssetImportRow] = []
+        for values in rows[1:]:
+            mapping = {
+                headers[index]: value
+                for index, value in enumerate(values)
+                if index < len(headers) and headers[index] and value not in (None, "")
+            }
+            if mapping:
+                items.append(AssetService.row_from_mapping(mapping))
+        return items
+
+    @staticmethod
+    def row_from_mapping(row: dict[str, Any]) -> AssetImportRow:
+        normalized_row = {str(key).strip(): value for key, value in row.items()}
+
         def pick(*keys: str, default=None):
             for key in keys:
-                value = row.get(key)
+                value = normalized_row.get(key)
                 if value not in (None, ""):
                     return value
             return default
 
-        price = pick("purchase_price", "price", "unit_price", "金额", "价格", default=0)
+        price = pick("purchase_price", "price", "unit_price", "金额", "价格", "单价", default=0)
         config = {
             "spec": pick("spec", "规格", default=""),
             "warehouse": pick("warehouse", "仓库", default=""),
             "source": "batch_import",
         }
         return AssetImportRow(
-            asset_id=pick("asset_id", "资产编号"),
+            asset_id=pick("asset_id", "资产编号", "资产ID"),
             name=pick("name", "product_name", "产品名称", "资产名称", default="Unnamed Asset"),
             category=pick("category", "device_type", "设备类型", "类别", default="Other"),
             brand=pick("brand", "品牌"),
@@ -127,7 +155,7 @@ class AssetService:
             config=config,
             purchase_price=float(price or 0),
             status=pick("status", "状态", default="in_stock"),
-            owner_user_id=pick("owner_user_id", "owner", "使用人"),
+            owner_user_id=pick("owner_user_id", "owner", "使用人", "责任人"),
             dept_id=pick("dept_id", "dept", "部门"),
             location=pick("location", "warehouse", "位置", "仓库"),
         )
@@ -167,27 +195,33 @@ class AssetService:
         for key, value in data.items():
             setattr(asset, key, value)
 
-        action = "ASSET_UPDATE"
-        LifecycleService.record(
-            db,
-            asset.asset_id,
-            action,
-            old_status,
-            asset.status,
-            operator,
-        )
+        LifecycleService.record(db, asset.asset_id, "ASSET_UPDATE", old_status, asset.status, operator)
         db.commit()
         db.refresh(asset)
         return asset
 
     @staticmethod
-    def change_status(db: Session, asset_id: str, to_status: str, operator: str = "system") -> Asset:
+    def change_status(
+        db: Session,
+        asset_id: str,
+        to_status: str,
+        operator: str = "system",
+        owner_user_id: str | None = None,
+        dept_id: str | None = None,
+        location: str | None = None,
+    ) -> Asset:
         asset = db.get(Asset, asset_id)
         if not asset:
             raise ValueError("asset not found")
 
         from_status = asset.status
         asset.status = to_status
+        if owner_user_id is not None:
+            asset.owner_user_id = owner_user_id
+        if dept_id is not None:
+            asset.dept_id = dept_id
+        if location is not None:
+            asset.location = location
         LifecycleService.record(db, asset.asset_id, "STATUS_CHANGE", from_status, to_status, operator)
         db.commit()
         db.refresh(asset)

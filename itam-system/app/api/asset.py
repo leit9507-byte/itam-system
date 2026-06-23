@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -37,9 +37,28 @@ def import_assets_from_text(payload: AssetTextImport, db: Session = Depends(get_
     return AssetService.import_assets_from_text(db, payload)
 
 
+@router.post("/import/excel", response_model=AssetImportResult)
+async def import_assets_from_excel(operator: str = "asset-import", file: UploadFile = File(...), db: Session = Depends(get_db)):
+    filename = file.filename or ""
+    if not filename.lower().endswith((".xlsx", ".xlsm")):
+        raise HTTPException(status_code=400, detail="please upload .xlsx or .xlsm file")
+    try:
+        return AssetService.import_assets_from_excel(db, await file.read(), operator)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"invalid excel file: {exc}") from exc
+
+
 @router.post("/{asset_id}/status", response_model=AssetOut)
 def change_asset_status(asset_id: str, payload: AssetStatusChange, db: Session = Depends(get_db)):
     try:
-        return AssetService.change_status(db, asset_id, payload.to_status, payload.operator)
+        return AssetService.change_status(
+            db,
+            asset_id,
+            payload.to_status,
+            payload.operator,
+            payload.owner_user_id,
+            payload.dept_id,
+            payload.location,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

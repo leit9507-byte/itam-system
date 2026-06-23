@@ -25,7 +25,7 @@ export async function getAssets(params = {}) {
   const status = params.status || ''
   const category = params.category || ''
   const list = mapped.filter(item => {
-    const hitKeyword = !keyword || [item.asset_id, item.name, item.dept, item.sn, item.brand, item.model].join(' ').toLowerCase().includes(keyword)
+    const hitKeyword = !keyword || [item.asset_id, item.name, item.dept, item.sn, item.brand, item.model, item.owner].join(' ').toLowerCase().includes(keyword)
     const hitStatus = !status || item.status === status
     const hitCategory = !category || item.category === category
     return hitKeyword && hitStatus && hitCategory
@@ -35,18 +35,21 @@ export async function getAssets(params = {}) {
 
 export async function importAssetsFromText(content, operator = 'asset-import') {
   const result = await request.post('/asset/import/text', { content, operator })
-  return {
-    ...result,
-    assets: (result.assets || []).map(mapBackendAsset)
-  }
+  return normalizeImportResult(result)
+}
+
+export async function importAssetsFromExcel(file, operator = 'asset-excel-import') {
+  const form = new FormData()
+  form.append('file', file)
+  const result = await request.post(`/asset/import/excel?operator=${encodeURIComponent(operator)}`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return normalizeImportResult(result)
 }
 
 export async function importAssets(items, operator = 'asset-import') {
   const result = await request.post('/asset/import', { items, operator })
-  return {
-    ...result,
-    assets: (result.assets || []).map(mapBackendAsset)
-  }
+  return normalizeImportResult(result)
 }
 
 export async function updateAsset(assetId, payload) {
@@ -59,8 +62,8 @@ export async function updateAsset(assetId, payload) {
     config: { spec: payload.spec || '', warehouse: payload.warehouse || '' },
     purchase_price: Number(payload.price || payload.purchase_price || 0),
     status: payload.status,
-    owner_user_id: payload.owner || payload.owner_user_id || '',
-    dept_id: payload.dept || payload.dept_id || '',
+    owner_user_id: payload.owner_user_id || payload.owner || '',
+    dept_id: payload.dept_id || payload.dept || '',
     location: payload.location || payload.warehouse || ''
   })
   return mapBackendAsset(row)
@@ -96,7 +99,11 @@ export function getInventoryRecords() {
 export async function changeAssetStatus(assetId, status, payload = {}) {
   const asset = await request.post(`/asset/${assetId}/status`, {
     to_status: status,
-    operator: payload.operator || '资产管理员'
+    operator: payload.operator || '资产管理员',
+    owner_user_id: payload.owner_user_id,
+    dept_id: payload.dept_id,
+    location: payload.location,
+    remark: payload.remark || ''
   })
   pushLifecycle(assetId, payload.action || '状态变更', status, payload.operator || '资产管理员', payload.remark || `状态更新为${statusMap[status]?.label || status}`)
   return mapBackendAsset(asset)
@@ -110,8 +117,15 @@ export async function inboundAsset(assetId, payload = {}) {
 
 export async function outboundAsset(assetId, payload = {}) {
   const status = payload.toStatus || 'in_use'
-  const asset = await changeAssetStatus(assetId, status, { ...payload, action: '出库', remark: payload.remark || '资产出库' })
-  localInventoryRecords.unshift(buildInventory(assetId, '出库', `${payload.owner || asset.owner || '未指定'} / ${payload.dept || asset.dept || '未指定'}`, payload.remark || '资产出库'))
+  const asset = await changeAssetStatus(assetId, status, {
+    ...payload,
+    owner_user_id: payload.owner_user_id,
+    dept_id: payload.dept_id,
+    location: payload.location,
+    action: '出库',
+    remark: payload.remark || '资产出库'
+  })
+  localInventoryRecords.unshift(buildInventory(assetId, '出库', `${payload.owner_name || asset.owner || '未指定'} / ${payload.dept_name || asset.dept || '未指定'}`, payload.remark || '资产出库'))
   return asset
 }
 
@@ -198,6 +212,13 @@ export async function getDashboardStats() {
   }
 }
 
+function normalizeImportResult(result) {
+  return {
+    ...result,
+    assets: (result.assets || []).map(mapBackendAsset)
+  }
+}
+
 function mapBackendAsset(row) {
   const config = row.config || {}
   return {
@@ -205,7 +226,9 @@ function mapBackendAsset(row) {
     name: row.name,
     category: row.category,
     owner: row.owner_user_id || '',
+    owner_user_id: row.owner_user_id || '',
     dept: row.dept_id || '',
+    dept_id: row.dept_id || '',
     status: row.status || 'in_stock',
     price: Number(row.purchase_price || 0),
     brand: row.brand || '',
