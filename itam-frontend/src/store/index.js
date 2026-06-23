@@ -19,6 +19,12 @@ export const useAppStore = defineStore('app', {
     isAuthenticated: state => Boolean(state.token)
   },
   actions: {
+    syncSessionFromStorage() {
+      const token = localStorage.getItem('itam_token') || ''
+      const rawUser = localStorage.getItem('itam_user')
+      this.token = token
+      this.user = rawUser ? JSON.parse(rawUser) : { ...guestUser }
+    },
     toggleSidebar() {
       this.collapsed = !this.collapsed
     },

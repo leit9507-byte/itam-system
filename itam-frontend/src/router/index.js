@@ -31,6 +31,7 @@ const router = createRouter({
 
 router.beforeEach(to => {
   const store = useAppStore()
+  store.syncSessionFromStorage()
   if (!to.meta.public && !store.isAuthenticated) {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
