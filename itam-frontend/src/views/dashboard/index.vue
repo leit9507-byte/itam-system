@@ -3,126 +3,148 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">资产总览</h2>
-        <p class="page-subtitle">集中展示资产规模、库存流转、审批待办、盘点差异和风险预警</p>
+        <p class="page-subtitle">企业 IT 资产管理首页，集中展示资产、采购、生命周期、盘点、维修和 AI 审计风险</p>
       </div>
       <el-button type="primary" @click="load">刷新数据</el-button>
     </div>
 
-    <div class="metric-grid dashboard-metrics">
+    <section class="metric-grid dashboard-metrics">
       <el-card v-for="item in data.metrics" :key="item.label" shadow="never" class="metric-card">
-        <div class="metric-title">
+        <div class="metric-head">
           <span>{{ item.label }}</span>
-          <el-tag :type="item.type" effect="light">{{ item.trend }}</el-tag>
+          <el-tag :type="tagType(item.tone)" effect="light">{{ item.change }}</el-tag>
         </div>
-        <strong>{{ item.prefix || '' }}{{ formatValue(item.value) }}</strong>
+        <div class="metric-value">{{ item.prefix || '' }}{{ formatValue(item.value) }}<small>{{ item.suffix || '' }}</small></div>
+        <div class="sparkline">
+          <span v-for="(point, index) in item.trend" :key="`${item.label}-${index}`" :style="{ height: `${sparkHeight(point, item.trend)}%` }" />
+        </div>
       </el-card>
-    </div>
+    </section>
 
-    <div class="dashboard-main">
-      <div class="left-column">
-        <div class="chart-grid">
-          <el-card shadow="never">
-            <template #header>利用率趋势</template>
-            <div ref="lineRef" class="chart" />
-          </el-card>
-          <el-card shadow="never">
-            <template #header>资产状态分布</template>
-            <div ref="statusRef" class="chart" />
-          </el-card>
-        </div>
+    <section class="dashboard-section two-column">
+      <el-card shadow="never">
+        <template #header>资产分类占比</template>
+        <div ref="categoryRef" class="chart" />
+      </el-card>
+      <el-card shadow="never">
+        <template #header>部门资产分布</template>
+        <div ref="departmentRef" class="chart" />
+      </el-card>
+    </section>
 
-        <el-card shadow="never">
-          <template #header>月度出入库与报废</template>
-          <div ref="flowRef" class="chart chart-short" />
-        </el-card>
+    <section class="dashboard-section two-column">
+      <el-card shadow="never">
+        <template #header>近 12 个月采购趋势</template>
+        <div ref="purchaseRef" class="chart" />
+      </el-card>
+      <el-card shadow="never">
+        <template #header>资产生命周期分布</template>
+        <div ref="lifecycleRef" class="chart" />
+      </el-card>
+    </section>
 
-        <div class="two-column">
-          <el-card shadow="never">
-            <template #header>风险资产排行</template>
-            <el-table :data="data.riskAssets" border>
-              <el-table-column prop="asset_id" label="资产ID" width="100" />
-              <el-table-column prop="name" label="资产名称" min-width="170" />
-              <el-table-column prop="risk" label="风险说明" min-width="180" />
-              <el-table-column prop="owner" label="责任人" width="100" />
-              <el-table-column prop="level" label="等级" width="90">
-                <template #default="{ row }">
-                  <el-tag :type="row.level === 'high' ? 'danger' : 'warning'">{{ row.level === 'high' ? '高' : '中' }}</el-tag>
-                </template>
-              </el-table-column>
-            </el-table>
-          </el-card>
-
-          <el-card shadow="never">
-            <template #header>盘点差异概览</template>
-            <div class="stocktake-list">
-              <div v-for="item in data.stocktakeSummary" :key="item.label" class="stocktake-item">
-                <span>{{ item.label }}</span>
-                <el-progress :percentage="stocktakePercent(item.value)" :show-text="false" />
-                <strong>{{ item.value }}</strong>
-              </div>
+    <section class="dashboard-section two-column">
+      <el-card shadow="never">
+        <template #header>资产盘点情况</template>
+        <div class="stocktake-panel">
+          <el-progress type="dashboard" :percentage="data.stocktake.completionRate" :width="168" />
+          <div class="stocktake-grid">
+            <div v-for="item in stocktakeItems" :key="item.label" class="stocktake-item">
+              <span>{{ item.label }}</span>
+              <strong>{{ formatValue(item.value) }}</strong>
             </div>
-          </el-card>
-        </div>
-      </div>
-
-      <div class="right-column">
-        <el-card shadow="never">
-          <template #header>待办中心</template>
-          <div class="todo-list">
-            <button v-for="item in data.todos" :key="item.title" class="todo-item" type="button" @click="router.push(item.route)">
-              <span>{{ item.title }}</span>
-              <el-tag :type="item.level">{{ item.count }}</el-tag>
-            </button>
           </div>
-        </el-card>
+        </div>
+      </el-card>
+      <el-card shadow="never">
+        <template #header>维修统计</template>
+        <div class="repair-layout">
+          <div ref="repairRef" class="chart repair-chart" />
+          <div class="repair-kpis">
+            <div>
+              <span>平均修复时间 MTTR</span>
+              <strong>{{ data.maintenance.mttr }}</strong>
+            </div>
+            <div>
+              <span>本月维修费用</span>
+              <strong>￥{{ formatValue(data.maintenance.monthCost) }}</strong>
+            </div>
+            <div>
+              <span>年累计维修费用</span>
+              <strong>￥{{ formatValue(data.maintenance.yearCost) }}</strong>
+            </div>
+          </div>
+        </div>
+      </el-card>
+    </section>
 
-        <el-card shadow="never">
-          <template #header>部门资产分布</template>
-          <div ref="deptRef" class="chart chart-compact" />
-        </el-card>
-
-        <el-card shadow="never">
-          <template #header>最近动态</template>
-          <el-timeline>
-            <el-timeline-item v-for="item in data.recentActivities" :key="`${item.time}-${item.text}`" :timestamp="item.time">
-              <strong>{{ item.type }}</strong>
-              <p>{{ item.text }}</p>
-            </el-timeline-item>
-          </el-timeline>
+    <section class="audit-section">
+      <div class="audit-title">
+        <div>
+          <h3>AI 资产审计中心</h3>
+          <p>自动识别超配、闲置、离职未归还、报废和异常采购风险</p>
+        </div>
+        <el-button @click="router.push('/audit')">进入审计中心</el-button>
+      </div>
+      <div class="risk-grid">
+        <el-card v-for="risk in data.auditRisks" :key="risk.type" shadow="never" class="risk-card">
+          <div class="risk-head">
+            <strong>{{ risk.type }}</strong>
+            <el-tag :type="risk.level === '高' ? 'danger' : 'warning'">{{ risk.level }}风险</el-tag>
+          </div>
+          <div class="risk-body">
+            <div>
+              <span>数量</span>
+              <b>{{ risk.count }}</b>
+            </div>
+            <div>
+              <span>涉及金额</span>
+              <b>￥{{ formatValue(Math.round(risk.amount || 0)) }}</b>
+            </div>
+          </div>
+          <el-button type="primary" link @click="router.push(risk.route)">查看详情</el-button>
         </el-card>
       </div>
-    </div>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
-import { getDashboardOverview } from '../../api/dashboard'
+import { getEnterpriseDashboard } from '../../api/dashboard'
 
 const router = useRouter()
-const lineRef = ref(null)
-const statusRef = ref(null)
-const deptRef = ref(null)
-const flowRef = ref(null)
+const categoryRef = ref(null)
+const departmentRef = ref(null)
+const purchaseRef = ref(null)
+const lifecycleRef = ref(null)
+const repairRef = ref(null)
 const charts = []
 const data = reactive({
   metrics: [],
-  utilization: [],
-  deptDistribution: [],
-  statusDistribution: [],
-  monthlyFlow: { months: [], inbound: [], outbound: [], scrap: [] },
-  todos: [],
-  riskAssets: [],
-  recentActivities: [],
-  stocktakeSummary: []
+  categoryDistribution: [],
+  departmentDistribution: [],
+  purchaseTrend: { months: [], amount: [], quantity: [] },
+  lifecycleDistribution: [],
+  stocktake: { shouldCount: 0, checked: 0, surplus: 0, loss: 0, completionRate: 0 },
+  maintenance: { top10: [], mttr: '-', monthCost: 0, yearCost: 0 },
+  auditRisks: []
 })
 
+const stocktakeItems = computed(() => [
+  { label: '应盘点数量', value: data.stocktake.shouldCount },
+  { label: '已盘点数量', value: data.stocktake.checked },
+  { label: '盘盈数量', value: data.stocktake.surplus },
+  { label: '盘亏数量', value: data.stocktake.loss }
+])
+
 onMounted(load)
+onUnmounted(() => charts.forEach(chart => chart.dispose()))
 
 async function load() {
-  Object.assign(data, await getDashboardOverview())
+  Object.assign(data, await getEnterpriseDashboard())
   await nextTick()
   renderCharts()
 }
@@ -131,53 +153,71 @@ function renderCharts() {
   charts.forEach(chart => chart.dispose())
   charts.length = 0
 
-  const line = echarts.init(lineRef.value)
-  line.setOption({
+  const category = echarts.init(categoryRef.value)
+  category.setOption({
+    color: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#14b8a6', '#8b5cf6', '#64748b', '#94a3b8'],
+    tooltip: { trigger: 'item' },
+    legend: { bottom: 0, type: 'scroll' },
+    series: [{ name: '资产分类', type: 'pie', radius: ['42%', '68%'], center: ['50%', '44%'], data: data.categoryDistribution }]
+  })
+
+  const department = echarts.init(departmentRef.value)
+  department.setOption({
     tooltip: { trigger: 'axis' },
-    grid: { left: 36, right: 20, top: 24, bottom: 28 },
-    xAxis: { type: 'category', data: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'] },
-    yAxis: { type: 'value', min: 0, max: 100 },
-    series: [{ name: '利用率', type: 'line', smooth: true, data: data.utilization, areaStyle: {} }]
+    grid: { left: 42, right: 18, top: 28, bottom: 52 },
+    xAxis: { type: 'category', data: data.departmentDistribution.map(item => item.name), axisLabel: { interval: 0, rotate: 24 } },
+    yAxis: { type: 'value' },
+    series: [{ name: '资产数量', type: 'bar', barWidth: 24, data: data.departmentDistribution.map(item => item.value), itemStyle: { color: '#1f7a6a', borderRadius: [4, 4, 0, 0] } }]
   })
 
-  const status = echarts.init(statusRef.value)
-  status.setOption({
-    tooltip: { trigger: 'item' },
-    legend: { bottom: 0 },
-    series: [{ type: 'pie', radius: ['42%', '68%'], data: data.statusDistribution }]
-  })
-
-  const dept = echarts.init(deptRef.value)
-  dept.setOption({
-    tooltip: { trigger: 'item' },
-    legend: { bottom: 0 },
-    series: [{ type: 'pie', radius: ['45%', '70%'], data: data.deptDistribution }]
-  })
-
-  const flow = echarts.init(flowRef.value)
-  flow.setOption({
+  const purchase = echarts.init(purchaseRef.value)
+  purchase.setOption({
     tooltip: { trigger: 'axis' },
     legend: { top: 0 },
-    grid: { left: 36, right: 20, top: 42, bottom: 28 },
-    xAxis: { type: 'category', data: data.monthlyFlow.months },
-    yAxis: { type: 'value' },
+    grid: { left: 52, right: 52, top: 48, bottom: 34 },
+    xAxis: { type: 'category', data: data.purchaseTrend.months },
+    yAxis: [
+      { type: 'value', name: '金额' },
+      { type: 'value', name: '数量' }
+    ],
     series: [
-      { name: '入库', type: 'bar', data: data.monthlyFlow.inbound },
-      { name: '出库', type: 'bar', data: data.monthlyFlow.outbound },
-      { name: '报废', type: 'line', data: data.monthlyFlow.scrap }
+      { name: '采购金额', type: 'bar', data: data.purchaseTrend.amount, itemStyle: { color: '#2563eb', borderRadius: [4, 4, 0, 0] } },
+      { name: '采购数量', type: 'line', yAxisIndex: 1, smooth: true, data: data.purchaseTrend.quantity, itemStyle: { color: '#f59e0b' } }
     ]
   })
 
-  charts.push(line, status, dept, flow)
+  const lifecycle = echarts.init(lifecycleRef.value)
+  lifecycle.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 42, right: 20, top: 28, bottom: 36 },
+    xAxis: { type: 'value' },
+    yAxis: { type: 'category', data: data.lifecycleDistribution.map(item => item.name) },
+    series: [{ name: '资产数量', type: 'bar', data: data.lifecycleDistribution.map(item => item.value), itemStyle: { color: '#14b8a6', borderRadius: [0, 4, 4, 0] } }]
+  })
+
+  const repair = echarts.init(repairRef.value)
+  repair.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 110, right: 20, top: 20, bottom: 20 },
+    xAxis: { type: 'value' },
+    yAxis: { type: 'category', data: data.maintenance.top10.map(item => item.name), axisLabel: { width: 96, overflow: 'truncate' } },
+    series: [{ name: '故障次数', type: 'bar', data: data.maintenance.top10.map(item => item.count), itemStyle: { color: '#c2410c', borderRadius: [0, 4, 4, 0] } }]
+  })
+
+  charts.push(category, department, purchase, lifecycle, repair)
 }
 
 function formatValue(value) {
   return Number(value || 0).toLocaleString()
 }
 
-function stocktakePercent(value) {
-  const total = data.stocktakeSummary.reduce((sum, item) => sum + item.value, 0) || 1
-  return Math.round((value / total) * 100)
+function tagType(tone) {
+  return ({ primary: 'primary', success: 'success', warning: 'warning', danger: 'danger' })[tone] || 'info'
+}
+
+function sparkHeight(point, trend) {
+  const max = Math.max(...trend, 1)
+  return Math.max(18, Math.round((point / max) * 100))
 }
 </script>
 
@@ -192,102 +232,176 @@ function stocktakePercent(value) {
 }
 
 .metric-card {
-  min-height: 112px;
+  min-height: 136px;
 }
 
-.metric-title {
+.metric-head,
+.risk-head,
+.audit-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
+}
+
+.metric-head {
   color: var(--muted);
   font-size: 13px;
 }
 
-.metric-card strong {
-  display: block;
-  margin-top: 18px;
+.metric-value {
+  margin-top: 16px;
   color: var(--text);
   font-size: 28px;
+  font-weight: 800;
   line-height: 1;
 }
 
-.dashboard-main {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 16px;
+.metric-value small {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
 }
 
-.left-column,
-.right-column {
-  display: grid;
-  align-content: start;
-  gap: 16px;
-  min-width: 0;
-}
-
-.chart-short {
-  height: 280px;
-}
-
-.chart-compact {
-  height: 260px;
-}
-
-.todo-list,
-.stocktake-list {
-  display: grid;
-  gap: 10px;
-}
-
-.todo-item {
+.sparkline {
   display: flex;
+  align-items: end;
+  gap: 4px;
+  height: 28px;
+  margin-top: 14px;
+}
+
+.sparkline span {
+  width: 14px;
+  border-radius: 3px 3px 0 0;
+  background: #1f7a6a;
+  opacity: 0.72;
+}
+
+.dashboard-section {
+  align-items: stretch;
+}
+
+.chart {
+  width: 100%;
+  height: 320px;
+}
+
+.stocktake-panel {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  min-height: 42px;
+  gap: 24px;
+  min-height: 320px;
+}
+
+.stocktake-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.stocktake-item,
+.repair-kpis div {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 0 12px;
   background: #fff;
+}
+
+.stocktake-item span,
+.repair-kpis span,
+.risk-body span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.stocktake-item strong,
+.repair-kpis strong {
   color: var(--text);
-  text-align: left;
-  cursor: pointer;
+  font-size: 22px;
 }
 
-.todo-item:hover {
-  border-color: var(--primary);
-}
-
-.stocktake-item {
+.repair-layout {
   display: grid;
-  grid-template-columns: 80px minmax(80px, 1fr) 40px;
-  align-items: center;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 210px;
+  gap: 16px;
 }
 
-:deep(.el-timeline) {
-  padding-left: 4px;
+.repair-chart {
+  height: 320px;
 }
 
-:deep(.el-timeline-item__content p) {
+.repair-kpis {
+  display: grid;
+  align-content: center;
+  gap: 12px;
+}
+
+.audit-section {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.audit-title h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.audit-title p {
   margin: 4px 0 0;
   color: var(--muted);
-  line-height: 1.5;
 }
 
-@media (max-width: 1280px) {
-  .dashboard-main {
-    grid-template-columns: 1fr;
+.risk-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.risk-card {
+  border-color: #f1c2aa;
+}
+
+.risk-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0 8px;
+}
+
+.risk-body div {
+  display: grid;
+  gap: 4px;
+}
+
+.risk-body b {
+  font-size: 20px;
+}
+
+@media (max-width: 1320px) {
+  .dashboard-metrics {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
   }
 
-  .right-column {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .risk-grid {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
   }
 }
 
 @media (max-width: 900px) {
   .dashboard-metrics,
-  .right-column {
+  .two-column,
+  .stocktake-panel,
+  .repair-layout,
+  .risk-grid {
     grid-template-columns: 1fr;
   }
 }
