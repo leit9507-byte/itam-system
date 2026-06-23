@@ -81,14 +81,15 @@ class RuleEngine:
         for owner, group in groupby(owned_assets, key=lambda item: item.owner_user_id):
             user_assets = list(group)
             total_value = sum(asset.purchase_price or 0 for asset in user_assets)
-            if total_value > self.settings.high_value_threshold * 2:
+            threshold = self.settings.high_value_threshold * 2
+            if total_value > threshold:
                 for asset in user_assets:
                     violations.append(
                         {
                             "asset_id": asset.asset_id,
                             "rule": "SINGLE_OWNER_VALUE_LIMIT",
                             "severity": "high",
-                            "message": f"用户 {owner} 名下资产总值 {total_value} 超过阈值 {self.settings.high_value_threshold * 2}",
+                            "message": f"用户 {owner} 名下资产总值 {total_value} 超过阈值 {threshold}",
                         }
                     )
         return violations

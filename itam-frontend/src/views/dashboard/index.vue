@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">资产总览</h2>
-        <p class="page-subtitle">企业 IT 资产管理首页，集中展示资产、采购、生命周期、盘点、维修和 AI 审计风险</p>
+        <p class="page-subtitle">基于正式资产、采购和库存状态数据生成首页指标</p>
       </div>
       <el-button type="primary" @click="load">刷新数据</el-button>
     </div>
@@ -77,45 +77,14 @@
         </div>
       </el-card>
     </section>
-
-    <section class="audit-section">
-      <div class="audit-title">
-        <div>
-          <h3>AI 资产审计中心</h3>
-          <p>自动识别超配、闲置、离职未归还、报废和异常采购风险</p>
-        </div>
-        <el-button @click="router.push('/audit')">进入审计中心</el-button>
-      </div>
-      <div class="risk-grid">
-        <el-card v-for="risk in data.auditRisks" :key="risk.type" shadow="never" class="risk-card">
-          <div class="risk-head">
-            <strong>{{ risk.type }}</strong>
-            <el-tag :type="risk.level === '高' ? 'danger' : 'warning'">{{ risk.level }}风险</el-tag>
-          </div>
-          <div class="risk-body">
-            <div>
-              <span>数量</span>
-              <b>{{ risk.count }}</b>
-            </div>
-            <div>
-              <span>涉及金额</span>
-              <b>￥{{ formatValue(Math.round(risk.amount || 0)) }}</b>
-            </div>
-          </div>
-          <el-button type="primary" link @click="router.push('/audit')">查看详情</el-button>
-        </el-card>
-      </div>
-    </section>
   </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { getEnterpriseDashboard } from '../../api/dashboard'
 
-const router = useRouter()
 const categoryRef = ref(null)
 const departmentRef = ref(null)
 const purchaseRef = ref(null)
@@ -129,8 +98,7 @@ const data = reactive({
   purchaseTrend: { months: [], amount: [], quantity: [] },
   lifecycleDistribution: [],
   stocktake: { shouldCount: 0, checked: 0, surplus: 0, loss: 0, completionRate: 0 },
-  maintenance: { top10: [], mttr: '-', monthCost: 0, yearCost: 0 },
-  auditRisks: []
+  maintenance: { top10: [], mttr: '0小时', monthCost: 0, yearCost: 0 }
 })
 
 const stocktakeItems = computed(() => [
@@ -189,7 +157,7 @@ function renderCharts() {
   const lifecycle = echarts.init(lifecycleRef.value)
   lifecycle.setOption({
     tooltip: { trigger: 'axis' },
-    grid: { left: 42, right: 20, top: 28, bottom: 36 },
+    grid: { left: 70, right: 20, top: 28, bottom: 36 },
     xAxis: { type: 'value' },
     yAxis: { type: 'category', data: data.lifecycleDistribution.map(item => item.name) },
     series: [{ name: '资产数量', type: 'bar', data: data.lifecycleDistribution.map(item => item.value), itemStyle: { color: '#14b8a6', borderRadius: [0, 4, 4, 0] } }]
@@ -217,7 +185,7 @@ function tagType(tone) {
 
 function sparkHeight(point, trend) {
   const max = Math.max(...trend, 1)
-  return Math.max(18, Math.round((point / max) * 100))
+  return Math.max(18, Math.round((Number(point || 0) / max) * 100))
 }
 </script>
 
@@ -235,16 +203,11 @@ function sparkHeight(point, trend) {
   min-height: 136px;
 }
 
-.metric-head,
-.risk-head,
-.audit-title {
+.metric-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-
-.metric-head {
   color: var(--muted);
   font-size: 13px;
 }
@@ -313,8 +276,7 @@ function sparkHeight(point, trend) {
 }
 
 .stocktake-item span,
-.repair-kpis span,
-.risk-body span {
+.repair-kpis span {
   color: var(--muted);
   font-size: 13px;
 }
@@ -341,57 +303,8 @@ function sparkHeight(point, trend) {
   gap: 12px;
 }
 
-.audit-section {
-  display: grid;
-  gap: 14px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-}
-
-.audit-title h3 {
-  margin: 0;
-  font-size: 18px;
-}
-
-.audit-title p {
-  margin: 4px 0 0;
-  color: var(--muted);
-}
-
-.risk-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(160px, 1fr));
-  gap: 12px;
-}
-
-.risk-card {
-  border-color: #f1c2aa;
-}
-
-.risk-body {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin: 16px 0 8px;
-}
-
-.risk-body div {
-  display: grid;
-  gap: 4px;
-}
-
-.risk-body b {
-  font-size: 20px;
-}
-
 @media (max-width: 1320px) {
   .dashboard-metrics {
-    grid-template-columns: repeat(2, minmax(180px, 1fr));
-  }
-
-  .risk-grid {
     grid-template-columns: repeat(2, minmax(180px, 1fr));
   }
 }
@@ -400,8 +313,7 @@ function sparkHeight(point, trend) {
   .dashboard-metrics,
   .two-column,
   .stocktake-panel,
-  .repair-layout,
-  .risk-grid {
+  .repair-layout {
     grid-template-columns: 1fr;
   }
 }
