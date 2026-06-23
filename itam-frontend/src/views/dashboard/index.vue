@@ -5,7 +5,19 @@
         <h2 class="page-title">资产总览</h2>
         <p class="page-subtitle">基于正式资产、采购和库存状态数据生成首页指标</p>
       </div>
-      <el-button type="primary" @click="load">刷新数据</el-button>
+      <div class="toolbar">
+        <el-date-picker
+          v-model="dateRange"
+          type="daterange"
+          range-separator="至"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          value-format="YYYY-MM-DD"
+          clearable
+          @change="load"
+        />
+        <el-button type="primary" @click="load">刷新数据</el-button>
+      </div>
     </div>
 
     <section class="metric-grid dashboard-metrics">
@@ -43,19 +55,7 @@
       </el-card>
     </section>
 
-    <section class="dashboard-section two-column">
-      <el-card shadow="never">
-        <template #header>资产盘点情况</template>
-        <div class="stocktake-panel">
-          <el-progress type="dashboard" :percentage="data.stocktake.completionRate" :width="168" />
-          <div class="stocktake-grid">
-            <div v-for="item in stocktakeItems" :key="item.label" class="stocktake-item">
-              <span>{{ item.label }}</span>
-              <strong>{{ formatValue(item.value) }}</strong>
-            </div>
-          </div>
-        </div>
-      </el-card>
+    <section class="dashboard-section">
       <el-card shadow="never">
         <template #header>维修统计</template>
         <div class="repair-layout">
@@ -67,11 +67,11 @@
             </div>
             <div>
               <span>本月维修费用</span>
-              <strong>￥{{ formatValue(data.maintenance.monthCost) }}</strong>
+              <strong>¥{{ formatValue(data.maintenance.monthCost) }}</strong>
             </div>
             <div>
               <span>年累计维修费用</span>
-              <strong>￥{{ formatValue(data.maintenance.yearCost) }}</strong>
+              <strong>¥{{ formatValue(data.maintenance.yearCost) }}</strong>
             </div>
           </div>
         </div>
@@ -81,7 +81,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import * as echarts from 'echarts'
 import { getEnterpriseDashboard } from '../../api/dashboard'
 
@@ -90,6 +90,7 @@ const departmentRef = ref(null)
 const purchaseRef = ref(null)
 const lifecycleRef = ref(null)
 const repairRef = ref(null)
+const dateRange = ref(defaultDateRange())
 const charts = []
 const data = reactive({
   metrics: [],
@@ -97,22 +98,14 @@ const data = reactive({
   departmentDistribution: [],
   purchaseTrend: { months: [], amount: [], quantity: [] },
   lifecycleDistribution: [],
-  stocktake: { shouldCount: 0, checked: 0, surplus: 0, loss: 0, completionRate: 0 },
   maintenance: { top10: [], mttr: '0小时', monthCost: 0, yearCost: 0 }
 })
-
-const stocktakeItems = computed(() => [
-  { label: '应盘点数量', value: data.stocktake.shouldCount },
-  { label: '已盘点数量', value: data.stocktake.checked },
-  { label: '盘盈数量', value: data.stocktake.surplus },
-  { label: '盘亏数量', value: data.stocktake.loss }
-])
 
 onMounted(load)
 onUnmounted(() => charts.forEach(chart => chart.dispose()))
 
 async function load() {
-  Object.assign(data, await getEnterpriseDashboard())
+  Object.assign(data, await getEnterpriseDashboard({ dateRange: dateRange.value }))
   await nextTick()
   renderCharts()
 }
@@ -175,6 +168,17 @@ function renderCharts() {
   charts.push(category, department, purchase, lifecycle, repair)
 }
 
+function defaultDateRange() {
+  const end = new Date()
+  const start = new Date()
+  start.setMonth(start.getMonth() - 11)
+  return [formatDate(start), formatDate(end)]
+}
+
+function formatDate(date) {
+  return date.toISOString().slice(0, 10)
+}
+
 function formatValue(value) {
   return Number(value || 0).toLocaleString()
 }
@@ -193,6 +197,13 @@ function sparkHeight(point, trend) {
 .dashboard-page {
   display: grid;
   gap: 16px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .dashboard-metrics {
@@ -251,45 +262,9 @@ function sparkHeight(point, trend) {
   height: 320px;
 }
 
-.stocktake-panel {
-  display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
-  align-items: center;
-  gap: 24px;
-  min-height: 320px;
-}
-
-.stocktake-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(120px, 1fr));
-  gap: 12px;
-}
-
-.stocktake-item,
-.repair-kpis div {
-  display: grid;
-  gap: 8px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-}
-
-.stocktake-item span,
-.repair-kpis span {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.stocktake-item strong,
-.repair-kpis strong {
-  color: var(--text);
-  font-size: 22px;
-}
-
 .repair-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 210px;
+  grid-template-columns: minmax(0, 1fr) 260px;
   gap: 16px;
 }
 
@@ -303,6 +278,25 @@ function sparkHeight(point, trend) {
   gap: 12px;
 }
 
+.repair-kpis div {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.repair-kpis span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.repair-kpis strong {
+  color: var(--text);
+  font-size: 22px;
+}
+
 @media (max-width: 1320px) {
   .dashboard-metrics {
     grid-template-columns: repeat(2, minmax(180px, 1fr));
@@ -312,7 +306,6 @@ function sparkHeight(point, trend) {
 @media (max-width: 900px) {
   .dashboard-metrics,
   .two-column,
-  .stocktake-panel,
   .repair-layout {
     grid-template-columns: 1fr;
   }
