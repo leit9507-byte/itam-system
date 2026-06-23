@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+itam.db
+audit_report.html
+.env

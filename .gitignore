@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+.venv/
+
+# Build outputs
+dist/
+build/
+
+# Runtime/cache
+__pycache__/
+*.pyc
+*.pid
+.npm-cache/
+.vite/
+
+# Local database and generated reports
+*.db
+audit_report.html
+
+# Local env files
+.env
+.env.local
+
+# Legacy prototype files at repository root
+/app.js
+/server.js
+/index.html
+/styles.css
+/package.json
+/data/

@@ -1,0 +1,51 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: itam-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: itam_root
+      MYSQL_DATABASE: itam_system
+      MYSQL_USER: itam
+      MYSQL_PASSWORD: itam_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uitam", "-pitam_pass"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build:
+      context: ./itam-system
+    container_name: itam-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql+pymysql://itam:itam_pass@mysql:3306/itam_system?charset=utf8mb4
+      AUDIT_REPORT_PATH: /app/audit_report.html
+      MAX_ASSETS_PER_USER: 5
+      HIGH_VALUE_THRESHOLD: 50000
+      IDLE_DAYS_THRESHOLD: 90
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./itam-frontend
+      args:
+        VITE_API_BASE_URL: http://127.0.0.1:8000
+    container_name: itam-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  mysql_data:
