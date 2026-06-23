@@ -1,90 +1,320 @@
-# 资产管理系统
+# ITAM 企业 IT 资产管理系统
 
-一套轻量级企业资产管理系统，包含资产台账、状态流转、流程审计、统计分析和 CSV 导出。当前版本采用原生前端 + Node.js 内置 HTTP 服务 + JSON 文件持久化，便于演示、二次开发和后续替换数据库。
+一套可容器化运行的企业 IT 资产管理系统，覆盖资产台账、采购验收、出入库、报废审批、盘点、审计、风险分析、报表、用户目录和基础 SSO/LDAP 集成。
 
-## 快速启动
-
-```bash
-npm start
-```
-
-启动后访问：
-
-```text
-http://localhost:3000
-```
-
-也可以运行语法检查：
-
-```bash
-npm run check
-```
-
-## 系统模块
-
-- 总览：资产总数、资产净值、在用资产、待处理事项、状态分布、近期变更。
-- 资产台账：资产搜索、分类筛选、状态筛选、新增、编辑、状态流转、报废、CSV 导出。
-- 流程记录：维修、闲置、报废等待关注事项，以及新增、编辑、状态变更审计。
-- 统计分析：分类价值排行、折旧与风险提醒。
-
-## 技术设计
-
-### 前端
-
-- `index.html`：页面结构和业务区域。
-- `styles.css`：响应式布局、表格、卡片、弹窗、状态标识。
-- `app.js`：前端状态管理、接口调用、渲染、表单提交、导出。
-
-前端通过 `/api/assets`、`/api/assets/:id`、`/api/assets/:id/status` 与后端通信，不再依赖浏览器本地存储。
+## 技术栈
 
 ### 后端
 
-- `server.js`：静态资源服务、REST API、参数校验、审计日志、JSON 持久化。
-- `data/assets.json`：资产与审计日志数据源。
+- Python 3.11
+- FastAPI
+- SQLAlchemy
+- MySQL 8.0
+- Pydantic
+- Jinja2
+- Uvicorn
 
-后端保持零第三方依赖，适合在没有安装依赖的环境中直接运行。后续可以平滑替换为 Express/Koa + SQLite/MySQL/PostgreSQL。
+### 前端
 
-## API 设计
+- Vue 3
+- Vite
+- Element Plus
+- Vue Router
+- Pinia
+- Axios
+- ECharts
+- Nginx 静态部署
+
+### 容器
+
+- Docker Compose
+- MySQL 容器
+- FastAPI 后端容器
+- Nginx 前端容器
+
+## 快速启动
+
+推荐使用容器部署模式：
+
+```powershell
+.\scripts\container-deploy.ps1 -Rebuild
+```
+
+或直接使用 Docker Compose：
+
+```powershell
+docker compose -p itam up --build -d
+```
+
+访问地址：
+
+- 前端：http://127.0.0.1:5173
+- 后端 API：http://127.0.0.1:8000
+- API 文档：http://127.0.0.1:8000/docs
+- MySQL：127.0.0.1:3306
+
+停止服务：
+
+```powershell
+docker compose -p itam down
+```
+
+重置数据库并重建：
+
+```powershell
+.\scripts\container-deploy.ps1 -Rebuild -ResetData
+```
+
+## 默认登录
+
+打开前端后进入登录页：
+
+```text
+http://127.0.0.1:5173/login
+```
+
+默认账号：
+
+```text
+账号：admin
+密码：admin
+登录方式：本地
+```
+
+当前系统已实现基础鉴权：
+
+- 未登录访问业务页面会跳转到 `/login`
+- 未携带 Bearer Token 调用业务 API 会返回 `401`
+- 登录后前端会保存 token，并自动携带 `Authorization` 请求头
+- 登出会清理 token 和用户信息
+
+## 核心功能
+
+### 资产管理
+
+- 资产列表、搜索、筛选
+- 批量导入资产
+- 批量入库、批量出库
+- 资产信息编辑
+- 报废申请
+- 生命周期记录
+
+资产状态包括：
+
+- 待验收
+- 在库
+- 在用
+- 闲置
+- 借出
+- 维修
+- 已出库
+- 待报废
+- 已报废
+
+### 采购管理
+
+- 创建采购单
+- 一张采购单支持多种设备明细
+- 每个明细可选择产品档案
+- 验收时按采购明细逐台填写：
+  - 序列号
+  - 资产名称
+  - 规格
+  - 部门
+  - 使用人
+  - 位置/仓库
+- 验收后自动生成资产并入库
+
+### 产品与设备类型
+
+- 手动新增/编辑设备类型
+- 维护产品档案
+- 产品名称、品牌、型号、规格、默认仓库、单价可复用
+- 采购和资产录入时可关联产品档案，避免重复填写
+
+### 出入库
+
+- 单个资产出库
+- 批量出库
+- 批量入库
+- 出入库记录用于资产流转追踪
+
+### 报废审批
+
+- 从资产列表发起报废申请
+- 支持批量申请报废
+- 报废审批通过后资产进入已报废状态
+
+### 盘点
+
+- 盘点任务页面
+- 盘点记录
+- 差异统计
+
+### 审计与风险
+
+- 规则引擎
+- 审计引擎
+- 风险评分
+- HTML 审计报告生成
+
+已实现规则示例：
+
+- 用户资产数量超限
+- 资产闲置超过阈值
+- 高价值资产未绑定部门
+- 单人资产总价值超阈值
+
+### 用户、权限与身份源
+
+- 用户目录
+- 角色：`admin`、`auditor`、`user`
+- 基础权限开关 UI
+- LDAP / AD 配置
+- OIDC 配置
+- SAML 配置
+- 飞书、企业微信身份源配置占位
+- 用户同步 mock 适配层
+- 登录测试
+
+> 当前 LDAP / OIDC / SAML 是可运行的基础适配层和配置模型，真实企业认证流程可在现有接口上继续接入。
+
+## 常用 API
+
+### Auth
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/health` | 服务健康检查 |
-| GET | `/api/assets` | 获取资产列表与审计日志 |
-| POST | `/api/assets` | 新增资产 |
-| PUT | `/api/assets/:id` | 更新资产档案 |
-| PATCH | `/api/assets/:id/status` | 更新资产状态 |
+| POST | `/auth/login` | 登录并返回 token |
+| GET | `/auth/sso/{provider_type}/start` | 模拟 SSO 跳转 |
 
-## 数据模型
+### Asset
 
-资产字段：
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/asset/list` | 资产列表 |
+| POST | `/asset/create` | 创建资产 |
+| PUT | `/asset/{asset_id}` | 更新资产信息 |
+| POST | `/asset/{asset_id}/status` | 修改资产状态 |
+| POST | `/asset/import` | JSON 批量导入资产 |
+| POST | `/asset/import/text` | CSV/表格文本导入资产 |
 
-- `id`：系统 ID。
-- `code`：资产编号，唯一。
-- `name`：资产名称。
-- `category`：资产分类。
-- `status`：在用、闲置、借出、维修、报废。
-- `owner`：负责人或部门。
-- `location`：存放位置。
-- `purchaseDate`：购置日期。
-- `value`：资产价值。
-- `notes`：备注。
-- `createdAt` / `updatedAt`：创建与更新时间。
+### Purchase
 
-审计字段：
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/purchase/list` | 采购单列表 |
+| POST | `/purchase/create` | 创建采购单 |
+| POST | `/purchase/accept?purchase_no=...` | 按验收明细生成资产 |
+| POST | `/purchase/receive?purchase_no=...` | 兼容旧版一键入库 |
 
-- `id`：审计 ID。
-- `assetCode` / `assetName`：关联资产。
-- `action`：操作类型。
-- `actor`：操作者。
-- `detail`：操作详情。
-- `createdAt`：发生时间。
+### Catalog
 
-## 后续可扩展方向
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/catalog/device-types` | 设备类型列表 |
+| POST | `/catalog/device-types` | 新增设备类型 |
+| PUT | `/catalog/device-types/{id}` | 修改设备类型 |
+| GET | `/catalog/products` | 产品档案列表 |
+| POST | `/catalog/products` | 新增产品档案 |
+| PUT | `/catalog/products/{id}` | 修改产品档案 |
 
-- 用户、角色、权限：管理员、资产专员、部门负责人、普通员工。
-- 审批流程：采购入库、领用、借用、归还、维修、报废。
-- 附件管理：发票、合同、照片、维修单。
-- 数据库：SQLite 适合单机部署，PostgreSQL/MySQL 适合多人协作。
-- 登录认证：Session 或 JWT。
-- 导入能力：Excel/CSV 批量导入资产。
-- 盘点能力：二维码、盘点任务、差异报告。
+### User & Identity
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/users/list` | 用户目录 |
+| POST | `/users/sync` | 同步用户 |
+| GET | `/identity/providers` | 身份源列表 |
+| POST | `/identity/providers` | 新增身份源 |
+| PUT | `/identity/providers/{id}` | 修改身份源 |
+| POST | `/identity/providers/{id}/test` | 测试身份源配置 |
+
+### Audit
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/audit/run` | 执行审计 |
+| GET | `/audit/report` | 获取 HTML 审计报告 |
+
+## 项目结构
+
+```text
+.
+├── docker-compose.yml
+├── docker-compose.dev.yml
+├── DOCKER.md
+├── README.md
+├── scripts/
+│   ├── container-deploy.ps1
+│   └── container-dev.ps1
+├── itam-system/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── app/
+│       ├── api/
+│       ├── core/
+│       ├── models/
+│       ├── schemas/
+│       ├── services/
+│       ├── rules/
+│       └── reports/
+└── itam-frontend/
+    ├── Dockerfile
+    ├── Dockerfile.dev
+    ├── nginx.conf
+    ├── package.json
+    └── src/
+        ├── api/
+        ├── components/
+        ├── layout/
+        ├── router/
+        ├── store/
+        └── views/
+```
+
+## 开发模式
+
+开发时如果需要前后端热更新：
+
+```powershell
+.\scripts\container-dev.ps1 -Rebuild
+```
+
+等价命令：
+
+```powershell
+docker compose -p itam -f docker-compose.yml -f docker-compose.dev.yml up --build -d
+```
+
+开发模式会挂载本地源码，适合改代码；部署模式使用 Nginx 静态前端，访问更快。
+
+## 环境变量
+
+后端主要环境变量：
+
+```text
+DATABASE_URL=mysql+pymysql://itam:itam_pass@mysql:3306/itam_system?charset=utf8mb4
+AUDIT_REPORT_PATH=/app/audit_report.html
+MAX_ASSETS_PER_USER=5
+HIGH_VALUE_THRESHOLD=50000
+IDLE_DAYS_THRESHOLD=90
+```
+
+前端构建变量：
+
+```text
+VITE_API_BASE_URL=http://127.0.0.1:8000
+```
+
+## 当前说明
+
+这是一个工程化原型到可运行系统的版本，已具备容器化部署、基础鉴权、前后端联调和主要 ITAM 流程。真实生产使用前建议继续补充：
+
+- 正式 JWT / Session 机制
+- 密码哈希与账号锁定
+- 真实 LDAP / OIDC / SAML 登录流程
+- 数据库迁移工具，如 Alembic
+- 更细粒度 RBAC 权限
+- 文件附件、二维码、导出报表
+- CI/CD 与生产环境配置
