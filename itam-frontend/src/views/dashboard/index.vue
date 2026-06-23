@@ -102,7 +102,7 @@
               <b>￥{{ formatValue(Math.round(risk.amount || 0)) }}</b>
             </div>
           </div>
-          <el-button type="primary" link @click="router.push(risk.route)">查看详情</el-button>
+          <el-button type="primary" link @click="router.push('/audit')">查看详情</el-button>
         </el-card>
       </div>
     </section>
