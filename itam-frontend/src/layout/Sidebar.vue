@@ -21,6 +21,7 @@
 
 <script setup>
 import { useRoute } from 'vue-router'
+import { CircleClose, Clock, DataBoard, Document, Lock, Monitor, ShoppingCart, Tickets, TrendCharts, View } from '@element-plus/icons-vue'
 import { useAppStore } from '../store'
 
 const route = useRoute()

@@ -10,6 +10,7 @@ This directory contains the FastAPI backend for the ITAM asset management system
 - MySQL / SQLite
 - Pydantic
 - Jinja2
+- Alembic
 - Uvicorn
 
 ## Run With Docker Compose
@@ -58,13 +59,14 @@ Public endpoints:
 - `GET /`
 - `POST /auth/login`
 - `GET /auth/sso/{provider_type}/start`
+- `GET /auth/callback/{provider_type}`
 - `/docs`
 - `/openapi.json`
 
-Other endpoints require:
+All business endpoints require:
 
 ```http
-Authorization: Bearer mock-token-...
+Authorization: Bearer <jwt>
 ```
 
 Login example:
@@ -76,6 +78,20 @@ Login example:
   "provider": "local"
 }
 ```
+
+The login response includes a signed JWT, expiration seconds, and user details. Passwords are stored with PBKDF2 hashes. Repeated failed logins increase the failure counter and can lock the account for the configured duration.
+
+## Security And Identity
+
+- JWT access tokens
+- PBKDF2 password hashing
+- Failed-login counter and lockout
+- LDAP bind login adapter
+- OIDC authorization URL generation and callback login foundation
+- SAML SSO URL and callback login foundation
+- RBAC table with `role`, `resource`, `action`, `allowed`
+- Admin role bypasses RBAC checks
+- User and auditor roles are seeded with default permissions
 
 ## Main API Groups
 
@@ -114,11 +130,35 @@ Login example:
 - `POST /identity/providers`
 - `PUT /identity/providers/{id}`
 - `POST /identity/providers/{id}/test`
+- `GET /rbac/permissions`
+
+### Files
+
+- `POST /files/asset/{asset_id}/upload`
+- `GET /files/asset/{asset_id}`
+- `GET /files/{file_id}/download`
+- `GET /files/asset/{asset_id}/qrcode`
+
+### Reports
+
+- `GET /reports/assets.csv`
+- `GET /reports/assets.pdf`
 
 ### Audit
 
 - `POST /audit/run`
 - `GET /audit/report`
+
+## Alembic
+
+The project includes Alembic scaffolding:
+
+```powershell
+alembic revision --autogenerate -m "change description"
+alembic upgrade head
+```
+
+The current app startup still calls SQLAlchemy `create_all` and a compatibility patch for existing demo databases, so old local data can continue to boot while migrations are introduced.
 
 ## Directory Structure
 
@@ -132,7 +172,3 @@ app/
 ├── schemas/
 └── services/
 ```
-
-## Notes
-
-The current authentication and LDAP/OIDC/SAML integrations are working foundations for development and demos. Before production use, replace the mock token logic with real JWT/session validation and connect the identity provider adapters to real enterprise systems.

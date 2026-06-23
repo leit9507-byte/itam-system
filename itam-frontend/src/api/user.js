@@ -31,3 +31,7 @@ export function updateIdentityProvider(id, payload) {
 export function testIdentityProvider(id) {
   return request.post(`/identity/providers/${id}/test`)
 }
+
+export function getRolePermissions() {
+  return request.get('/rbac/permissions')
+}

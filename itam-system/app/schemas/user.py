@@ -15,6 +15,7 @@ class UserUpsert(BaseModel):
     source: str = "local"
     status: str = "active"
     external_id: str | None = None
+    password: str | None = None
 
 
 class UserOut(BaseModel):
@@ -32,6 +33,9 @@ class UserOut(BaseModel):
     external_id: str | None
     last_synced_at: datetime | None
     created_at: datetime
+    failed_login_count: int = 0
+    locked_until: datetime | None = None
+    last_login_at: datetime | None = None
 
 
 class IdentityProviderSave(BaseModel):
@@ -63,7 +67,25 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    expires_in: int
     user: UserOut
+
+
+class RolePermissionSave(BaseModel):
+    role: str
+    resource: str
+    action: str
+    allowed: bool = True
+
+
+class RolePermissionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    role: str
+    resource: str
+    action: str
+    allowed: bool
 
 
 class SyncUsersRequest(BaseModel):

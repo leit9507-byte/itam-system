@@ -1,9 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from app.models.user import IdentityProviderConfig, UserDirectory
+from app.core.auth import create_access_token, hash_password, verify_password
+from app.core.config import get_settings
+from app.models.user import IdentityProviderConfig, RolePermission, UserDirectory
 from app.schemas.user import IdentityProviderSave, UserUpsert
 
 
@@ -21,6 +23,7 @@ class IdentityService:
                     dept_name="IT Department",
                     role="admin",
                     source="local",
+                    password="admin",
                 ),
                 UserUpsert(
                     user_id="U-AUDITOR",
@@ -31,6 +34,7 @@ class IdentityService:
                     dept_name="Audit Department",
                     role="auditor",
                     source="local",
+                    password="auditor",
                 ),
             ]
             for item in seed_users:
@@ -66,6 +70,24 @@ class IdentityService:
                     last_test_message="Waiting for real SSO configuration",
                 )
             )
+        admin = db.query(UserDirectory).filter(UserDirectory.username == "admin").first()
+        if admin and not admin.password_hash:
+            admin.password_hash = hash_password("admin")
+        auditor = db.query(UserDirectory).filter(UserDirectory.username == "auditor").first()
+        if auditor and not auditor.password_hash:
+            auditor.password_hash = hash_password("auditor")
+        if not db.query(RolePermission).first():
+            for role, resource, actions in [
+                ("user", "asset", ["read"]),
+                ("user", "catalog", ["read"]),
+                ("user", "purchase", ["read"]),
+                ("auditor", "asset", ["read"]),
+                ("auditor", "audit", ["read", "write"]),
+                ("auditor", "report", ["read"]),
+                ("auditor", "catalog", ["read"]),
+            ]:
+                for action in actions:
+                    db.add(RolePermission(role=role, resource=resource, action=action, allowed=True))
         db.commit()
 
     @staticmethod
@@ -94,12 +116,55 @@ class IdentityService:
         user.source = payload.source
         user.status = payload.status
         user.external_id = payload.external_id
+        if payload.password:
+            user.password_hash = hash_password(payload.password)
         user.last_synced_at = datetime.utcnow()
 
         if commit:
             db.commit()
             db.refresh(user)
         return user, created
+
+    @staticmethod
+    def authenticate(db: Session, username: str, password: str, provider: str = "local") -> dict:
+        IdentityService.ensure_seed(db)
+        if provider == "ldap":
+            from app.services.sso_service import SsoService
+
+            user = SsoService.ldap_authenticate(db, username, password)
+            user.last_login_at = datetime.utcnow()
+            db.commit()
+            db.refresh(user)
+            token = create_access_token(user.user_id, user.role)
+            return {"access_token": token, "token_type": "bearer", "expires_in": get_settings().jwt_expire_minutes * 60, "user": user}
+        if provider in {"oidc", "saml"}:
+            raise ValueError(f"{provider} login must start from SSO redirect/callback")
+        settings = get_settings()
+        user = db.query(UserDirectory).filter(UserDirectory.username == username).first()
+        now = datetime.utcnow()
+        if not user:
+            raise ValueError("invalid credentials")
+        if user.locked_until and user.locked_until > now:
+            raise PermissionError(f"account locked until {user.locked_until.isoformat()}")
+        if provider == "local" and not verify_password(password, user.password_hash):
+            user.failed_login_count += 1
+            if user.failed_login_count >= settings.login_lock_threshold:
+                user.locked_until = now + timedelta(minutes=settings.login_lock_minutes)
+            db.commit()
+            raise ValueError("invalid credentials")
+
+        user.failed_login_count = 0
+        user.locked_until = None
+        user.last_login_at = now
+        db.commit()
+        db.refresh(user)
+        token = create_access_token(user.user_id, user.role)
+        return {"access_token": token, "token_type": "bearer", "expires_in": settings.jwt_expire_minutes * 60, "user": user}
+
+    @staticmethod
+    def list_permissions(db: Session) -> list[RolePermission]:
+        IdentityService.ensure_seed(db)
+        return db.query(RolePermission).order_by(RolePermission.role, RolePermission.resource, RolePermission.action).all()
 
     @staticmethod
     def list_providers(db: Session) -> list[IdentityProviderConfig]:

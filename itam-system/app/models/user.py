@@ -17,7 +17,11 @@ class UserDirectory(Base):
     role = Column(String(32), default="user", nullable=False)
     source = Column(String(32), default="local", nullable=False, index=True)
     status = Column(String(32), default="active", nullable=False)
+    password_hash = Column(String(255), nullable=True)
+    failed_login_count = Column(Integer, default=0, nullable=False)
+    locked_until = Column(DateTime, nullable=True)
     external_id = Column(String(128), nullable=True, index=True)
+    last_login_at = Column(DateTime, nullable=True)
     last_synced_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -33,3 +37,13 @@ class IdentityProviderConfig(Base):
     last_test_status = Column(String(32), nullable=True)
     last_test_message = Column(String(255), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class RolePermission(Base):
+    __tablename__ = "role_permissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    role = Column(String(32), nullable=False, index=True)
+    resource = Column(String(64), nullable=False, index=True)
+    action = Column(String(32), nullable=False)
+    allowed = Column(Boolean, default=True, nullable=False)

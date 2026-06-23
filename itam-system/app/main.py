@@ -4,8 +4,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError
 
-from app.api import asset, audit, identity, product, purchase
+from app.api import asset, audit, files, identity, product, purchase, reporting
 from app.core.database import Base, engine
+from app.core.schema_compat import ensure_compatible_schema
 from app.core.security import AuthMiddleware
 
 
@@ -14,6 +15,7 @@ def init_database_with_retry(retries: int = 20, delay: float = 2.0) -> None:
     for _ in range(retries):
         try:
             Base.metadata.create_all(bind=engine)
+            ensure_compatible_schema(engine)
             return
         except OperationalError as exc:
             last_error = exc
@@ -43,6 +45,8 @@ def create_app() -> FastAPI:
     app.include_router(product.router)
     app.include_router(identity.router)
     app.include_router(audit.router)
+    app.include_router(files.router)
+    app.include_router(reporting.router)
 
     @app.get("/")
     def health_check():

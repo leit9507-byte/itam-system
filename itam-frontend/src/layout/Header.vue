@@ -88,7 +88,7 @@ function handleUserCommand(command) {
   if (command === 'logout') {
     store.logout()
     ElMessage.success('已退出登录')
-    router.push('/login')
+    router.replace('/login')
   }
   if (command === 'permission') {
     router.push('/permission')

@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">权限与身份源</h2>
-        <p class="page-subtitle">统一管理本地用户、LDAP/OIDC/SAML/第三方 SSO 配置与用户同步</p>
+        <p class="page-subtitle">统一管理本地账号、LDAP/OIDC/SAML 登录、账号锁定和 RBAC 权限</p>
       </div>
       <el-button type="primary" @click="syncFromProvider">从身份源同步用户</el-button>
     </div>
@@ -21,18 +21,30 @@
             <el-table-column prop="source" label="来源" width="100">
               <template #default="{ row }"><el-tag>{{ row.source }}</el-tag></template>
             </el-table-column>
-            <el-table-column prop="role" label="角色" width="140">
-              <template #default="{ row }">
-                <el-select v-model="row.role">
-                  <el-option label="admin" value="admin" />
-                  <el-option label="auditor" value="auditor" />
-                  <el-option label="user" value="user" />
-                </el-select>
-              </template>
+            <el-table-column prop="role" label="角色" width="120" />
+            <el-table-column prop="failed_login_count" label="失败次数" width="100" />
+            <el-table-column prop="locked_until" label="锁定至" min-width="160">
+              <template #default="{ row }">{{ row.locked_until || '未锁定' }}</template>
             </el-table-column>
-            <el-table-column label="资产" width="90"><template #default="{ row }"><el-switch v-model="permissionState[row.user_id].asset" /></template></el-table-column>
-            <el-table-column label="审计" width="90"><template #default="{ row }"><el-switch v-model="permissionState[row.user_id].audit" /></template></el-table-column>
-            <el-table-column label="报告" width="90"><template #default="{ row }"><el-switch v-model="permissionState[row.user_id].report" /></template></el-table-column>
+            <el-table-column prop="last_login_at" label="最后登录" min-width="160">
+              <template #default="{ row }">{{ row.last_login_at || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="status" label="状态" width="90">
+              <template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ row.status }}</el-tag></template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-tab-pane>
+
+      <el-tab-pane label="RBAC 权限" name="rbac">
+        <el-card shadow="never">
+          <el-table :data="permissions" border stripe>
+            <el-table-column prop="role" label="角色" width="130" />
+            <el-table-column prop="resource" label="资源" width="150" />
+            <el-table-column prop="action" label="动作" width="120" />
+            <el-table-column prop="allowed" label="允许" width="100">
+              <template #default="{ row }"><el-tag :type="row.allowed ? 'success' : 'danger'">{{ row.allowed ? '允许' : '拒绝' }}</el-tag></template>
+            </el-table-column>
           </el-table>
         </el-card>
       </el-tab-pane>
@@ -42,7 +54,7 @@
           <el-card shadow="never">
             <template #header>新增/编辑身份源</template>
             <el-form :model="providerForm" label-width="110px">
-              <el-form-item label="名称"><el-input v-model="providerForm.name" /></el-form-item>
+              <el-form-item label="名称"><el-input v-model="providerForm.name" placeholder="例如：公司 LDAP" /></el-form-item>
               <el-form-item label="类型">
                 <el-select v-model="providerForm.provider_type" style="width: 100%">
                   <el-option label="LDAP / AD" value="ldap" />
@@ -54,7 +66,7 @@
               </el-form-item>
               <el-form-item label="启用"><el-switch v-model="providerForm.enabled" /></el-form-item>
               <el-form-item label="连接配置">
-                <el-input v-model="providerConfigText" type="textarea" :rows="9" />
+                <el-input v-model="providerConfigText" type="textarea" :rows="10" />
               </el-form-item>
               <el-form-item>
                 <el-button @click="resetProviderForm">清空</el-button>
@@ -99,11 +111,12 @@
             <el-form-item label="密码"><el-input v-model="loginForm.password" type="password" show-password /></el-form-item>
             <el-form-item>
               <el-button type="primary" @click="submitLogin">账号登录</el-button>
-              <el-button @click="submitSso">模拟 SSO 跳转</el-button>
+              <el-button @click="submitSso">SSO 跳转地址</el-button>
             </el-form-item>
           </el-form>
           <el-descriptions v-if="loginResult" title="登录结果" border :column="1">
             <el-descriptions-item label="Token">{{ loginResult.access_token }}</el-descriptions-item>
+            <el-descriptions-item label="有效期">{{ loginResult.expires_in }} 秒</el-descriptions-item>
             <el-descriptions-item label="用户">{{ loginResult.user.display_name }} / {{ loginResult.user.role }}</el-descriptions-item>
             <el-descriptions-item label="来源">{{ loginResult.user.source }}</el-descriptions-item>
           </el-descriptions>
@@ -120,6 +133,7 @@ import { useAppStore } from '../../store'
 import {
   createIdentityProvider,
   getIdentityProviders,
+  getRolePermissions,
   getUsers,
   login,
   startSso,
@@ -132,14 +146,14 @@ const activeTab = ref('users')
 const store = useAppStore()
 const users = ref([])
 const providers = ref([])
-const permissionState = reactive({})
+const permissions = ref([])
 const loginResult = ref(null)
 const providerConfigText = ref('')
 const providerForm = reactive(defaultProviderForm())
 const loginForm = reactive({ provider: 'local', username: 'admin', password: 'admin' })
 
 onMounted(async () => {
-  await Promise.all([loadUsers(), loadProviders()])
+  await Promise.all([loadUsers(), loadProviders(), loadPermissions()])
   resetProviderForm()
 })
 
@@ -154,17 +168,14 @@ watch(
 
 async function loadUsers() {
   users.value = await getUsers()
-  users.value.forEach(user => {
-    permissionState[user.user_id] ||= {
-      asset: ['admin', 'user'].includes(user.role),
-      audit: ['admin', 'auditor'].includes(user.role),
-      report: ['admin', 'auditor'].includes(user.role)
-    }
-  })
 }
 
 async function loadProviders() {
   providers.value = await getIdentityProviders()
+}
+
+async function loadPermissions() {
+  permissions.value = await getRolePermissions()
 }
 
 function defaultProviderForm() {
@@ -173,9 +184,21 @@ function defaultProviderForm() {
 
 function defaultConfig(type = 'ldap') {
   const samples = {
-    ldap: { host: 'ldap://ldap.example.com', base_dn: 'dc=example,dc=com', user_filter: '(objectClass=person)', username_attr: 'sAMAccountName' },
-    oidc: { issuer: 'https://sso.example.com', client_id: 'itam-dashboard', scopes: 'openid profile email' },
-    saml: { sso_url: 'https://sso.example.com/saml', entity_id: 'itam-dashboard' },
+    ldap: {
+      host: 'ldap://ldap.example.com',
+      bind_dn: 'cn=reader,dc=example,dc=com',
+      bind_password: 'change-me',
+      user_dn_template: 'uid={username},ou=users,dc=example,dc=com',
+      base_dn: 'dc=example,dc=com'
+    },
+    oidc: {
+      issuer: 'https://sso.example.com',
+      authorize_url: 'https://sso.example.com/oauth2/authorize',
+      client_id: 'itam-dashboard',
+      redirect_uri: 'http://127.0.0.1:8000/auth/callback/oidc',
+      scopes: 'openid profile email'
+    },
+    saml: { sso_url: 'https://sso.example.com/saml/login', entity_id: 'itam-dashboard' },
     feishu: { app_id: 'cli_xxx', tenant_key: 'tenant_xxx' },
     wechat_work: { corp_id: 'ww_xxx', agent_id: '1000001' }
   }
@@ -228,7 +251,8 @@ async function syncFromProvider(row = null) {
 async function submitLogin() {
   loginResult.value = await login(loginForm)
   store.setSession(loginResult.value)
-  ElMessage.success('登录成功，用户信息已从后端返回')
+  ElMessage.success('登录成功，JWT 已写入本地会话')
+  await loadUsers()
 }
 
 async function submitSso() {

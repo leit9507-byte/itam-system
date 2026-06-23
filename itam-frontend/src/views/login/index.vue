@@ -23,7 +23,7 @@
           <el-input v-model="form.password" type="password" show-password autocomplete="current-password" @keyup.enter="submitLogin" />
         </el-form-item>
         <el-button type="primary" class="login-button" :loading="loading" @click="submitLogin">登录系统</el-button>
-        <el-button class="login-button" @click="submitSso">模拟 SSO 登录</el-button>
+        <el-button class="login-button" @click="submitSso">SSO 登录地址</el-button>
       </el-form>
     </section>
   </main>
