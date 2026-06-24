@@ -76,8 +76,11 @@ def list_users(db: Session = Depends(get_db)):
 
 @router.post("/users/sync", response_model=SyncUsersResponse)
 def sync_users(payload: SyncUsersRequest, db: Session = Depends(get_db)):
-    created, updated, users = IdentityService.sync_users(db, payload.provider_id, payload.users)
-    return {"created": created, "updated": updated, "users": users}
+    try:
+        created, updated, users = IdentityService.sync_users(db, payload.provider_id, payload.users)
+        return {"created": created, "updated": updated, "users": users}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/identity/providers", response_model=list[IdentityProviderOut])

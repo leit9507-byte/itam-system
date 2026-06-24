@@ -212,12 +212,21 @@ class IdentityService:
             "local": [],
         }.get(provider.provider_type, [])
         missing = [key for key in required if not (provider.config or {}).get(key)]
-        provider.last_test_status = "failed" if missing else "success"
-        provider.last_test_message = (
-            f"Missing required fields: {', '.join(missing)}"
-            if missing
-            else f"{provider.provider_type.upper()} configuration looks valid in mock test"
-        )
+        if missing:
+            provider.last_test_status = "failed"
+            provider.last_test_message = f"Missing required fields: {', '.join(missing)}"
+        elif provider.provider_type == "ldap":
+            try:
+                from app.services.sso_service import LdapClient
+
+                provider.last_test_status = "success"
+                provider.last_test_message = LdapClient.test(provider.config or {})
+            except Exception as exc:
+                provider.last_test_status = "failed"
+                provider.last_test_message = str(exc)[:255]
+        else:
+            provider.last_test_status = "success"
+            provider.last_test_message = f"{provider.provider_type.upper()} configuration looks valid"
         db.commit()
         db.refresh(provider)
         return provider
@@ -226,7 +235,14 @@ class IdentityService:
     def sync_users(db: Session, provider_id: int | None, users: list[UserUpsert]) -> tuple[int, int, list[UserDirectory]]:
         IdentityService.ensure_seed(db)
         provider = db.get(IdentityProviderConfig, provider_id) if provider_id else None
-        payloads = users or IdentityService.mock_provider_users(provider)
+        if users:
+            payloads = users
+        elif provider and provider.provider_type == "ldap":
+            from app.services.sso_service import LdapClient
+
+            payloads = LdapClient.sync_users(provider.config or {}, limit=int((provider.config or {}).get("sync_limit", 200)))
+        else:
+            payloads = IdentityService.mock_provider_users(provider)
         created = 0
         updated = 0
         synced: list[UserDirectory] = []

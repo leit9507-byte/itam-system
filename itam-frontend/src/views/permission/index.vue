@@ -66,8 +66,16 @@
               </el-form-item>
               <el-form-item label="启用"><el-switch v-model="providerForm.enabled" /></el-form-item>
               <el-form-item label="连接配置">
-                <el-input v-model="providerConfigText" type="textarea" :rows="10" />
+                <el-input v-model="providerConfigText" type="textarea" :rows="16" />
               </el-form-item>
+              <el-alert
+                v-if="providerForm.provider_type === 'ldap'"
+                class="config-help"
+                type="info"
+                show-icon
+                :closable="false"
+                title="AD 常用登录名是 sAMAccountName；OpenLDAP 常用 uid。若没有服务账号，可填写 user_dn_template 走直接绑定。"
+              />
               <el-form-item>
                 <el-button @click="resetProviderForm">清空</el-button>
                 <el-button type="primary" @click="saveProvider">保存配置</el-button>
@@ -83,7 +91,12 @@
               <el-table-column prop="enabled" label="启用" width="80">
                 <template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '是' : '否' }}</el-tag></template>
               </el-table-column>
-              <el-table-column prop="last_test_status" label="测试状态" width="120" />
+              <el-table-column prop="last_test_status" label="测试状态" width="110">
+                <template #default="{ row }">
+                  <el-tag :type="row.last_test_status === 'success' ? 'success' : row.last_test_status === 'failed' ? 'danger' : 'info'">{{ row.last_test_status || '-' }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="last_test_message" label="测试信息" min-width="220" show-overflow-tooltip />
               <el-table-column label="操作" width="190">
                 <template #default="{ row }">
                   <el-button link type="primary" @click="editProvider(row)">编辑</el-button>
@@ -186,14 +199,27 @@ function defaultConfig(type = 'ldap') {
   const samples = {
     ldap: {
       host: 'ldap://ldap.example.com',
-      bind_dn: 'cn=reader,dc=example,dc=com',
+      port: 389,
+      use_ssl: false,
+      start_tls: false,
+      tls_validate: false,
+      bind_dn: 'CN=ldap-reader,OU=Service Accounts,DC=example,DC=com',
       bind_password: 'change-me',
-      user_dn_template: 'uid={username},ou=users,dc=example,dc=com',
-      base_dn: 'dc=example,dc=com'
+      base_dn: 'DC=example,DC=com',
+      user_filter: '(&(objectClass=person)(sAMAccountName={username}))',
+      sync_filter: '(objectClass=person)',
+      username_attr: 'sAMAccountName',
+      display_name_attr: 'displayName',
+      email_attr: 'mail',
+      dept_id_attr: 'departmentNumber',
+      dept_name_attr: 'department',
+      default_role: 'user',
+      sync_limit: 200,
+      test_username: ''
     },
     oidc: {
       issuer: 'https://sso.example.com',
-      authorize_url: 'https://sso.example.com/oauth2/authorize',
+      authorization_endpoint: 'https://sso.example.com/oauth2/authorize',
       client_id: 'itam-dashboard',
       redirect_uri: 'http://127.0.0.1:8000/auth/callback/oidc',
       scopes: 'openid profile email'
@@ -264,8 +290,12 @@ async function submitSso() {
 <style scoped>
 .provider-grid {
   display: grid;
-  grid-template-columns: minmax(360px, 0.85fr) minmax(460px, 1.15fr);
+  grid-template-columns: minmax(400px, 0.9fr) minmax(520px, 1.1fr);
   gap: 16px;
+}
+
+.config-help {
+  margin: -4px 0 16px;
 }
 
 .login-card {
