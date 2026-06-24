@@ -12,6 +12,7 @@ class LifecycleService:
         from_status: str | None,
         to_status: str | None,
         operator: str = "system",
+        remark: str | None = None,
     ) -> Lifecycle:
         lifecycle = Lifecycle(
             asset_id=asset_id,
@@ -19,6 +20,7 @@ class LifecycleService:
             from_status=from_status,
             to_status=to_status,
             operator=operator,
+            remark=remark,
         )
         db.add(lifecycle)
         return lifecycle

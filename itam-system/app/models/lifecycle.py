@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 
 from app.core.database import Base
 
@@ -14,4 +14,5 @@ class Lifecycle(Base):
     from_status = Column(String(32), nullable=True)
     to_status = Column(String(32), nullable=True)
     operator = Column(String(64), nullable=False, default="system")
+    remark = Column(Text, nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)

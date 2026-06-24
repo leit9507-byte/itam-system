@@ -29,6 +29,7 @@ export async function getAssets(params = {}) {
   const list = mapped.filter(item => {
     const searchText = [
       item.asset_id,
+      item.company,
       item.name,
       item.dept,
       item.dept_name,
@@ -69,6 +70,7 @@ export async function importAssets(items, operator = 'asset-import') {
 export async function updateAsset(assetId, payload) {
   const row = await request.put(`/asset/${assetId}`, {
     name: payload.name,
+    company: payload.company || '',
     category: payload.category,
     brand: payload.brand,
     model: payload.model,
@@ -113,10 +115,12 @@ export async function getAssetDetail(assetId) {
 }
 
 export async function getLifecycleList() {
-  const { list } = await getAssets({})
-  return list.flatMap(asset => localLifecycles[asset.asset_id] || [
-    { asset_id: asset.asset_id, type: '建档', status: asset.status, operator: '后端系统', time: asset.created_at || '', description: '资产建档' }
-  ])
+  const rows = await request.get('/lifecycle/list')
+  return rows.map(row => ({
+    ...row,
+    time: formatDateTime(row.time),
+    description: row.description || `${row.from_status || '-'} -> ${row.to_status || '-'}`
+  }))
 }
 
 export function getInventoryRecords() {
@@ -164,50 +168,20 @@ export async function outboundAsset(assetId, payload = {}) {
 }
 
 export async function createScrapRequest(assetId, payload = {}) {
-  const { list } = await getAssets({})
-  const asset = list.find(item => item.asset_id === assetId)
-  if (!asset) throw new Error('资产不存在')
-  const existed = scrapRequests.find(item => item.asset_id === assetId && item.status === '审批中')
-  if (existed) return existed
-
-  await changeAssetStatus(assetId, 'pending_scrap', { action: '报废申请', remark: payload.reason || '创建报废审批流程' })
-  const requestItem = {
-    id: `SC-${new Date().getFullYear()}-${String(scrapRequests.length + 1).padStart(3, '0')}`,
-    asset_id: asset.asset_id,
-    asset_name: asset.name,
-    sn: asset.sn,
-    applicant: payload.applicant || asset.dept || '资产管理员',
-    reason: payload.reason,
-    disposal_method: payload.disposal_method || '环保回收',
-    estimated_residual_value: Number(payload.estimated_residual_value || 0),
-    status: '审批中',
-    created_at: new Date().toISOString().slice(0, 10),
-    approver: ''
-  }
-  scrapRequests.unshift(requestItem)
-  return requestItem
+  return mapScrapRequest(await request.post(`/scrap/${assetId}/create`, { ...payload, operator: payload.operator || '资产管理员' }))
 }
 
-export function getScrapRequests() {
-  return Promise.resolve([...scrapRequests])
+export async function getScrapRequests() {
+  const rows = await request.get('/scrap/list')
+  return rows.map(mapScrapRequest)
 }
 
 export async function approveScrapRequest(requestId, approver = '资产负责人') {
-  const item = scrapRequests.find(row => row.id === requestId)
-  if (!item) throw new Error('报废申请不存在')
-  await changeAssetStatus(item.asset_id, 'scrapped', { action: '报废审批通过', operator: approver, remark: `处置方式：${item.disposal_method}` })
-  item.status = '已通过'
-  item.approver = approver
-  return item
+  return mapScrapRequest(await request.post(`/scrap/${requestId}/approve`, { approver }))
 }
 
 export async function rejectScrapRequest(requestId, approver = '资产负责人') {
-  const item = scrapRequests.find(row => row.id === requestId)
-  if (!item) throw new Error('报废申请不存在')
-  await changeAssetStatus(item.asset_id, 'idle', { action: '报废审批驳回', operator: approver, remark: '资产恢复为闲置' })
-  item.status = '已驳回'
-  item.approver = approver
-  return item
+  return mapScrapRequest(await request.post(`/scrap/${requestId}/reject`, { approver }))
 }
 
 export async function addAcceptedAssets(product, serialNumbers = []) {
@@ -264,6 +238,7 @@ function mapBackendAsset(row) {
   const deptName = row.dept_name || ''
   return {
     asset_id: row.asset_id,
+    company: row.company || '',
     name: row.name,
     category: row.category,
     owner: row.owner_user_id || '',
@@ -288,6 +263,35 @@ function mapBackendAsset(row) {
     sn: row.sn || '',
     warehouse: config.warehouse || row.location || '',
     created_at: formatDate(row.created_at)
+  }
+}
+
+function mapScrapRequest(row) {
+  return {
+    id: row.id,
+    request_no: row.request_no || `SC-${row.id}`,
+    asset_id: row.asset_id,
+    asset_name: row.asset_name,
+    sn: row.asset_sn || '',
+    company: row.company || '',
+    category: row.category || '',
+    brand: row.brand || '',
+    model: row.model || '',
+    owner_user_id: row.owner_user_id || '',
+    dept_id: row.dept_id || '',
+    location: row.location || '',
+    purchase_price: Number(row.purchase_price || 0),
+    purchase_date: formatDate(row.purchase_date),
+    purchase_approval_no: row.purchase_approval_no || '',
+    purchase_supplier_name: row.purchase_supplier_name || '',
+    applicant: row.applicant || '',
+    reason: row.reason || '',
+    disposal_method: row.disposal_method || '',
+    estimated_residual_value: Number(row.estimated_residual_value || 0),
+    status: row.status,
+    created_at: formatDate(row.created_at),
+    approver: row.approver || '',
+    approved_at: formatDate(row.approved_at)
   }
 }
 
@@ -341,6 +345,13 @@ function formatDate(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
   return date.toISOString().slice(0, 10)
+}
+
+function formatDateTime(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString('zh-CN', { hour12: false })
 }
 
 function dateToApi(value) {

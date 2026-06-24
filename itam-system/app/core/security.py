@@ -19,6 +19,8 @@ RESOURCE_PREFIXES = {
     "/asset": "asset",
     "/purchase": "purchase",
     "/repair": "repair",
+    "/scrap": "asset",
+    "/lifecycle": "asset",
     "/supplier": "supplier",
     "/catalog": "catalog",
     "/audit": "audit",

@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class AssetCreate(BaseModel):
+    company: Optional[str] = None
     name: str
     category: str
     brand: Optional[str] = None
@@ -33,6 +34,7 @@ class AssetStatusChange(BaseModel):
 
 
 class AssetUpdate(BaseModel):
+    company: Optional[str] = None
     name: Optional[str] = None
     category: Optional[str] = None
     brand: Optional[str] = None
@@ -55,6 +57,7 @@ class AssetOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     asset_id: str
+    company: Optional[str] = None
     name: str
     category: str
     brand: Optional[str]
@@ -79,6 +82,7 @@ class AssetOut(BaseModel):
 
 class AssetImportRow(AssetCreate):
     asset_id: Optional[str] = None
+    company: Optional[str] = None
     product_name: Optional[str] = None
     owner: Optional[str] = None
     dept: Optional[str] = None

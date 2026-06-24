@@ -14,6 +14,7 @@
           <template #header>基本信息</template>
           <el-descriptions :column="2" border>
             <el-descriptions-item label="资产ID">{{ detail.asset?.asset_id }}</el-descriptions-item>
+            <el-descriptions-item label="所属公司">{{ detail.asset?.company || '-' }}</el-descriptions-item>
             <el-descriptions-item label="状态">
               <el-tag :type="statusMap[detail.asset?.status]?.type">{{ statusMap[detail.asset?.status]?.label || detail.asset?.status }}</el-tag>
             </el-descriptions-item>

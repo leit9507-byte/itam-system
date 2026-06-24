@@ -25,6 +25,7 @@ class AssetService:
         user = AssetService.find_user(db, payload.owner_user_id)
         asset = Asset(
             asset_id=getattr(payload, "asset_id", None) or AssetService.generate_asset_id(db),
+            company=payload.company,
             name=payload.name,
             category=payload.category,
             brand=payload.brand,
@@ -70,6 +71,7 @@ class AssetService:
 
                 asset = Asset(
                     asset_id=normalized.asset_id or AssetService.generate_asset_id(db),
+                    company=normalized.company,
                     name=normalized.name,
                     category=normalized.category,
                     brand=normalized.brand,
@@ -251,6 +253,7 @@ class AssetService:
         owner_user_id: str | None = None,
         dept_id: str | None = None,
         location: str | None = None,
+        remark: str | None = None,
     ) -> Asset:
         asset = db.get(Asset, asset_id)
         if not asset:
@@ -265,7 +268,7 @@ class AssetService:
             asset.dept_id = dept_id
         if location is not None:
             asset.location = location
-        LifecycleService.record(db, asset.asset_id, "STATUS_CHANGE", from_status, to_status, operator)
+        LifecycleService.record(db, asset.asset_id, "STATUS_CHANGE", from_status, to_status, operator, remark)
         db.commit()
         db.refresh(asset)
         return AssetService.to_out(asset, user)
@@ -319,6 +322,7 @@ class AssetService:
         user = user or None
         return {
             "asset_id": asset.asset_id,
+            "company": asset.company,
             "name": asset.name,
             "category": asset.category,
             "brand": asset.brand,

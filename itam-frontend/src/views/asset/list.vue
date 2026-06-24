@@ -34,6 +34,7 @@
       <el-table :data="assets" border stripe @selection-change="selected = $event">
         <el-table-column type="selection" width="48" />
         <el-table-column prop="asset_id" label="资产ID" width="132" />
+        <el-table-column prop="company" label="公司" width="140" show-overflow-tooltip />
         <el-table-column label="产品信息" min-width="240">
           <template #default="{ row }">
             <div class="asset-name">
@@ -589,6 +590,7 @@ const AssetEditFields = defineComponent({
     return () =>
       h('div', { class: 'edit-grid' }, [
         field('资产名称', h(resolveInput(), { modelValue: props.form.name, 'onUpdate:modelValue': value => (props.form.name = value) })),
+        field('所属公司', h(resolveInput(), { modelValue: props.form.company, 'onUpdate:modelValue': value => (props.form.company = value), placeholder: '例如：总部 / 子公司A' })),
         field('序列号', h(resolveInput(), { modelValue: props.form.sn, 'onUpdate:modelValue': value => (props.form.sn = value) })),
         field('设备类型', h(resolveSelect(), { modelValue: props.form.category, 'onUpdate:modelValue': value => (props.form.category = value), filterable: true, allowCreate: true, defaultFirstOption: true, style: 'width:100%' }, () => props.categories.map(item => h(resolveOption(), { key: item, label: item, value: item })))),
         field('状态', h(resolveSelect(), { modelValue: props.form.status, 'onUpdate:modelValue': value => (props.form.status = value), style: 'width:100%' }, () => assetStatuses.map(item => h(resolveOption(), { key: item.value, label: item.label, value: item.value })))),

@@ -9,6 +9,7 @@ class Asset(Base):
     __tablename__ = "assets"
 
     asset_id = Column(String(64), primary_key=True, index=True)
+    company = Column(String(128), nullable=True, index=True)
     name = Column(String(128), nullable=False)
     category = Column(String(64), nullable=False)
     brand = Column(String(64), nullable=True)

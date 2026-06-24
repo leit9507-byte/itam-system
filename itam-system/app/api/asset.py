@@ -59,6 +59,7 @@ def change_asset_status(asset_id: str, payload: AssetStatusChange, db: Session =
             payload.owner_user_id,
             payload.dept_id,
             payload.location,
+            payload.remark,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
