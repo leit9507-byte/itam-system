@@ -14,6 +14,14 @@ def ensure_compatible_schema(engine) -> None:
         columns = {column["name"] for column in inspector.get_columns("purchases")}
         add_column(engine, columns, "purchases", "supplier_name", "VARCHAR(128) NULL")
 
+    if "assets" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("assets")}
+        add_column(engine, columns, "assets", "purchase_date", "DATETIME NULL")
+        add_column(engine, columns, "assets", "purchase_approval_no", "VARCHAR(128) NULL")
+        add_column(engine, columns, "assets", "purchase_supplier_name", "VARCHAR(128) NULL")
+        add_column(engine, columns, "assets", "warranty_expire_date", "DATETIME NULL")
+        add_column(engine, columns, "assets", "warranty_months", "INTEGER NULL")
+
 
 def add_column(engine, columns: set[str], table: str, column: str, definition: str) -> None:
     if column in columns:

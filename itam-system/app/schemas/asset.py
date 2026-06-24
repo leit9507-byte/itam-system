@@ -12,6 +12,11 @@ class AssetCreate(BaseModel):
     sn: Optional[str] = None
     config: Dict[str, Any] = Field(default_factory=dict)
     purchase_price: float = 0
+    purchase_date: Optional[datetime] = None
+    purchase_approval_no: Optional[str] = None
+    purchase_supplier_name: Optional[str] = None
+    warranty_expire_date: Optional[datetime] = None
+    warranty_months: Optional[int] = None
     status: str = "in_stock"
     owner_user_id: Optional[str] = None
     dept_id: Optional[str] = None
@@ -35,6 +40,11 @@ class AssetUpdate(BaseModel):
     sn: Optional[str] = None
     config: Optional[Dict[str, Any]] = None
     purchase_price: Optional[float] = None
+    purchase_date: Optional[datetime] = None
+    purchase_approval_no: Optional[str] = None
+    purchase_supplier_name: Optional[str] = None
+    warranty_expire_date: Optional[datetime] = None
+    warranty_months: Optional[int] = None
     status: Optional[str] = None
     owner_user_id: Optional[str] = None
     dept_id: Optional[str] = None
@@ -52,6 +62,11 @@ class AssetOut(BaseModel):
     sn: Optional[str]
     config: Optional[Dict[str, Any]]
     purchase_price: float
+    purchase_date: Optional[datetime]
+    purchase_approval_no: Optional[str]
+    purchase_supplier_name: Optional[str]
+    warranty_expire_date: Optional[datetime]
+    warranty_months: Optional[int]
     status: str
     owner_user_id: Optional[str]
     dept_id: Optional[str]

@@ -1,6 +1,7 @@
 import request from '../utils/request'
 
 export const assetStatuses = [
+  { label: '待采购', value: 'pending_purchase', type: 'info' },
   { label: '待验收', value: 'pending_acceptance', type: 'info' },
   { label: '在库', value: 'in_stock', type: 'primary' },
   { label: '在用', value: 'in_use', type: 'success' },
@@ -25,10 +26,18 @@ export async function getAssets(params = {}) {
   const status = params.status || ''
   const category = params.category || ''
   const list = mapped.filter(item => {
-    const hitKeyword = !keyword || [item.asset_id, item.name, item.dept, item.sn, item.brand, item.model, item.owner].join(' ').toLowerCase().includes(keyword)
-    const hitStatus = !status || item.status === status
-    const hitCategory = !category || item.category === category
-    return hitKeyword && hitStatus && hitCategory
+    const searchText = [
+      item.asset_id,
+      item.name,
+      item.dept,
+      item.sn,
+      item.brand,
+      item.model,
+      item.owner,
+      item.purchase_approval_no,
+      item.purchase_supplier_name
+    ].join(' ').toLowerCase()
+    return (!keyword || searchText.includes(keyword)) && (!status || item.status === status) && (!category || item.category === category)
   })
   return { list, total: list.length }
 }
@@ -61,6 +70,11 @@ export async function updateAsset(assetId, payload) {
     sn: payload.sn,
     config: { spec: payload.spec || '', warehouse: payload.warehouse || '' },
     purchase_price: Number(payload.price || payload.purchase_price || 0),
+    purchase_date: dateToApi(payload.purchase_date),
+    purchase_approval_no: payload.purchase_approval_no || '',
+    purchase_supplier_name: payload.purchase_supplier_name || '',
+    warranty_expire_date: dateToApi(payload.warranty_expire_date),
+    warranty_months: payload.warranty_months === '' || payload.warranty_months == null ? null : Number(payload.warranty_months),
     status: payload.status,
     owner_user_id: payload.owner_user_id || payload.owner || '',
     dept_id: payload.dept_id || payload.dept || '',
@@ -110,7 +124,14 @@ export async function changeAssetStatus(assetId, status, payload = {}) {
 }
 
 export async function inboundAsset(assetId, payload = {}) {
-  const asset = await changeAssetStatus(assetId, 'in_stock', { ...payload, action: '入库', remark: payload.remark || '资产入库' })
+  const asset = await changeAssetStatus(assetId, 'in_stock', {
+    ...payload,
+    owner_user_id: '',
+    dept_id: payload.dept_id || '',
+    location: payload.warehouse || payload.location || '',
+    action: '入库',
+    remark: payload.remark || '资产入库'
+  })
   localInventoryRecords.unshift(buildInventory(assetId, '入库', payload.warehouse || asset.warehouse || '默认仓库', payload.remark || '资产入库'))
   return asset
 }
@@ -187,6 +208,11 @@ export async function addAcceptedAssets(product, serialNumbers = []) {
       sn,
       config: { spec: product.spec, warehouse: product.warehouse },
       purchase_price: Number(product.unit_price || 0),
+      purchase_date: dateToApi(product.purchase_date),
+      purchase_approval_no: product.purchase_no || product.approval_no || '',
+      purchase_supplier_name: product.supplier_name || '',
+      warranty_expire_date: dateToApi(product.warranty_expire_date),
+      warranty_months: product.warranty_months || null,
       status: 'in_stock',
       dept_id: product.dept || '',
       location: product.warehouse || '待分配仓库'
@@ -231,13 +257,19 @@ function mapBackendAsset(row) {
     dept_id: row.dept_id || '',
     status: row.status || 'in_stock',
     price: Number(row.purchase_price || 0),
+    purchase_price: Number(row.purchase_price || 0),
+    purchase_date: formatDate(row.purchase_date),
+    purchase_approval_no: row.purchase_approval_no || '',
+    purchase_supplier_name: row.purchase_supplier_name || '',
+    warranty_expire_date: formatDate(row.warranty_expire_date),
+    warranty_months: row.warranty_months ?? '',
     brand: row.brand || '',
     model: row.model || '',
     spec: config.spec || '',
     location: row.location || '',
     sn: row.sn || '',
     warehouse: config.warehouse || row.location || '',
-    created_at: row.created_at
+    created_at: formatDate(row.created_at)
   }
 }
 
@@ -282,5 +314,18 @@ function buildAssetRisks(asset) {
   if (asset.status === 'repair') risks.push({ level: 'medium', message: '资产维修中，请关注维修周期' })
   if (asset.status === 'pending_scrap') risks.push({ level: 'medium', message: '资产处于待报废审批流程' })
   if (asset.status === 'scrapped') risks.push({ level: 'low', message: '资产已报废，等待处置归档' })
+  if (asset.warranty_expire_date && new Date(asset.warranty_expire_date) < new Date()) risks.push({ level: 'medium', message: '资产质保已过期' })
   return risks.length ? risks : [{ level: 'low', message: '暂无显著风险' }]
+}
+
+function formatDate(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toISOString().slice(0, 10)
+}
+
+function dateToApi(value) {
+  if (!value) return null
+  return `${value}T00:00:00`
 }

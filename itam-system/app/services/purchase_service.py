@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
 from app.models.asset import Asset
@@ -51,6 +53,7 @@ class PurchaseService:
             return {"purchase": purchase, "assets": []}
 
         created_assets: list[Asset] = []
+        purchase_date = datetime.utcnow()
         for item in purchase.items:
             for _ in range(item.quantity):
                 asset = Asset(
@@ -62,6 +65,9 @@ class PurchaseService:
                     sn=None,
                     config={},
                     purchase_price=item.unit_price,
+                    purchase_date=purchase_date,
+                    purchase_approval_no=purchase.purchase_no,
+                    purchase_supplier_name=purchase.supplier_name,
                     status="in_stock",
                     owner_user_id=None,
                     dept_id=item.dept_id,
@@ -87,6 +93,7 @@ class PurchaseService:
 
         item_map = {item.id: item for item in purchase.items}
         created_assets: list[Asset] = []
+        default_purchase_date = datetime.utcnow()
         for acceptance in payload.acceptances:
             item = item_map.get(acceptance.item_id)
             if not item:
@@ -112,6 +119,11 @@ class PurchaseService:
                     sn=accepted.sn,
                     config=config,
                     purchase_price=accepted.purchase_price if accepted.purchase_price is not None else item.unit_price,
+                    purchase_date=accepted.purchase_date or default_purchase_date,
+                    purchase_approval_no=accepted.purchase_approval_no or purchase.purchase_no,
+                    purchase_supplier_name=accepted.purchase_supplier_name or purchase.supplier_name,
+                    warranty_expire_date=accepted.warranty_expire_date,
+                    warranty_months=accepted.warranty_months,
                     status="in_stock",
                     owner_user_id=accepted.owner_user_id,
                     dept_id=accepted.dept_id if accepted.dept_id is not None else item.dept_id,

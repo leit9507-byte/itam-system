@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,6 +38,11 @@ class AcceptedAssetCreate(BaseModel):
     dept_id: Optional[str] = None
     owner_user_id: Optional[str] = None
     purchase_price: Optional[float] = None
+    purchase_date: Optional[datetime] = None
+    purchase_approval_no: Optional[str] = None
+    purchase_supplier_name: Optional[str] = None
+    warranty_expire_date: Optional[datetime] = None
+    warranty_months: Optional[int] = None
 
 
 class PurchaseItemAcceptance(BaseModel):

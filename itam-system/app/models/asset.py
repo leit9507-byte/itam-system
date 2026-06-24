@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Column, DateTime, Float, String
+from sqlalchemy import JSON, Column, DateTime, Float, Integer, String
 
 from app.core.database import Base
 
@@ -16,6 +16,11 @@ class Asset(Base):
     sn = Column(String(128), unique=True, nullable=True, index=True)
     config = Column(JSON, nullable=True)
     purchase_price = Column(Float, default=0)
+    purchase_date = Column(DateTime, nullable=True)
+    purchase_approval_no = Column(String(128), nullable=True, index=True)
+    purchase_supplier_name = Column(String(128), nullable=True, index=True)
+    warranty_expire_date = Column(DateTime, nullable=True)
+    warranty_months = Column(Integer, nullable=True)
     status = Column(String(32), default="in_stock", index=True)
     owner_user_id = Column(String(64), nullable=True, index=True)
     dept_id = Column(String(64), nullable=True, index=True)

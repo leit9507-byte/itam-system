@@ -1,4 +1,5 @@
 import csv
+from datetime import datetime
 from io import BytesIO, StringIO
 from typing import Any
 
@@ -27,6 +28,11 @@ class AssetService:
             sn=payload.sn,
             config=payload.config,
             purchase_price=payload.purchase_price,
+            purchase_date=payload.purchase_date,
+            purchase_approval_no=payload.purchase_approval_no,
+            purchase_supplier_name=payload.purchase_supplier_name,
+            warranty_expire_date=payload.warranty_expire_date,
+            warranty_months=payload.warranty_months,
             status=payload.status,
             owner_user_id=payload.owner_user_id,
             dept_id=payload.dept_id,
@@ -66,6 +72,11 @@ class AssetService:
                     sn=normalized.sn,
                     config=normalized.config,
                     purchase_price=normalized.purchase_price,
+                    purchase_date=normalized.purchase_date,
+                    purchase_approval_no=normalized.purchase_approval_no,
+                    purchase_supplier_name=normalized.purchase_supplier_name,
+                    warranty_expire_date=normalized.warranty_expire_date,
+                    warranty_months=normalized.warranty_months,
                     status=normalized.status,
                     owner_user_id=normalized.owner_user_id,
                     dept_id=normalized.dept_id,
@@ -139,9 +150,9 @@ class AssetService:
                     return value
             return default
 
-        price = pick("purchase_price", "price", "unit_price", "金额", "价格", "单价", default=0)
+        price = pick("purchase_price", "price", "unit_price", "采购价格", "价格", "单价", default=0)
         config = {
-            "spec": pick("spec", "规格", default=""),
+            "spec": pick("spec", "规格", "配置", default=""),
             "warehouse": pick("warehouse", "仓库", default=""),
             "source": "batch_import",
         }
@@ -154,6 +165,11 @@ class AssetService:
             sn=pick("sn", "serial_number", "序列号", "SN"),
             config=config,
             purchase_price=float(price or 0),
+            purchase_date=AssetService.parse_datetime(pick("purchase_date", "采购日期", "采购时间")),
+            purchase_approval_no=pick("purchase_approval_no", "采购审批单号", "审批单号", "采购单号"),
+            purchase_supplier_name=pick("purchase_supplier_name", "采购供应商", "供应商"),
+            warranty_expire_date=AssetService.parse_datetime(pick("warranty_expire_date", "质保到期", "质保到期日")),
+            warranty_months=AssetService.parse_int(pick("warranty_months", "质保月数", "质保")),
             status=pick("status", "状态", default="in_stock"),
             owner_user_id=pick("owner_user_id", "owner", "使用人", "责任人"),
             dept_id=pick("dept_id", "dept", "部门"),
@@ -226,3 +242,29 @@ class AssetService:
         db.commit()
         db.refresh(asset)
         return asset
+
+    @staticmethod
+    def parse_datetime(value: Any) -> datetime | None:
+        if value in (None, ""):
+            return None
+        if isinstance(value, datetime):
+            return value
+        text = str(value).strip()
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
+            try:
+                return datetime.strptime(text, fmt)
+            except ValueError:
+                continue
+        try:
+            return datetime.fromisoformat(text)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def parse_int(value: Any) -> int | None:
+        if value in (None, ""):
+            return None
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None

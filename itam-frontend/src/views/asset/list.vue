@@ -3,18 +3,18 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">资产管理</h2>
-        <p class="page-subtitle">支持 Excel 导入、批量出入库、用户领用、资产调整、维修登记和报废审批</p>
+        <p class="page-subtitle">支持批量导入、出入库、使用人绑定、维修登记、报废审批和采购/质保信息维护</p>
       </div>
       <el-button type="primary" @click="importDialog.visible = true">批量导入资产</el-button>
     </div>
 
     <el-card shadow="never">
       <div class="toolbar">
-        <el-input v-model="filters.keyword" clearable placeholder="搜索资产ID/名称/部门/序列号/使用人" style="width: 320px" @input="loadAssets" />
+        <el-input v-model="filters.keyword" clearable placeholder="搜索资产ID/名称/部门/序列号/使用人/供应商" style="width: 340px" @input="loadAssets" />
         <el-select v-model="filters.status" clearable placeholder="状态" style="width: 150px" @change="loadAssets">
           <el-option v-for="item in assetStatuses" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
-        <el-select v-model="filters.category" clearable placeholder="设备类型" style="width: 160px" @change="loadAssets">
+        <el-select v-model="filters.category" clearable placeholder="设备类型" style="width: 170px" @change="loadAssets">
           <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
         </el-select>
         <el-divider direction="vertical" />
@@ -28,7 +28,7 @@
       <el-alert v-if="selected.length" :title="`已选择 ${selected.length} 个资产`" type="info" show-icon :closable="false" class="selection-alert" />
       <el-table :data="assets" border stripe @selection-change="selected = $event">
         <el-table-column type="selection" width="48" />
-        <el-table-column prop="asset_id" label="资产ID" width="130" />
+        <el-table-column prop="asset_id" label="资产ID" width="132" />
         <el-table-column label="产品信息" min-width="240">
           <template #default="{ row }">
             <div class="asset-name">
@@ -39,10 +39,12 @@
         </el-table-column>
         <el-table-column prop="sn" label="序列号" width="150" />
         <el-table-column prop="category" label="类型" width="110" />
-        <el-table-column prop="owner" label="使用人" width="130">
+        <el-table-column prop="purchase_supplier_name" label="供应商" width="140" show-overflow-tooltip />
+        <el-table-column prop="purchase_date" label="采购时间" width="120" />
+        <el-table-column prop="owner" label="使用人" width="120">
           <template #default="{ row }">{{ displayUser(row.owner) }}</template>
         </el-table-column>
-        <el-table-column prop="dept" label="部门" width="130">
+        <el-table-column prop="dept" label="部门" width="120">
           <template #default="{ row }">{{ row.dept || '未绑定' }}</template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="110">
@@ -53,55 +55,35 @@
         <el-table-column prop="price" label="价值" width="120">
           <template #default="{ row }">¥{{ Number(row.price || 0).toLocaleString() }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="320" fixed="right">
+        <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="goDetail(row)">详情</el-button>
-            <el-button type="primary" link @click="openEdit(row)">编辑</el-button>
-            <el-button type="warning" link :disabled="['scrapped', 'pending_scrap'].includes(row.status)" @click="openSingleOutbound(row)">出库</el-button>
-            <el-button type="danger" link :disabled="['scrapped', 'pending_scrap'].includes(row.status)" @click="openSingleScrap(row)">报废</el-button>
-            <el-button type="warning" link :disabled="['scrapped', 'pending_scrap', 'repair'].includes(row.status)" @click="openRepair(row)">维修</el-button>
+            <el-button type="primary" link @click="goDetail(row)">详细</el-button>
+            <el-button type="primary" link :disabled="!canInbound(row)" @click="openSingleInbound(row)">入库</el-button>
+            <el-button type="warning" link :disabled="!canOutbound(row)" @click="openSingleOutbound(row)">出库</el-button>
+            <el-dropdown trigger="click" @command="command => handleMoreCommand(command, row)">
+              <el-button type="primary" link>
+                更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                  <el-dropdown-item command="repair" :disabled="!canRepair(row)">维修</el-dropdown-item>
+                  <el-dropdown-item command="scrap" :disabled="!canScrap(row)">报废</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
-    <el-dialog v-model="repairDialog.visible" title="新增维修记录" width="620px">
-      <el-descriptions v-if="repairDialog.asset" :column="2" border class="repair-asset">
-        <el-descriptions-item label="资产ID">{{ repairDialog.asset.asset_id }}</el-descriptions-item>
-        <el-descriptions-item label="资产名称">{{ repairDialog.asset.name }}</el-descriptions-item>
-        <el-descriptions-item label="序列号">{{ repairDialog.asset.sn || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="当前状态">{{ statusMap[repairDialog.asset.status]?.label || repairDialog.asset.status }}</el-descriptions-item>
-      </el-descriptions>
-      <el-form :model="repairDialog.form" label-width="100px" class="repair-form">
-        <el-form-item label="维修时间" required>
-          <el-date-picker v-model="repairDialog.form.repair_time" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="故障原因" required>
-          <el-input v-model="repairDialog.form.fault_reason" type="textarea" :rows="4" placeholder="例如：无法开机、屏幕损坏、主板故障等" />
-        </el-form-item>
-        <el-form-item label="维修费用" required>
-          <el-input-number v-model="repairDialog.form.repair_cost" :min="0" :precision="2" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="维修商">
-          <el-input v-model="repairDialog.form.vendor" placeholder="可填写供应商或内部维修人" />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="repairDialog.form.remark" type="textarea" :rows="3" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="repairDialog.visible = false">取消</el-button>
-        <el-button type="primary" @click="submitRepair">创建维修单</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="editDialog.visible" title="调整资产信息" width="760px">
-      <el-form :model="editDialog.form" label-width="100px">
+    <el-dialog v-model="editDialog.visible" title="调整资产信息" width="900px">
+      <el-form :model="editDialog.form" label-width="112px">
         <div class="edit-grid">
           <el-form-item label="资产名称"><el-input v-model="editDialog.form.name" /></el-form-item>
           <el-form-item label="序列号"><el-input v-model="editDialog.form.sn" /></el-form-item>
           <el-form-item label="设备类型">
-            <el-select v-model="editDialog.form.category" filterable allow-create style="width: 100%">
+            <el-select v-model="editDialog.form.category" filterable allow-create default-first-option style="width: 100%">
               <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
             </el-select>
           </el-form-item>
@@ -114,9 +96,18 @@
           <el-form-item label="型号"><el-input v-model="editDialog.form.model" /></el-form-item>
           <el-form-item label="规格"><el-input v-model="editDialog.form.spec" /></el-form-item>
           <el-form-item label="价值"><el-input-number v-model="editDialog.form.price" :min="0" style="width: 100%" /></el-form-item>
+          <el-form-item label="采购时间">
+            <el-date-picker v-model="editDialog.form.purchase_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="采购审批单号"><el-input v-model="editDialog.form.purchase_approval_no" /></el-form-item>
+          <el-form-item label="采购供应商"><el-input v-model="editDialog.form.purchase_supplier_name" /></el-form-item>
+          <el-form-item label="质保到期">
+            <el-date-picker v-model="editDialog.form.warranty_expire_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="质保月数"><el-input-number v-model="editDialog.form.warranty_months" :min="0" style="width: 100%" /></el-form-item>
           <el-form-item label="使用人">
             <el-select v-model="editDialog.form.owner_user_id" filterable clearable style="width: 100%" @change="fillUserToForm(editDialog.form, $event)">
-              <el-option v-for="user in users" :key="user.user_id" :label="`${user.display_name}（${user.username}）`" :value="user.user_id" />
+              <el-option v-for="user in users" :key="user.user_id" :label="`${user.display_name} (${user.username})`" :value="user.user_id" />
             </el-select>
           </el-form-item>
           <el-form-item label="部门"><el-input v-model="editDialog.form.dept_id" /></el-form-item>
@@ -130,8 +121,78 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="importDialog.visible" title="批量导入资产" width="860px">
-      <el-alert title="支持上传 .xlsx/.xlsm，也支持从 Excel 复制后粘贴。推荐表头：资产名称、设备类型、品牌、型号、序列号、价格、使用人、部门、仓库、状态。" type="info" show-icon :closable="false" />
+    <el-dialog v-model="batch.visible" :title="batchTitle" width="660px">
+      <el-alert :title="`本次将处理 ${batch.assets.length} 个资产`" type="info" show-icon :closable="false" />
+      <el-form :model="batch.form" label-width="110px" class="batch-form">
+        <template v-if="batch.type === 'inbound'">
+          <el-form-item label="入库仓库"><el-input v-model="batch.form.warehouse" /></el-form-item>
+          <el-form-item label="备注"><el-input v-model="batch.form.remark" type="textarea" :rows="3" placeholder="例如：归还入库、调拨回库" /></el-form-item>
+        </template>
+        <template v-if="batch.type === 'outbound'">
+          <el-form-item label="出库类型">
+            <el-select v-model="batch.form.toStatus" style="width: 100%">
+              <el-option label="领用在用" value="in_use" />
+              <el-option label="借出" value="borrowed" />
+              <el-option label="已出库" value="out_stock" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="领用人" required>
+            <el-select v-model="batch.form.owner_user_id" filterable style="width: 100%" placeholder="选择用户目录中的用户" @change="fillUserToForm(batch.form, $event)">
+              <el-option v-for="user in users" :key="user.user_id" :label="`${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`" :value="user.user_id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="部门"><el-input v-model="batch.form.dept_id" /></el-form-item>
+          <el-form-item label="位置"><el-input v-model="batch.form.location" /></el-form-item>
+          <el-form-item label="备注"><el-input v-model="batch.form.remark" type="textarea" :rows="3" /></el-form-item>
+        </template>
+        <template v-if="batch.type === 'scrap'">
+          <el-form-item label="申请人/部门"><el-input v-model="batch.form.applicant" /></el-form-item>
+          <el-form-item label="处置方式">
+            <el-select v-model="batch.form.disposal_method" style="width: 100%">
+              <el-option label="环保回收" value="环保回收" />
+              <el-option label="供应商回收" value="供应商回收" />
+              <el-option label="内部拆件" value="内部拆件" />
+              <el-option label="销毁处理" value="销毁处理" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="预计残值"><el-input-number v-model="batch.form.estimated_residual_value" :min="0" style="width: 100%" /></el-form-item>
+          <el-form-item label="报废原因"><el-input v-model="batch.form.reason" type="textarea" :rows="4" /></el-form-item>
+        </template>
+      </el-form>
+      <template #footer>
+        <el-button @click="batch.visible = false">取消</el-button>
+        <el-button type="primary" @click="submitBatch">确认执行</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="repairDialog.visible" title="新增维修记录" width="620px">
+      <el-descriptions v-if="repairDialog.asset" :column="2" border class="repair-asset">
+        <el-descriptions-item label="资产ID">{{ repairDialog.asset.asset_id }}</el-descriptions-item>
+        <el-descriptions-item label="资产名称">{{ repairDialog.asset.name }}</el-descriptions-item>
+        <el-descriptions-item label="序列号">{{ repairDialog.asset.sn || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="当前状态">{{ statusMap[repairDialog.asset.status]?.label || repairDialog.asset.status }}</el-descriptions-item>
+      </el-descriptions>
+      <el-form :model="repairDialog.form" label-width="100px" class="repair-form">
+        <el-form-item label="维修时间" required>
+          <el-date-picker v-model="repairDialog.form.repair_time" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="故障原因" required>
+          <el-input v-model="repairDialog.form.fault_reason" type="textarea" :rows="4" placeholder="例如：无法开机、屏幕损坏、主板故障" />
+        </el-form-item>
+        <el-form-item label="维修费用" required>
+          <el-input-number v-model="repairDialog.form.repair_cost" :min="0" :precision="2" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="维修商"><el-input v-model="repairDialog.form.vendor" /></el-form-item>
+        <el-form-item label="备注"><el-input v-model="repairDialog.form.remark" type="textarea" :rows="3" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="repairDialog.visible = false">取消</el-button>
+        <el-button type="primary" @click="submitRepair">创建维修单</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="importDialog.visible" title="批量导入资产" width="900px">
+      <el-alert title="支持上传 .xlsx/.xlsm，也支持从 Excel 复制粘贴。推荐表头：资产名称、设备类型、品牌、型号、序列号、价格、采购日期、采购审批单号、采购供应商、质保到期、使用人、部门、仓库、状态。" type="info" show-icon :closable="false" />
       <div class="upload-row">
         <el-upload :show-file-list="false" accept=".xlsx,.xlsm" :before-upload="submitExcelImport">
           <el-button type="primary">上传 Excel 文件</el-button>
@@ -148,53 +209,11 @@
       </el-table>
       <el-result v-if="importDialog.result && !importDialog.result.errors.length" icon="success" :title="`已导入 ${importDialog.result.created} 条资产`" sub-title="资产已写入后端，并生成批量导入生命周期记录" />
     </el-dialog>
-
-    <el-dialog v-model="batch.visible" :title="batchTitle" width="640px">
-      <el-alert :title="`本次将处理 ${batch.assets.length} 个资产`" type="info" show-icon :closable="false" />
-      <el-form :model="batch.form" label-width="110px" class="batch-form">
-        <template v-if="batch.type === 'inbound'">
-          <el-form-item label="入库仓库"><el-input v-model="batch.form.warehouse" /></el-form-item>
-        </template>
-        <template v-if="batch.type === 'outbound'">
-          <el-form-item label="出库类型">
-            <el-select v-model="batch.form.toStatus" style="width: 100%">
-              <el-option label="领用在用" value="in_use" />
-              <el-option label="借出" value="borrowed" />
-              <el-option label="已出库" value="out_stock" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="领用人">
-            <el-select v-model="batch.form.owner_user_id" filterable style="width: 100%" placeholder="选择用户目录中的用户" @change="fillUserToForm(batch.form, $event)">
-              <el-option v-for="user in users" :key="user.user_id" :label="`${user.display_name}（${user.username} / ${user.dept_name || user.dept_id || '未分部门'}）`" :value="user.user_id" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="部门"><el-input v-model="batch.form.dept_id" /></el-form-item>
-          <el-form-item label="位置"><el-input v-model="batch.form.location" /></el-form-item>
-        </template>
-        <template v-if="batch.type === 'scrap'">
-          <el-form-item label="申请人/部门"><el-input v-model="batch.form.applicant" /></el-form-item>
-          <el-form-item label="处置方式">
-            <el-select v-model="batch.form.disposal_method" style="width: 100%">
-              <el-option label="环保回收" value="环保回收" />
-              <el-option label="供应商回收" value="供应商回收" />
-              <el-option label="内部拆件" value="内部拆件" />
-              <el-option label="销毁处理" value="销毁处理" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="预计残值"><el-input-number v-model="batch.form.estimated_residual_value" :min="0" style="width: 100%" /></el-form-item>
-          <el-form-item label="报废原因"><el-input v-model="batch.form.reason" type="textarea" :rows="4" /></el-form-item>
-        </template>
-        <el-form-item v-if="batch.type !== 'scrap'" label="备注"><el-input v-model="batch.form.remark" type="textarea" :rows="3" /></el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="batch.visible = false">取消</el-button>
-        <el-button type="primary" @click="submitBatch">确认执行</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
+import { ArrowDown } from '@element-plus/icons-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -264,7 +283,7 @@ function defaultRepairForm() {
 
 function displayUser(userId) {
   const user = users.value.find(item => item.user_id === userId || item.username === userId)
-  return user ? `${user.display_name}` : userId || '未分配'
+  return user ? user.display_name : userId || '未分配'
 }
 
 function fillUserToForm(form, userId) {
@@ -274,6 +293,22 @@ function fillUserToForm(form, userId) {
   form.dept_id = user?.dept_id || user?.dept_name || ''
   form.dept_name = user?.dept_name || user?.dept_id || ''
   if (!form.location && user?.dept_name) form.location = user.dept_name
+}
+
+function canInbound(row) {
+  return !['in_stock', 'pending_scrap', 'scrapped'].includes(row.status)
+}
+
+function canOutbound(row) {
+  return ['in_stock', 'idle'].includes(row.status)
+}
+
+function canRepair(row) {
+  return !['scrapped', 'pending_scrap', 'repair'].includes(row.status)
+}
+
+function canScrap(row) {
+  return !['scrapped', 'pending_scrap'].includes(row.status)
 }
 
 function goDetail(row) {
@@ -293,6 +328,7 @@ async function submitEdit() {
 }
 
 function openRepair(row) {
+  if (!canRepair(row)) return
   repairDialog.asset = row
   Object.assign(repairDialog.form, defaultRepairForm())
   repairDialog.visible = true
@@ -314,27 +350,59 @@ async function submitRepair() {
 }
 
 function openBatch(type) {
+  const target = selected.value
+  if (!validateBatchAssets(type, target)) return
   batch.type = type
-  batch.assets = selected.value
+  batch.assets = target
   Object.assign(batch.form, defaultBatchForm())
   batch.visible = true
 }
 
+function openSingleInbound(row) {
+  if (!canInbound(row)) return
+  selected.value = [row]
+  openBatch('inbound')
+}
+
 function openSingleOutbound(row) {
+  if (!canOutbound(row)) return
   selected.value = [row]
   openBatch('outbound')
 }
 
 function openSingleScrap(row) {
+  if (!canScrap(row)) return
   selected.value = [row]
   openBatch('scrap')
 }
 
+function handleMoreCommand(command, row) {
+  if (command === 'edit') openEdit(row)
+  if (command === 'repair') openRepair(row)
+  if (command === 'scrap') openSingleScrap(row)
+}
+
+function validateBatchAssets(type, rows) {
+  if (type === 'outbound' && rows.some(row => !canOutbound(row))) {
+    ElMessage.warning('只有在库或闲置资产可以出库；在用资产不能再次出库，请先入库回收。')
+    return false
+  }
+  if (type === 'inbound' && rows.some(row => !canInbound(row))) {
+    ElMessage.warning('在库、待报废或已报废资产不能执行入库。')
+    return false
+  }
+  if (type === 'scrap' && rows.some(row => !canScrap(row))) {
+    ElMessage.warning('待报废或已报废资产不能重复发起报废。')
+    return false
+  }
+  return true
+}
+
 function fillImportExample() {
   importDialog.content = [
-    '资产名称,设备类型,品牌,型号,序列号,价格,使用人,部门,仓库,状态',
-    'ThinkPad X1 Carbon,Laptop,Lenovo,X1 Carbon Gen 12,SN-IMPORT-001,15000,U-ADMIN,IT,上海IT仓,in_stock',
-    'Dell U2723QE,Monitor,Dell,U2723QE,SN-IMPORT-002,3999,U-AUDITOR,AUDIT,上海IT仓,in_stock'
+    '资产名称,设备类型,品牌,型号,序列号,价格,采购日期,采购审批单号,采购供应商,质保到期,使用人,部门,仓库,状态',
+    'ThinkPad X1 Carbon,笔记本电脑,Lenovo,X1 Carbon Gen 12,SN-IMPORT-001,15000,2026-06-24,OA-20260624-001,联想授权供应商,2029-06-24,U-ADMIN,IT,上海IT仓,in_stock',
+    'Dell U2723QE,显示器,Dell,U2723QE,SN-IMPORT-002,3999,2026-06-24,OA-20260624-001,Dell渠道商,2029-06-24,U-AUDITOR,AUDIT,上海IT仓,in_stock'
   ].join('\n')
 }
 
@@ -366,6 +434,7 @@ async function submitTextImport() {
 }
 
 async function submitBatch() {
+  if (!validateBatchAssets(batch.type, batch.assets)) return
   if (batch.type === 'outbound' && !batch.form.owner_user_id) {
     ElMessage.warning('请选择领用人')
     return
@@ -424,5 +493,11 @@ async function submitBatch() {
 
 .upload-row {
   justify-content: flex-start;
+}
+
+@media (max-width: 900px) {
+  .edit-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

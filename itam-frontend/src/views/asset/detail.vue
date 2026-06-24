@@ -27,7 +27,21 @@
             <el-descriptions-item label="部门">{{ detail.asset?.dept || '未绑定' }}</el-descriptions-item>
             <el-descriptions-item label="位置">{{ detail.asset?.location || '-' }}</el-descriptions-item>
             <el-descriptions-item label="仓库">{{ detail.asset?.warehouse || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="价值">￥{{ Number(detail.asset?.price || 0).toLocaleString() }}</el-descriptions-item>
+            <el-descriptions-item label="价值">¥{{ Number(detail.asset?.price || 0).toLocaleString() }}</el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+
+        <el-card shadow="never">
+          <template #header>采购与质保</template>
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="采购时间">{{ detail.asset?.purchase_date || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="采购审批单号">{{ detail.asset?.purchase_approval_no || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="采购供应商">{{ detail.asset?.purchase_supplier_name || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="质保到期">{{ detail.asset?.warranty_expire_date || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="质保月数">{{ detail.asset?.warranty_months || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="质保状态">
+              <el-tag :type="warrantyTag.type">{{ warrantyTag.text }}</el-tag>
+            </el-descriptions-item>
           </el-descriptions>
         </el-card>
 
@@ -98,7 +112,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import Timeline from '../../components/Timeline.vue'
@@ -109,6 +123,12 @@ const route = useRoute()
 const detail = reactive({ asset: null, lifecycles: [], usageRecords: [], inventoryRecords: [], risks: [] })
 const attachments = ref([])
 const qrUrl = ref('')
+
+const warrantyTag = computed(() => {
+  const value = detail.asset?.warranty_expire_date
+  if (!value) return { type: 'info', text: '未设置' }
+  return new Date(value) >= new Date() ? { type: 'success', text: '在保' } : { type: 'danger', text: '已过保' }
+})
 
 onMounted(async () => {
   Object.assign(detail, await getAssetDetail(route.params.id))
