@@ -3,11 +3,12 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">公司管理</h2>
-        <p class="page-subtitle">按公司维度查看资产数量、资产原值和状态分布</p>
+        <p class="page-subtitle">维护公司主数据，并按公司查看资产数量、资产原值和状态分布</p>
       </div>
       <div class="toolbar">
         <el-input v-model="keyword" clearable placeholder="搜索公司/资产/部门" style="width: 260px" />
         <el-button @click="load">刷新</el-button>
+        <el-button type="primary" @click="openCreate">新增公司</el-button>
       </div>
     </div>
 
@@ -27,6 +28,9 @@
       </template>
       <el-table :data="filteredCompanies" border stripe highlight-current-row @row-click="selectCompany">
         <el-table-column prop="name" label="公司" min-width="180" />
+        <el-table-column prop="code" label="编码" width="120" />
+        <el-table-column prop="contact" label="联系人" width="120" />
+        <el-table-column prop="status" label="状态" width="90" />
         <el-table-column prop="asset_count" label="资产数" width="100" />
         <el-table-column prop="total_original_value" label="资产原值" width="150">
           <template #default="{ row }">¥{{ formatValue(row.total_original_value) }}</template>
@@ -37,6 +41,11 @@
         <el-table-column prop="repair_count" label="维修中" width="90" />
         <el-table-column prop="pending_scrap_count" label="待报废" width="90" />
         <el-table-column prop="scrapped_count" label="已报废" width="90" />
+        <el-table-column label="操作" width="90" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" link @click.stop="openEdit(row)">编辑</el-button>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
 
@@ -63,23 +72,49 @@
         </el-table-column>
       </el-table>
     </el-card>
+
+    <el-dialog v-model="dialog.visible" :title="dialog.form.id ? '编辑公司' : '新增公司'" width="520px">
+      <el-form :model="dialog.form" label-width="90px">
+        <el-form-item label="公司名称" required>
+          <el-input v-model="dialog.form.name" placeholder="请输入公司名称" />
+        </el-form-item>
+        <el-form-item label="公司编码">
+          <el-input v-model="dialog.form.code" placeholder="例如：HQ、SUB-A" />
+        </el-form-item>
+        <el-form-item label="联系人">
+          <el-input v-model="dialog.form.contact" />
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="dialog.form.status" style="width: 100%">
+            <el-option label="启用" value="启用" />
+            <el-option label="停用" value="停用" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dialog.visible = false">取消</el-button>
+        <el-button type="primary" @click="submitCompany">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { getCompanies } from '../../api/company'
+import { ElMessage } from 'element-plus'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { createCompany, getCompanies, updateCompany } from '../../api/company'
 
 const companies = ref([])
 const currentCompany = ref(null)
 const keyword = ref('')
+const dialog = reactive({ visible: false, form: defaultForm() })
 
 const filteredCompanies = computed(() => {
   const text = keyword.value.trim().toLowerCase()
   if (!text) return companies.value
   return companies.value.filter(company => {
     const assetText = company.assets.map(asset => [asset.asset_id, asset.name, asset.dept_id, asset.purchase_supplier_name].join(' ')).join(' ')
-    return [company.name, assetText].join(' ').toLowerCase().includes(text)
+    return [company.name, company.code, company.contact, assetText].join(' ').toLowerCase().includes(text)
   })
 })
 
@@ -95,7 +130,34 @@ onMounted(load)
 
 async function load() {
   companies.value = await getCompanies()
-  currentCompany.value = companies.value[0] || null
+  if (!currentCompany.value) currentCompany.value = companies.value[0] || null
+  else currentCompany.value = companies.value.find(item => item.id === currentCompany.value.id || item.name === currentCompany.value.name) || companies.value[0] || null
+}
+
+function defaultForm() {
+  return { id: null, name: '', code: '', contact: '', status: '启用' }
+}
+
+function openCreate() {
+  dialog.form = defaultForm()
+  dialog.visible = true
+}
+
+function openEdit(row) {
+  dialog.form = { id: row.id, name: row.name, code: row.code || '', contact: row.contact || '', status: row.status || '启用' }
+  dialog.visible = true
+}
+
+async function submitCompany() {
+  if (!dialog.form.name.trim()) {
+    ElMessage.warning('请填写公司名称')
+    return
+  }
+  if (dialog.form.id) await updateCompany(dialog.form.id, dialog.form)
+  else await createCompany(dialog.form)
+  dialog.visible = false
+  ElMessage.success('公司信息已保存')
+  await load()
 }
 
 function selectCompany(row) {

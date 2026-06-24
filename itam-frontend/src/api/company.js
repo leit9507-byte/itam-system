@@ -15,3 +15,11 @@ export async function getCompanies() {
     assets: row.assets || []
   }))
 }
+
+export function createCompany(payload) {
+  return request.post('/company/save', payload)
+}
+
+export function updateCompany(id, payload) {
+  return request.put(`/company/${id}`, payload)
+}

@@ -22,6 +22,8 @@ def ensure_compatible_schema(engine) -> None:
         add_column(engine, columns, "assets", "purchase_supplier_name", "VARCHAR(128) NULL")
         add_column(engine, columns, "assets", "warranty_expire_date", "DATETIME NULL")
         add_column(engine, columns, "assets", "warranty_months", "INTEGER NULL")
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE assets SET company = '未设置公司' WHERE company IS NULL OR company = ''"))
 
     if "audit_rules" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("audit_rules")}

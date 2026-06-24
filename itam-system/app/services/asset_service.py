@@ -25,7 +25,7 @@ class AssetService:
         user = AssetService.find_user(db, payload.owner_user_id)
         asset = Asset(
             asset_id=getattr(payload, "asset_id", None) or AssetService.generate_asset_id(db),
-            company=payload.company,
+            company=payload.company or "未设置公司",
             name=payload.name,
             category=payload.category,
             brand=payload.brand,
@@ -71,7 +71,7 @@ class AssetService:
 
                 asset = Asset(
                     asset_id=normalized.asset_id or AssetService.generate_asset_id(db),
-                    company=normalized.company,
+                    company=normalized.company or "未设置公司",
                     name=normalized.name,
                     category=normalized.category,
                     brand=normalized.brand,
@@ -322,7 +322,7 @@ class AssetService:
         user = user or None
         return {
             "asset_id": asset.asset_id,
-            "company": asset.company,
+            "company": asset.company or "未设置公司",
             "name": asset.name,
             "category": asset.category,
             "brand": asset.brand,

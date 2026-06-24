@@ -88,6 +88,7 @@
         <AssetEditFields
           :form="editDialog.form"
           :categories="categories"
+          :companies="companies"
           :suppliers="suppliers"
           :users="filteredUsers"
           @search-users="searchUsers"
@@ -104,6 +105,11 @@
       <el-alert :title="`本次将更新 ${selected.length} 个资产；未勾选的字段不会覆盖原资产信息。`" type="info" show-icon :closable="false" />
       <el-form :model="batchEdit.form" label-width="118px" class="batch-form">
         <div class="batch-edit-grid">
+          <el-checkbox v-model="batchEdit.fields.company">所属公司</el-checkbox>
+          <el-select v-model="batchEdit.form.company" filterable clearable :disabled="!batchEdit.fields.company">
+            <el-option v-for="item in companies" :key="item.id || item.name" :label="item.name" :value="item.name" />
+          </el-select>
+
           <el-checkbox v-model="batchEdit.fields.category">设备类型</el-checkbox>
           <el-select v-model="batchEdit.form.category" filterable allow-create default-first-option :disabled="!batchEdit.fields.category">
             <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
@@ -235,6 +241,7 @@ import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { assetStatuses, batchUpdateAssets, createScrapRequest, getAssets, importAssetsFromExcel, importAssetsFromText, inboundAsset, outboundAsset, statusMap, updateAsset } from '../../api/asset'
+import { getCompanies } from '../../api/company'
 import { getDeviceTypes } from '../../api/product'
 import { createRepairRecords } from '../../api/repair'
 import { getSuppliers } from '../../api/supplier'
@@ -244,6 +251,7 @@ const router = useRouter()
 const assets = ref([])
 const selected = ref([])
 const categories = ref([])
+const companies = ref([])
 const users = ref([])
 const filteredUsers = ref([])
 const suppliers = ref([])
@@ -257,7 +265,7 @@ const repairDialog = reactive({ visible: false, asset: null, assets: [], form: d
 const batchTitle = computed(() => ({ inbound: '批量入库', outbound: '批量出库', scrap: '批量申请报废' }[batch.type]))
 
 onMounted(async () => {
-  await Promise.all([loadAssets(), loadUsers(), loadTypes(), loadSuppliers()])
+  await Promise.all([loadAssets(), loadUsers(), loadTypes(), loadSuppliers(), loadCompanies()])
 })
 
 async function loadAssets() {
@@ -273,6 +281,10 @@ async function loadUsers() {
 async function loadTypes() {
   const types = await getDeviceTypes()
   categories.value = types.map(item => item.name)
+}
+
+async function loadCompanies() {
+  companies.value = await getCompanies()
 }
 
 async function loadSuppliers() {
@@ -298,6 +310,7 @@ function defaultBatchForm() {
 
 function defaultBatchEditForm() {
   return {
+    company: '',
     category: '',
     status: '',
     purchase_supplier_name: '',
@@ -312,6 +325,7 @@ function defaultBatchEditForm() {
 
 function defaultBatchEditFields() {
   return {
+    company: false,
     category: false,
     status: false,
     purchase_supplier_name: false,
@@ -582,6 +596,7 @@ const AssetEditFields = defineComponent({
   props: {
     form: { type: Object, required: true },
     categories: { type: Array, required: true },
+    companies: { type: Array, required: true },
     suppliers: { type: Array, required: true },
     users: { type: Array, required: true }
   },
@@ -590,7 +605,7 @@ const AssetEditFields = defineComponent({
     return () =>
       h('div', { class: 'edit-grid' }, [
         field('资产名称', h(resolveInput(), { modelValue: props.form.name, 'onUpdate:modelValue': value => (props.form.name = value) })),
-        field('所属公司', h(resolveInput(), { modelValue: props.form.company, 'onUpdate:modelValue': value => (props.form.company = value), placeholder: '例如：总部 / 子公司A' })),
+        field('所属公司', h(resolveSelect(), { modelValue: props.form.company, 'onUpdate:modelValue': value => (props.form.company = value), filterable: true, clearable: true, style: 'width:100%' }, () => props.companies.map(item => h(resolveOption(), { key: item.id || item.name, label: item.name, value: item.name })))),
         field('序列号', h(resolveInput(), { modelValue: props.form.sn, 'onUpdate:modelValue': value => (props.form.sn = value) })),
         field('设备类型', h(resolveSelect(), { modelValue: props.form.category, 'onUpdate:modelValue': value => (props.form.category = value), filterable: true, allowCreate: true, defaultFirstOption: true, style: 'width:100%' }, () => props.categories.map(item => h(resolveOption(), { key: item, label: item, value: item })))),
         field('状态', h(resolveSelect(), { modelValue: props.form.status, 'onUpdate:modelValue': value => (props.form.status = value), style: 'width:100%' }, () => assetStatuses.map(item => h(resolveOption(), { key: item.value, label: item.label, value: item.value })))),
