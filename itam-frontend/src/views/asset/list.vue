@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">资产管理</h2>
-        <p class="page-subtitle">支持批量导入、出入库、使用人绑定、维修登记、报废审批和采购/质保信息维护</p>
+        <p class="page-subtitle">支持批量导入、出入库、使用人绑定、供应商关联、维修登记、报废审批和采购/质保信息维护</p>
       </div>
       <el-button type="primary" @click="importDialog.visible = true">批量导入资产</el-button>
     </div>
@@ -11,11 +11,14 @@
     <el-card shadow="never">
       <div class="toolbar">
         <el-input v-model="filters.keyword" clearable placeholder="搜索资产ID/名称/部门/序列号/使用人/供应商" style="width: 340px" @input="loadAssets" />
-        <el-select v-model="filters.status" clearable placeholder="状态" style="width: 150px" @change="loadAssets">
+        <el-select v-model="filters.status" clearable placeholder="状态" style="width: 140px" @change="loadAssets">
           <el-option v-for="item in assetStatuses" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
-        <el-select v-model="filters.category" clearable placeholder="设备类型" style="width: 170px" @change="loadAssets">
+        <el-select v-model="filters.category" clearable filterable placeholder="设备类型" style="width: 160px" @change="loadAssets">
           <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
+        </el-select>
+        <el-select v-model="filters.supplier" clearable filterable placeholder="供应商" style="width: 180px" @change="loadAssets">
+          <el-option v-for="item in suppliers" :key="item.id || item.name" :label="item.name" :value="item.name" />
         </el-select>
         <el-divider direction="vertical" />
         <el-button :disabled="!selected.length" @click="openBatch('inbound')">批量入库</el-button>
@@ -39,9 +42,9 @@
         </el-table-column>
         <el-table-column prop="sn" label="序列号" width="150" />
         <el-table-column prop="category" label="类型" width="110" />
-        <el-table-column prop="purchase_supplier_name" label="供应商" width="140" show-overflow-tooltip />
+        <el-table-column prop="purchase_supplier_name" label="供应商" width="150" show-overflow-tooltip />
         <el-table-column prop="purchase_date" label="采购时间" width="120" />
-        <el-table-column prop="owner" label="使用人" width="120">
+        <el-table-column prop="owner" label="使用人" width="130">
           <template #default="{ row }">{{ displayUser(row.owner) }}</template>
         </el-table-column>
         <el-table-column prop="dept" label="部门" width="120">
@@ -100,14 +103,26 @@
             <el-date-picker v-model="editDialog.form.purchase_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
           </el-form-item>
           <el-form-item label="采购审批单号"><el-input v-model="editDialog.form.purchase_approval_no" /></el-form-item>
-          <el-form-item label="采购供应商"><el-input v-model="editDialog.form.purchase_supplier_name" /></el-form-item>
+          <el-form-item label="采购供应商">
+            <el-select
+              v-model="editDialog.form.purchase_supplier_name"
+              filterable
+              clearable
+              allow-create
+              default-first-option
+              placeholder="搜索或选择供应商"
+              style="width: 100%"
+            >
+              <el-option v-for="item in suppliers" :key="item.id || item.name" :label="supplierLabel(item)" :value="item.name" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="质保到期">
             <el-date-picker v-model="editDialog.form.warranty_expire_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
           </el-form-item>
           <el-form-item label="质保月数"><el-input-number v-model="editDialog.form.warranty_months" :min="0" style="width: 100%" /></el-form-item>
           <el-form-item label="使用人">
-            <el-select v-model="editDialog.form.owner_user_id" filterable clearable style="width: 100%" @change="fillUserToForm(editDialog.form, $event)">
-              <el-option v-for="user in users" :key="user.user_id" :label="`${user.display_name} (${user.username})`" :value="user.user_id" />
+            <el-select v-model="editDialog.form.owner_user_id" filterable remote clearable reserve-keyword :remote-method="searchUsers" style="width: 100%" @change="fillUserToForm(editDialog.form, $event)">
+              <el-option v-for="user in filteredUsers" :key="user.user_id" :label="userLabel(user)" :value="user.user_id" />
             </el-select>
           </el-form-item>
           <el-form-item label="部门"><el-input v-model="editDialog.form.dept_id" /></el-form-item>
@@ -137,8 +152,8 @@
             </el-select>
           </el-form-item>
           <el-form-item label="领用人" required>
-            <el-select v-model="batch.form.owner_user_id" filterable style="width: 100%" placeholder="选择用户目录中的用户" @change="fillUserToForm(batch.form, $event)">
-              <el-option v-for="user in users" :key="user.user_id" :label="`${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`" :value="user.user_id" />
+            <el-select v-model="batch.form.owner_user_id" filterable remote reserve-keyword style="width: 100%" placeholder="搜索用户姓名/账号/部门" :remote-method="searchUsers" @change="fillUserToForm(batch.form, $event)">
+              <el-option v-for="user in filteredUsers" :key="user.user_id" :label="userLabel(user)" :value="user.user_id" />
             </el-select>
           </el-form-item>
           <el-form-item label="部门"><el-input v-model="batch.form.dept_id" /></el-form-item>
@@ -220,6 +235,7 @@ import { ElMessage } from 'element-plus'
 import { assetStatuses, createScrapRequest, getAssets, importAssetsFromExcel, importAssetsFromText, inboundAsset, outboundAsset, statusMap, updateAsset } from '../../api/asset'
 import { getDeviceTypes } from '../../api/product'
 import { createRepairRecord } from '../../api/repair'
+import { getSuppliers } from '../../api/supplier'
 import { getUsers } from '../../api/user'
 
 const router = useRouter()
@@ -227,7 +243,9 @@ const assets = ref([])
 const selected = ref([])
 const categories = ref([])
 const users = ref([])
-const filters = reactive({ keyword: '', status: '', category: '' })
+const filteredUsers = ref([])
+const suppliers = ref([])
+const filters = reactive({ keyword: '', status: '', category: '', supplier: '' })
 const batch = reactive({ visible: false, type: 'inbound', assets: [], form: defaultBatchForm() })
 const importDialog = reactive({ visible: false, loading: false, content: '', result: null })
 const editDialog = reactive({ visible: false, form: {} })
@@ -236,7 +254,7 @@ const repairDialog = reactive({ visible: false, asset: null, form: defaultRepair
 const batchTitle = computed(() => ({ inbound: '批量入库', outbound: '批量出库', scrap: '批量申请报废' }[batch.type]))
 
 onMounted(async () => {
-  await Promise.all([loadAssets(), loadUsers(), loadTypes()])
+  await Promise.all([loadAssets(), loadUsers(), loadTypes(), loadSuppliers()])
 })
 
 async function loadAssets() {
@@ -246,11 +264,16 @@ async function loadAssets() {
 
 async function loadUsers() {
   users.value = await getUsers()
+  filteredUsers.value = users.value
 }
 
 async function loadTypes() {
   const types = await getDeviceTypes()
   categories.value = types.map(item => item.name)
+}
+
+async function loadSuppliers() {
+  suppliers.value = await getSuppliers()
 }
 
 function defaultBatchForm() {
@@ -286,6 +309,27 @@ function displayUser(userId) {
   return user ? user.display_name : userId || '未分配'
 }
 
+function userLabel(user) {
+  return `${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`
+}
+
+function supplierLabel(item) {
+  const meta = [item.contact, item.phone].filter(Boolean).join(' / ')
+  return meta ? `${item.name} (${meta})` : item.name
+}
+
+function searchUsers(query = '') {
+  const keyword = query.trim().toLowerCase()
+  filteredUsers.value = !keyword
+    ? users.value
+    : users.value.filter(user =>
+        [user.user_id, user.username, user.display_name, user.email, user.dept_id, user.dept_name]
+          .join(' ')
+          .toLowerCase()
+          .includes(keyword)
+      )
+}
+
 function fillUserToForm(form, userId) {
   const user = users.value.find(item => item.user_id === userId)
   form.owner_user_id = userId || ''
@@ -317,6 +361,7 @@ function goDetail(row) {
 
 function openEdit(row) {
   editDialog.form = { ...row, owner_user_id: row.owner_user_id || row.owner, dept_id: row.dept_id || row.dept }
+  searchUsers('')
   editDialog.visible = true
 }
 
@@ -355,6 +400,7 @@ function openBatch(type) {
   batch.type = type
   batch.assets = target
   Object.assign(batch.form, defaultBatchForm())
+  searchUsers('')
   batch.visible = true
 }
 

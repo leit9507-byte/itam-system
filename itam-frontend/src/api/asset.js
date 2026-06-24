@@ -25,6 +25,7 @@ export async function getAssets(params = {}) {
   const keyword = (params.keyword || '').toLowerCase()
   const status = params.status || ''
   const category = params.category || ''
+  const supplier = params.supplier || ''
   const list = mapped.filter(item => {
     const searchText = [
       item.asset_id,
@@ -37,7 +38,8 @@ export async function getAssets(params = {}) {
       item.purchase_approval_no,
       item.purchase_supplier_name
     ].join(' ').toLowerCase()
-    return (!keyword || searchText.includes(keyword)) && (!status || item.status === status) && (!category || item.category === category)
+    const hitSupplier = !supplier || item.purchase_supplier_name === supplier
+    return (!keyword || searchText.includes(keyword)) && (!status || item.status === status) && (!category || item.category === category) && hitSupplier
   })
   return { list, total: list.length }
 }
