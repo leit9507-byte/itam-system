@@ -33,19 +33,10 @@
       </el-card>
     </section>
 
-    <section class="dashboard-section two-column">
+    <section class="dashboard-section">
       <el-card shadow="never">
         <template #header>资产分类占比</template>
         <div ref="categoryRef" class="chart" />
-      </el-card>
-      <el-card shadow="never">
-        <template #header>
-          <div class="chart-title">
-            <span>部门资产分布</span>
-            <small>{{ data.departmentDistribution.length }} 个部门</small>
-          </div>
-        </template>
-        <div ref="departmentRef" class="chart" />
       </el-card>
     </section>
 
@@ -91,7 +82,6 @@ import * as echarts from 'echarts'
 import { getEnterpriseDashboard } from '../../api/dashboard'
 
 const categoryRef = ref(null)
-const departmentRef = ref(null)
 const purchaseRef = ref(null)
 const lifecycleRef = ref(null)
 const repairRef = ref(null)
@@ -100,7 +90,6 @@ const charts = []
 const data = reactive({
   metrics: [],
   categoryDistribution: [],
-  departmentDistribution: [],
   purchaseTrend: { months: [], amount: [], quantity: [] },
   lifecycleDistribution: [],
   maintenance: { top10: [], mttr: '0小时', monthCost: 0, yearCost: 0 }
@@ -110,6 +99,7 @@ onMounted(() => {
   window.addEventListener('resize', resizeCharts)
   load()
 })
+
 onUnmounted(() => {
   window.removeEventListener('resize', resizeCharts)
   charts.forEach(chart => chart.dispose())
@@ -131,35 +121,6 @@ function renderCharts() {
     tooltip: { trigger: 'item' },
     legend: { bottom: 0, type: 'scroll' },
     series: [{ name: '资产分类', type: 'pie', radius: ['42%', '68%'], center: ['50%', '44%'], data: data.categoryDistribution }]
-  })
-
-  const departmentRows = data.departmentDistribution.length ? data.departmentDistribution : [{ name: '暂无数据', value: 0 }]
-  const department = echarts.init(departmentRef.value)
-  department.setOption({
-    color: ['#2563eb'],
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: 52, right: 22, top: 28, bottom: 72, containLabel: true },
-    xAxis: {
-      type: 'category',
-      data: departmentRows.map(item => item.name),
-      axisLabel: {
-        interval: 0,
-        rotate: departmentRows.length > 6 ? 30 : 0,
-        width: 76,
-        overflow: 'truncate'
-      }
-    },
-    yAxis: { type: 'value', minInterval: 1 },
-    series: [
-      {
-        name: '资产数量',
-        type: 'bar',
-        barMaxWidth: 34,
-        data: departmentRows.map(item => item.value),
-        itemStyle: { color: '#2563eb', borderRadius: [4, 4, 0, 0] },
-        label: { show: true, position: 'top', color: '#334155' }
-      }
-    ]
   })
 
   const purchase = echarts.init(purchaseRef.value)
@@ -197,7 +158,7 @@ function renderCharts() {
     series: [{ name: '故障次数', type: 'bar', data: repairRows.map(item => item.count), itemStyle: { color: '#c2410c', borderRadius: [0, 4, 4, 0] } }]
   })
 
-  charts.push(category, department, purchase, lifecycle, repair)
+  charts.push(category, purchase, lifecycle, repair)
   resizeCharts()
 }
 
@@ -251,23 +212,13 @@ function sparkHeight(point, trend) {
   min-height: 136px;
 }
 
-.metric-head,
-.chart-title {
+.metric-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-
-.metric-head {
   color: var(--muted);
   font-size: 13px;
-}
-
-.chart-title small {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 400;
 }
 
 .metric-value {
