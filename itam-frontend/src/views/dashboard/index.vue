@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">资产总览</h2>
-        <p class="page-subtitle">基于正式资产、采购和库存状态数据生成首页指标</p>
+        <p class="page-subtitle">基于正式资产、采购和维修数据生成首页指标</p>
       </div>
       <div class="toolbar">
         <el-date-picker
@@ -39,7 +39,12 @@
         <div ref="categoryRef" class="chart" />
       </el-card>
       <el-card shadow="never">
-        <template #header>部门资产分布</template>
+        <template #header>
+          <div class="chart-title">
+            <span>部门资产分布</span>
+            <small>{{ data.departmentDistribution.length }} 个部门</small>
+          </div>
+        </template>
         <div ref="departmentRef" class="chart" />
       </el-card>
     </section>
@@ -101,8 +106,14 @@ const data = reactive({
   maintenance: { top10: [], mttr: '0小时', monthCost: 0, yearCost: 0 }
 })
 
-onMounted(load)
-onUnmounted(() => charts.forEach(chart => chart.dispose()))
+onMounted(() => {
+  window.addEventListener('resize', resizeCharts)
+  load()
+})
+onUnmounted(() => {
+  window.removeEventListener('resize', resizeCharts)
+  charts.forEach(chart => chart.dispose())
+})
 
 async function load() {
   Object.assign(data, await getEnterpriseDashboard({ dateRange: dateRange.value }))
@@ -122,50 +133,76 @@ function renderCharts() {
     series: [{ name: '资产分类', type: 'pie', radius: ['42%', '68%'], center: ['50%', '44%'], data: data.categoryDistribution }]
   })
 
+  const departmentRows = data.departmentDistribution.length ? data.departmentDistribution : [{ name: '暂无数据', value: 0 }]
   const department = echarts.init(departmentRef.value)
   department.setOption({
-    tooltip: { trigger: 'axis' },
-    grid: { left: 42, right: 18, top: 28, bottom: 52 },
-    xAxis: { type: 'category', data: data.departmentDistribution.map(item => item.name), axisLabel: { interval: 0, rotate: 24 } },
-    yAxis: { type: 'value' },
-    series: [{ name: '资产数量', type: 'bar', barWidth: 24, data: data.departmentDistribution.map(item => item.value), itemStyle: { color: '#1f7a6a', borderRadius: [4, 4, 0, 0] } }]
+    color: ['#2563eb'],
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 52, right: 22, top: 28, bottom: 72, containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: departmentRows.map(item => item.name),
+      axisLabel: {
+        interval: 0,
+        rotate: departmentRows.length > 6 ? 30 : 0,
+        width: 76,
+        overflow: 'truncate'
+      }
+    },
+    yAxis: { type: 'value', minInterval: 1 },
+    series: [
+      {
+        name: '资产数量',
+        type: 'bar',
+        barMaxWidth: 34,
+        data: departmentRows.map(item => item.value),
+        itemStyle: { color: '#2563eb', borderRadius: [4, 4, 0, 0] },
+        label: { show: true, position: 'top', color: '#334155' }
+      }
+    ]
   })
 
   const purchase = echarts.init(purchaseRef.value)
   purchase.setOption({
     tooltip: { trigger: 'axis' },
     legend: { top: 0 },
-    grid: { left: 52, right: 52, top: 48, bottom: 34 },
+    grid: { left: 56, right: 54, top: 48, bottom: 34 },
     xAxis: { type: 'category', data: data.purchaseTrend.months },
     yAxis: [
       { type: 'value', name: '金额' },
-      { type: 'value', name: '数量' }
+      { type: 'value', name: '数量', minInterval: 1 }
     ],
     series: [
-      { name: '采购金额', type: 'bar', data: data.purchaseTrend.amount, itemStyle: { color: '#2563eb', borderRadius: [4, 4, 0, 0] } },
+      { name: '采购金额', type: 'bar', data: data.purchaseTrend.amount, itemStyle: { color: '#0f766e', borderRadius: [4, 4, 0, 0] } },
       { name: '采购数量', type: 'line', yAxisIndex: 1, smooth: true, data: data.purchaseTrend.quantity, itemStyle: { color: '#f59e0b' } }
     ]
   })
 
   const lifecycle = echarts.init(lifecycleRef.value)
   lifecycle.setOption({
-    tooltip: { trigger: 'axis' },
-    grid: { left: 70, right: 20, top: 28, bottom: 36 },
-    xAxis: { type: 'value' },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 78, right: 20, top: 28, bottom: 36, containLabel: true },
+    xAxis: { type: 'value', minInterval: 1 },
     yAxis: { type: 'category', data: data.lifecycleDistribution.map(item => item.name) },
     series: [{ name: '资产数量', type: 'bar', data: data.lifecycleDistribution.map(item => item.value), itemStyle: { color: '#14b8a6', borderRadius: [0, 4, 4, 0] } }]
   })
 
+  const repairRows = data.maintenance.top10.length ? data.maintenance.top10 : [{ name: '暂无维修记录', count: 0 }]
   const repair = echarts.init(repairRef.value)
   repair.setOption({
-    tooltip: { trigger: 'axis' },
-    grid: { left: 110, right: 20, top: 20, bottom: 20 },
-    xAxis: { type: 'value' },
-    yAxis: { type: 'category', data: data.maintenance.top10.map(item => item.name), axisLabel: { width: 96, overflow: 'truncate' } },
-    series: [{ name: '故障次数', type: 'bar', data: data.maintenance.top10.map(item => item.count), itemStyle: { color: '#c2410c', borderRadius: [0, 4, 4, 0] } }]
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 112, right: 22, top: 20, bottom: 20, containLabel: true },
+    xAxis: { type: 'value', minInterval: 1 },
+    yAxis: { type: 'category', data: repairRows.map(item => item.name), axisLabel: { width: 104, overflow: 'truncate' } },
+    series: [{ name: '故障次数', type: 'bar', data: repairRows.map(item => item.count), itemStyle: { color: '#c2410c', borderRadius: [0, 4, 4, 0] } }]
   })
 
   charts.push(category, department, purchase, lifecycle, repair)
+  resizeCharts()
+}
+
+function resizeCharts() {
+  charts.forEach(chart => chart.resize())
 }
 
 function defaultDateRange() {
@@ -214,13 +251,23 @@ function sparkHeight(point, trend) {
   min-height: 136px;
 }
 
-.metric-head {
+.metric-head,
+.chart-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.metric-head {
   color: var(--muted);
   font-size: 13px;
+}
+
+.chart-title small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .metric-value {
