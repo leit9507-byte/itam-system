@@ -73,7 +73,6 @@
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="edit">编辑</el-dropdown-item>
                   <el-dropdown-item command="repair" :disabled="!canRepair(row)">维修</el-dropdown-item>
                   <el-dropdown-item command="scrap" :disabled="!canScrap(row)">报废</el-dropdown-item>
                 </el-dropdown-menu>
@@ -271,7 +270,7 @@
 
 <script setup>
 import { ArrowDown } from '@element-plus/icons-vue'
-import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, reactive, ref, resolveComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { assetStatuses, batchUpdateAssets, createScrapRequest, getAssets, importAssetsFromExcel, importAssetsFromText, inboundAsset, outboundAsset, statusMap, updateAsset } from '../../api/asset'
@@ -574,7 +573,6 @@ function openSingleScrap(row) {
 }
 
 function handleMoreCommand(command, row) {
-  if (command === 'edit') openEdit(row)
   if (command === 'repair') openRepair(row)
   if (command === 'scrap') openSingleScrap(row)
 }
@@ -685,12 +683,12 @@ function field(label, child) {
   return h(resolveFormItem(), { label }, () => child)
 }
 
-function resolveFormItem() { return 'el-form-item' }
-function resolveInput() { return 'el-input' }
-function resolveInputNumber() { return 'el-input-number' }
-function resolveSelect() { return 'el-select' }
-function resolveOption() { return 'el-option' }
-function resolveDatePicker() { return 'el-date-picker' }
+function resolveFormItem() { return resolveComponent('ElFormItem') }
+function resolveInput() { return resolveComponent('ElInput') }
+function resolveInputNumber() { return resolveComponent('ElInputNumber') }
+function resolveSelect() { return resolveComponent('ElSelect') }
+function resolveOption() { return resolveComponent('ElOption') }
+function resolveDatePicker() { return resolveComponent('ElDatePicker') }
 </script>
 
 <style scoped>
