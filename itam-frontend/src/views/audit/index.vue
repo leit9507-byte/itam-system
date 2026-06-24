@@ -3,9 +3,10 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">审计中心</h2>
-        <p class="page-subtitle">合并 AI 资产审计与风险分析，基于正式资产台账、采购数据和规则引擎生成风险结果</p>
+        <p class="page-subtitle">基于正式资产、采购和规则配置生成风险评分、命中明细与处置建议</p>
       </div>
       <el-space>
+        <el-button :icon="Setting" @click="openRules">规则设置</el-button>
         <el-button :icon="Document" @click="router.push('/report')">生成报告</el-button>
         <el-button type="primary" :icon="Refresh" :loading="loading" @click="handleRun">立即审计</el-button>
       </el-space>
@@ -18,7 +19,7 @@
           <div>
             <span class="meta-label">风险评分</span>
             <strong>{{ result?.risk_score || 0 }}</strong>
-            <p>评分来自正式规则命中结果，满分 100 分封顶。</p>
+            <p>评分来自当前启用规则的命中结果，最高 100 分。</p>
           </div>
         </div>
       </el-card>
@@ -68,38 +69,29 @@
       </div>
     </section>
 
-    <section class="analysis-section">
-      <el-card shadow="never">
-        <template #header>
-          <div class="card-header">
-            <span>风险分析</span>
-            <el-tag type="warning">已合并到审计中心</el-tag>
-          </div>
-        </template>
-        <div class="analysis-grid">
-          <div ref="trendRef" class="chart" />
-          <div ref="deptRef" class="chart" />
-        </div>
-      </el-card>
-    </section>
-
     <section class="detail-grid">
       <el-card shadow="never">
         <template #header>
           <div class="card-header">
             <span>规则命中矩阵</span>
-            <el-tag type="success">已启用</el-tag>
+            <el-button text type="primary" @click="openRules">调整规则</el-button>
           </div>
         </template>
         <el-table :data="result?.rules || []" border>
-          <el-table-column prop="name" label="规则名称" min-width="180" />
-          <el-table-column prop="severity" label="等级" width="90">
+          <el-table-column prop="name" label="规则名称" min-width="170" />
+          <el-table-column prop="scope_category" label="设备类型" width="130">
+            <template #default="{ row }">{{ row.scope_category || '全部' }}</template>
+          </el-table-column>
+          <el-table-column label="阈值" width="130">
+            <template #default="{ row }">{{ ruleThreshold(row) }}</template>
+          </el-table-column>
+          <el-table-column prop="severity_label" label="等级" width="90">
             <template #default="{ row }">
-              <el-tag :type="row.severity === '高' ? 'danger' : row.severity === '中' ? 'warning' : 'info'">{{ row.severity }}</el-tag>
+              <el-tag :type="severityType(row.severity)">{{ row.severity_label || severityLabel(row.severity) }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column prop="hits" label="命中数" width="90" />
-          <el-table-column prop="enabled" label="启用" width="90">
+          <el-table-column prop="enabled" label="启用" width="80">
             <template #default="{ row }"><el-switch v-model="row.enabled" disabled /></template>
           </el-table-column>
         </el-table>
@@ -137,24 +129,89 @@
         <el-table-column prop="price" label="金额" width="130">
           <template #default="{ row }">¥{{ formatValue(row.price) }}</template>
         </el-table-column>
-        <el-table-column prop="message" label="说明" min-width="240" />
-        <el-table-column label="操作" width="130" fixed="right">
+        <el-table-column prop="message" label="说明" min-width="260" />
+        <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="router.push(`/asset/detail/${row.asset_id}`)">资产详情</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
+
+    <el-drawer v-model="rulesDrawer.visible" title="审计规则设置" size="780px">
+      <div class="rule-help">
+        <strong>用户资产超限示例：</strong>
+        选择“笔记本电脑”，数量阈值填 2，表示同一用户名下笔记本电脑超过 2 台即命中规则。
+      </div>
+      <el-table :data="rulesDrawer.rules" border>
+        <el-table-column prop="name" label="规则" min-width="160" />
+        <el-table-column label="启用" width="72">
+          <template #default="{ row }"><el-switch v-model="row.enabled" /></template>
+        </el-table-column>
+        <el-table-column label="等级" width="110">
+          <template #default="{ row }">
+            <el-select v-model="row.severity" size="small">
+              <el-option label="高" value="high" />
+              <el-option label="中" value="medium" />
+              <el-option label="低" value="low" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="设备类型" min-width="150">
+          <template #default="{ row }">
+            <el-select v-model="row.scope_category" clearable filterable size="small" placeholder="全部">
+              <el-option label="全部" value="" />
+              <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="数量/金额阈值" width="150">
+          <template #default="{ row }">
+            <el-input-number
+              v-if="usesValueThreshold(row.rule_code)"
+              v-model="row.threshold_value"
+              :min="1"
+              :precision="0"
+              size="small"
+              controls-position="right"
+              class="rule-number"
+            />
+            <span v-else class="muted">不适用</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="闲置天数" width="130">
+          <template #default="{ row }">
+            <el-input-number
+              v-if="row.rule_code === 'ASSET_IDLE_OVER_90_DAYS'"
+              v-model="row.threshold_days"
+              :min="1"
+              :precision="0"
+              size="small"
+              controls-position="right"
+              class="rule-number"
+            />
+            <span v-else class="muted">不适用</span>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-space>
+          <el-button @click="rulesDrawer.visible = false">取消</el-button>
+          <el-button type="primary" :loading="rulesDrawer.saving" @click="saveRules">保存并重新审计</el-button>
+        </el-space>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Document, Refresh } from '@element-plus/icons-vue'
+import { Document, Refresh, Setting } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
-import { runAudit } from '../../api/audit'
+import { getAuditRules, runAudit, saveAuditRules } from '../../api/audit'
+import { getDeviceTypes } from '../../api/product'
 
 const router = useRouter()
 const loading = ref(false)
@@ -162,11 +219,11 @@ const result = ref(null)
 const severityFilter = ref('全部')
 const activeRule = ref('')
 const severityOptions = ['全部', '高', '中', '低']
+const categories = ref([])
 const scoreRef = ref(null)
-const trendRef = ref(null)
-const deptRef = ref(null)
 const idleRef = ref(null)
 const charts = []
+const rulesDrawer = reactive({ visible: false, saving: false, rules: [] })
 
 const summaryCards = computed(() => [
   { label: '资产健康分', value: result.value?.health_score || 0, hint: '100 - 风险评分' },
@@ -182,8 +239,15 @@ const filteredViolations = computed(() => {
   return rows.filter(item => item.severity === target)
 })
 
-onMounted(handleRun)
+onMounted(async () => {
+  await Promise.all([loadCategories(), handleRun()])
+})
 onUnmounted(() => charts.forEach(chart => chart.dispose()))
+
+async function loadCategories() {
+  const rows = await getDeviceTypes().catch(() => [])
+  categories.value = rows.map(item => item.name)
+}
 
 async function handleRun() {
   loading.value = true
@@ -197,13 +261,29 @@ async function handleRun() {
   }
 }
 
+async function openRules() {
+  rulesDrawer.rules = (await getAuditRules()).map(item => ({ ...item }))
+  rulesDrawer.visible = true
+}
+
+async function saveRules() {
+  rulesDrawer.saving = true
+  try {
+    await saveAuditRules(rulesDrawer.rules)
+    rulesDrawer.visible = false
+    ElMessage.success('规则已保存')
+    await handleRun()
+  } finally {
+    rulesDrawer.saving = false
+  }
+}
+
 function renderCharts() {
   charts.forEach(chart => chart.dispose())
   charts.length = 0
-  if (!result.value) return
+  if (!result.value || !scoreRef.value || !idleRef.value) return
 
   const riskTrend = result.value.riskTrend?.length ? result.value.riskTrend : [{ name: '本次审计', value: result.value.risk_score || 0 }]
-  const deptRows = result.value.deptRank?.length ? result.value.deptRank : [{ dept: '暂无风险', score: 0 }]
 
   const score = echarts.init(scoreRef.value)
   score.setOption({
@@ -221,27 +301,18 @@ function renderCharts() {
     series: [{ type: 'pie', radius: ['45%', '70%'], center: ['50%', '44%'], data: result.value.idleStats }]
   })
 
-  const trend = echarts.init(trendRef.value)
-  trend.setOption({
-    title: { text: '风险趋势', left: 8, top: 0, textStyle: { fontSize: 14 } },
-    tooltip: { trigger: 'axis' },
-    grid: { left: 40, right: 18, top: 48, bottom: 30 },
-    xAxis: { type: 'category', data: riskTrend.map(item => item.name) },
-    yAxis: { type: 'value', max: 100 },
-    series: [{ name: '风险评分', type: 'line', smooth: true, areaStyle: {}, data: riskTrend.map(item => item.value), itemStyle: { color: '#b45309' } }]
-  })
+  charts.push(score, idle)
+}
 
-  const dept = echarts.init(deptRef.value)
-  dept.setOption({
-    title: { text: '部门风险排行', left: 8, top: 0, textStyle: { fontSize: 14 } },
-    tooltip: { trigger: 'axis' },
-    grid: { left: 78, right: 18, top: 48, bottom: 24 },
-    xAxis: { type: 'value' },
-    yAxis: { type: 'category', data: deptRows.map(item => item.dept) },
-    series: [{ name: '风险分', type: 'bar', data: deptRows.map(item => item.score), itemStyle: { color: '#b45309', borderRadius: [0, 4, 4, 0] } }]
-  })
+function usesValueThreshold(ruleCode) {
+  return ['USER_ASSET_COUNT_LIMIT', 'HIGH_VALUE_WITHOUT_DEPT', 'SINGLE_OWNER_VALUE_LIMIT'].includes(ruleCode)
+}
 
-  charts.push(score, idle, trend, dept)
+function ruleThreshold(row) {
+  if (row.rule_code === 'ASSET_IDLE_OVER_90_DAYS') return `${row.threshold_days || 0} 天`
+  if (row.rule_code === 'USER_ASSET_COUNT_LIMIT') return `${row.threshold_value || 0} 台`
+  if (row.threshold_value) return `¥${formatValue(row.threshold_value)}`
+  return '-'
 }
 
 function focusRule(rule) {
@@ -302,7 +373,8 @@ function severityLabel(severity) {
 .summary-card p,
 .risk-item small,
 .risk-amount,
-.meta-label {
+.meta-label,
+.muted {
   color: var(--muted);
 }
 
@@ -362,14 +434,12 @@ function severityLabel(severity) {
 }
 
 .chart-stack,
-.detail-grid,
-.analysis-grid {
+.detail-grid {
   display: grid;
   gap: 16px;
 }
 
-.detail-grid,
-.analysis-grid {
+.detail-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -398,11 +468,24 @@ function severityLabel(severity) {
   width: 100%;
 }
 
+.rule-help {
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  line-height: 1.7;
+}
+
+.rule-number {
+  width: 112px;
+}
+
 @media (max-width: 1280px) {
   .summary-grid,
   .risk-section,
-  .detail-grid,
-  .analysis-grid {
+  .detail-grid {
     grid-template-columns: 1fr;
   }
 }

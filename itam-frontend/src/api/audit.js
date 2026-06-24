@@ -4,7 +4,7 @@ import { getPurchases } from './purchase'
 
 const ruleLabels = {
   USER_ASSET_COUNT_LIMIT: '用户资产数量超限',
-  ASSET_IDLE_OVER_90_DAYS: '资产闲置超过90天',
+  ASSET_IDLE_OVER_90_DAYS: '资产闲置超期',
   HIGH_VALUE_WITHOUT_DEPT: '高价值资产未绑定部门',
   SINGLE_OWNER_VALUE_LIMIT: '单人资产价值超标',
   MISSING_RETURN_ON_OFFBOARDING: '离职未归还资产',
@@ -18,11 +18,20 @@ const severityLabels = {
   low: '低'
 }
 
+export function getAuditRules() {
+  return request.get('/audit/rules')
+}
+
+export function saveAuditRules(rules) {
+  return request.post('/audit/rules', rules)
+}
+
 export async function runAudit() {
-  const [{ list: assets }, purchases, backend] = await Promise.all([
+  const [{ list: assets }, purchases, backend, rules] = await Promise.all([
     getAssets({}),
     getPurchases().catch(() => []),
-    request.post('/audit/run', { users: [] }).catch(() => null)
+    request.post('/audit/run', { users: [] }).catch(() => null),
+    getAuditRules().catch(() => [])
   ])
 
   const violations = normalizeViolations(backend?.violations || [], assets)
@@ -37,7 +46,7 @@ export async function runAudit() {
     involved_amount: involvedAmount,
     violations,
     ai_risks: aiRisks,
-    rules: buildRules(violations, aiRisks),
+    rules: buildRules(violations, aiRisks, rules),
     suggestions: buildSuggestions(aiRisks, violations, backend?.suggestions || []),
     riskTrend: [{ name: '本次审计', value: riskScore }],
     deptRank: buildDeptRank(assets, violations, aiRisks),
@@ -90,26 +99,15 @@ function normalizeViolations(rows, assets) {
       type: ruleLabels[rule] || row.type || rule,
       severity: row.severity || 'medium',
       severity_label: severityLabels[row.severity] || row.severity || '中',
-      message: cleanMessage(row.message, rule)
+      message: row.message || '发现资产合规风险'
     }
   })
-}
-
-function cleanMessage(message, rule) {
-  if (message && !message.includes('�') && !/[閻㈢挧妤俔锟]/.test(message)) return message
-  const fallback = {
-    USER_ASSET_COUNT_LIMIT: '责任人名下资产数量超过系统阈值',
-    ASSET_IDLE_OVER_90_DAYS: '资产长期处于库存或闲置状态',
-    HIGH_VALUE_WITHOUT_DEPT: '高价值资产未绑定责任部门',
-    SINGLE_OWNER_VALUE_LIMIT: '单个责任人名下资产价值超过阈值'
-  }
-  return fallback[rule] || '发现资产合规风险'
 }
 
 function buildAiRisks(assets, purchases, violations) {
   const highValueAssets = assets.filter(item => Number(item.price || 0) >= 50000)
   const idleAssets = assets.filter(item => item.status === 'idle')
-  const missingOwnerAssets = []
+  const missingOwnerAssets = assets.filter(item => item.status === 'in_use' && !item.owner)
   const pendingScrapAssets = assets.filter(item => item.status === 'pending_scrap')
   const abnormalPurchases = purchases.filter(item => {
     const hasAmount = Number(item.total_amount || 0) > 0
@@ -167,21 +165,25 @@ function buildAiRisks(assets, purchases, violations) {
   ]
 }
 
-function buildRules(violations, aiRisks) {
-  const enabledRules = [
-    { key: 'USER_ASSET_COUNT_LIMIT', name: '用户资产数量超限', severity: '中', enabled: true },
-    { key: 'ASSET_IDLE_OVER_90_DAYS', name: '资产闲置超过90天', severity: '低', enabled: true },
-    { key: 'HIGH_VALUE_WITHOUT_DEPT', name: '高价值资产未绑定部门', severity: '高', enabled: true },
-    { key: 'SINGLE_OWNER_VALUE_LIMIT', name: '单人资产价值超标', severity: '高', enabled: true },
-    { key: 'MISSING_RETURN_ON_OFFBOARDING', name: '离职未归还资产', severity: '高', enabled: true },
-    { key: 'PENDING_SCRAP', name: '即将报废资产', severity: '中', enabled: true },
-    { key: 'ABNORMAL_PURCHASE', name: '异常采购资产', severity: '高', enabled: true }
-  ]
-  return enabledRules.map(rule => {
-    const risk = aiRisks.find(item => item.rule === rule.key)
+function buildRules(violations, aiRisks, savedRules) {
+  const baseRules = savedRules?.length
+    ? savedRules
+    : [
+        { rule_code: 'USER_ASSET_COUNT_LIMIT', name: '用户资产数量超限', severity: 'medium', enabled: true },
+        { rule_code: 'ASSET_IDLE_OVER_90_DAYS', name: '资产闲置超期', severity: 'low', enabled: true },
+        { rule_code: 'HIGH_VALUE_WITHOUT_DEPT', name: '高价值资产未绑定部门', severity: 'high', enabled: true },
+        { rule_code: 'SINGLE_OWNER_VALUE_LIMIT', name: '单人资产价值超标', severity: 'high', enabled: true }
+      ]
+
+  return baseRules.map(rule => {
+    const key = rule.rule_code || rule.key
+    const risk = aiRisks.find(item => item.rule === key)
     return {
       ...rule,
-      hits: Math.max(countRule(violations, rule.key), risk?.count || 0)
+      key,
+      name: rule.name || ruleLabels[key] || key,
+      severity_label: severityLabels[rule.severity] || rule.severity,
+      hits: Math.max(countRule(violations, key), risk?.count || 0)
     }
   })
 }
@@ -197,9 +199,10 @@ function buildSuggestions(aiRisks, violations, backendSuggestions) {
   addWhen('MISSING_RETURN_ON_OFFBOARDING', '离职未归还风险需要接入用户离职状态后联动归还流程。')
   addWhen('PENDING_SCRAP', '待报废资产建议补齐审批记录、残值和处置方式。')
   addWhen('ABNORMAL_PURCHASE', '异常采购资产建议复核供应商、采购单价和审批单号。')
+  addWhen('USER_ASSET_COUNT_LIMIT', '用户资产数量超限建议按设备类型复核是否存在重复领用或未归还。')
 
   backendSuggestions.forEach(item => {
-    if (item && !suggestions.includes(item) && !/[閻㈢挧妤俔锟]/.test(item)) suggestions.push(item)
+    if (item && !suggestions.includes(item)) suggestions.push(item)
   })
 
   if (!suggestions.length) suggestions.push('当前正式数据未发现高优先级风险，建议保持月度盘点和季度审计节奏。')
