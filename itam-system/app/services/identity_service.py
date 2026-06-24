@@ -76,17 +76,27 @@ class IdentityService:
         auditor = db.query(UserDirectory).filter(UserDirectory.username == "auditor").first()
         if auditor and not auditor.password_hash:
             auditor.password_hash = hash_password("auditor")
-        if not db.query(RolePermission).first():
-            for role, resource, actions in [
-                ("user", "asset", ["read"]),
-                ("user", "catalog", ["read"]),
-                ("user", "purchase", ["read"]),
-                ("auditor", "asset", ["read"]),
-                ("auditor", "audit", ["read", "write"]),
-                ("auditor", "report", ["read"]),
-                ("auditor", "catalog", ["read"]),
-            ]:
-                for action in actions:
+        for role, resource, actions in [
+            ("user", "asset", ["read"]),
+            ("user", "catalog", ["read"]),
+            ("user", "purchase", ["read"]),
+            ("user", "repair", ["read"]),
+            ("user", "supplier", ["read"]),
+            ("auditor", "asset", ["read"]),
+            ("auditor", "audit", ["read", "write"]),
+            ("auditor", "report", ["read"]),
+            ("auditor", "catalog", ["read"]),
+            ("auditor", "purchase", ["read"]),
+            ("auditor", "repair", ["read"]),
+            ("auditor", "supplier", ["read"]),
+        ]:
+            for action in actions:
+                existed = (
+                    db.query(RolePermission)
+                    .filter(RolePermission.role == role, RolePermission.resource == resource, RolePermission.action == action)
+                    .first()
+                )
+                if not existed:
                     db.add(RolePermission(role=role, resource=resource, action=action, allowed=True))
         db.commit()
 

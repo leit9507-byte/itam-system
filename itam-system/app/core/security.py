@@ -18,6 +18,8 @@ PUBLIC_PATHS = {
 RESOURCE_PREFIXES = {
     "/asset": "asset",
     "/purchase": "purchase",
+    "/repair": "repair",
+    "/supplier": "supplier",
     "/catalog": "catalog",
     "/audit": "audit",
     "/users": "identity",
