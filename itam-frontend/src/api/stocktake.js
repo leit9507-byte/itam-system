@@ -1,49 +1,10 @@
 import { getAssets, statusMap } from './asset'
 
-const tasks = [
-  {
-    id: 'ST-2026-001',
-    name: '2026年6月上海IT库盘点',
-    scope: '仓库',
-    target: '上海 IT 库',
-    owner: '资产管理员',
-    status: '进行中',
-    created_at: '2026-06-22',
-    total: 2,
-    checked: 1,
-    abnormal: 1,
-    items: [
-      {
-        asset_id: 'A001',
-        name: 'MacBook Pro 14',
-        sn: 'SN-A001',
-        book_location: '上海总部 12F',
-        book_status: '在用',
-        actual_location: '上海总部 12F',
-        result: '正常',
-        checker: '资产管理员',
-        checked_at: '2026-06-22 10:20',
-        remark: ''
-      },
-      {
-        asset_id: 'A003',
-        name: 'Dell U2723QE',
-        sn: 'SN-A003',
-        book_location: '上海总部 8F',
-        book_status: '借出',
-        actual_location: '',
-        result: '未盘',
-        checker: '',
-        checked_at: '',
-        remark: ''
-      }
-    ]
-  }
-]
+const tasks = []
 
 export function getStocktakeTasks(filters = {}) {
   refreshTaskStats()
-  return Promise.resolve(filterTasks(tasks, filters.dateRange).map(task => ({ ...task, items: task.items.map(item => ({ ...item })) })))
+  return Promise.resolve(filterTasks(tasks, filters.dateRange).map(task => cloneTask(task)))
 }
 
 export async function getStocktakeDashboard(filters = {}) {
@@ -83,7 +44,7 @@ export async function getStocktakeDashboard(filters = {}) {
 export async function createStocktakeTask(payload) {
   const { list } = await getAssets({})
   const scopedAssets = list.filter(asset => {
-    if (payload.scope === '部门') return !payload.target || asset.dept === payload.target
+    if (payload.scope === '部门') return !payload.target || asset.dept === payload.target || asset.dept_name === payload.target
     if (payload.scope === '仓库') return !payload.target || asset.warehouse === payload.target
     if (payload.scope === '状态') return !payload.target || asset.status === payload.target
     return true
@@ -104,7 +65,7 @@ export async function createStocktakeTask(payload) {
       asset_id: asset.asset_id,
       name: asset.name,
       sn: asset.sn,
-      book_location: asset.location,
+      book_location: asset.location || asset.warehouse || '',
       book_status: statusMap[asset.status]?.label || asset.status,
       actual_location: '',
       result: '未盘',
@@ -114,14 +75,14 @@ export async function createStocktakeTask(payload) {
     }))
   }
   tasks.unshift(task)
-  return Promise.resolve(task)
+  return Promise.resolve(cloneTask(task))
 }
 
 export function startStocktakeTask(taskId) {
   const task = findTask(taskId)
   if (!task) return Promise.reject(new Error('盘点任务不存在'))
   task.status = '进行中'
-  return Promise.resolve(task)
+  return Promise.resolve(cloneTask(task))
 }
 
 export function submitStocktakeItem(taskId, assetId, payload) {
@@ -135,7 +96,7 @@ export function submitStocktakeItem(taskId, assetId, payload) {
   item.checked_at = new Date().toLocaleString('zh-CN', { hour12: false })
   item.remark = payload.remark || ''
   refreshTaskStats()
-  return Promise.resolve(item)
+  return Promise.resolve({ ...item })
 }
 
 export function finishStocktakeTask(taskId) {
@@ -143,7 +104,7 @@ export function finishStocktakeTask(taskId) {
   if (!task) return Promise.reject(new Error('盘点任务不存在'))
   task.status = '已完成'
   refreshTaskStats()
-  return Promise.resolve(task)
+  return Promise.resolve(cloneTask(task))
 }
 
 function findTask(taskId) {
@@ -199,4 +160,8 @@ function groupTasks(rows, key) {
     map[name] = (map[name] || 0) + 1
   })
   return Object.entries(map).map(([name, value]) => ({ name, value }))
+}
+
+function cloneTask(task) {
+  return { ...task, items: task.items.map(item => ({ ...item })) }
 }

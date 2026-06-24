@@ -61,7 +61,7 @@
         <el-table-column prop="name" label="任务名称" min-width="220" />
         <el-table-column prop="scope" label="范围类型" width="100" />
         <el-table-column prop="target" label="盘点范围" width="150" />
-        <el-table-column prop="owner" label="负责人" width="110" />
+        <el-table-column prop="owner" label="负责人" width="120" />
         <el-table-column prop="status" label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="taskStatusType(row.status)">{{ row.status }}</el-tag>
@@ -109,7 +109,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="盘点范围">
-          <el-input v-model="form.target" placeholder="如：研发部、上海 IT 库、in_stock；全部资产可留空" />
+          <el-input v-model="form.target" placeholder="如：研发部、上海 IT 仓、in_stock；全部资产可留空" />
         </el-form-item>
         <el-form-item label="负责人"><el-input v-model="form.owner" /></el-form-item>
       </el-form>
@@ -121,7 +121,7 @@
 
     <el-dialog v-model="detailDialog" :title="currentTask ? `盘点明细：${currentTask.name}` : '盘点明细'" width="1100px">
       <el-table :data="currentTask?.items || []" border stripe>
-        <el-table-column prop="asset_id" label="资产ID" width="100" />
+        <el-table-column prop="asset_id" label="资产ID" width="120" />
         <el-table-column prop="name" label="资产名称" min-width="160" />
         <el-table-column prop="sn" label="序列号" width="140" />
         <el-table-column prop="book_location" label="账面位置" width="160" />
@@ -202,6 +202,7 @@ async function load() {
 function renderCharts() {
   charts.forEach(chart => chart.dispose())
   charts.length = 0
+  if (!resultRef.value || !trendRef.value) return
 
   const result = echarts.init(resultRef.value)
   result.setOption({
