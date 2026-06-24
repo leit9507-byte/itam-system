@@ -10,6 +10,7 @@ const routes = [
     redirect: '/dashboard',
     children: [
       { path: 'dashboard', name: 'Dashboard', component: () => import('../views/dashboard/index.vue'), meta: { title: '资产总览' } },
+      { path: 'company', name: 'Company', component: () => import('../views/company/index.vue'), meta: { title: '公司管理' } },
       { path: 'asset/list', name: 'AssetList', component: () => import('../views/asset/list.vue'), meta: { title: '资产管理' } },
       { path: 'asset/detail/:id', name: 'AssetDetail', component: () => import('../views/asset/detail.vue'), meta: { title: '资产详情' } },
       { path: 'purchase', name: 'Purchase', component: () => import('../views/purchase/index.vue'), meta: { title: '采购管理' } },

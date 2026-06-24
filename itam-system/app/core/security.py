@@ -17,6 +17,7 @@ PUBLIC_PATHS = {
 
 RESOURCE_PREFIXES = {
     "/asset": "asset",
+    "/company": "asset",
     "/purchase": "purchase",
     "/repair": "repair",
     "/scrap": "asset",
