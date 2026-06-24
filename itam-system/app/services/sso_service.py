@@ -153,14 +153,11 @@ class LdapClient:
         if not base_dn:
             raise ValueError("base_dn is required")
 
-        username_attr = config.get("username_attr", "sAMAccountName")
-        user_filter = config.get("user_filter") or f"({username_attr}={{username}})"
-        search_filter = user_filter.format(username=LdapClient.escape_filter(username))
         attributes = LdapClient.attributes(config)
 
         conn = LdapClient.service_connection(config)
         try:
-            entries = LdapClient.search(conn, base_dn, search_filter, attributes, size_limit=2)
+            search_filter, entries = LdapClient.search_user_with_fallback(conn, base_dn, config, username, attributes)
             if not entries:
                 raise ValueError(f"user not found by filter {search_filter}")
             if len(entries) > 1:
@@ -201,10 +198,10 @@ class LdapClient:
             attributes = LdapClient.attributes(config)
             entries = LdapClient.search(conn, base_dn, search_filter, attributes, size_limit=limit)
             users: list[UserUpsert] = []
-            username_attr = config.get("username_attr", "sAMAccountName")
+            username_attrs = LdapClient.username_candidates(config)
             for entry in entries:
                 attrs = LdapClient.entry_attrs(entry, config)
-                username = LdapClient.entry_value(entry, username_attr)
+                username = LdapClient.first_entry_value(entry, username_attrs)
                 if not username:
                     continue
                 users.append(
@@ -226,7 +223,7 @@ class LdapClient:
     @staticmethod
     def attributes(config: dict) -> list[str]:
         attrs = [
-            config.get("username_attr", "sAMAccountName"),
+            *LdapClient.username_candidates(config),
             config.get("display_name_attr", "displayName"),
             config.get("email_attr", "mail"),
             config.get("dept_id_attr"),
@@ -246,12 +243,22 @@ class LdapClient:
 
     @staticmethod
     def entry_value(entry, attr: str):
+        if not attr:
+            return None
         if not hasattr(entry, attr):
             return None
         value = getattr(entry, attr).value
         if isinstance(value, list):
             return value[0] if value else None
         return value
+
+    @staticmethod
+    def first_entry_value(entry, attrs: list[str]):
+        for attr in attrs:
+            value = LdapClient.entry_value(entry, attr)
+            if value not in (None, ""):
+                return value
+        return None
 
     @staticmethod
     def escape_filter(value: str) -> str:
@@ -293,9 +300,55 @@ class LdapClient:
                     raise ValueError(f"All requested LDAP attributes are invalid. Last invalid attribute: {bad_attr}") from exc
 
     @staticmethod
+    def search_user_with_fallback(conn, base_dn: str, config: dict, username: str, attributes: list[str]):
+        escaped = LdapClient.escape_filter(username)
+        filters = LdapClient.user_filters(config, escaped)
+        last_error: Exception | None = None
+        for search_filter in filters:
+            try:
+                return search_filter, LdapClient.search(conn, base_dn, search_filter, attributes, size_limit=2)
+            except ValueError as exc:
+                last_error = exc
+                bad_attr = LdapClient.invalid_attribute_from_error(exc)
+                if not bad_attr or bad_attr not in search_filter:
+                    raise
+        if last_error:
+            raise ValueError(
+                f"LDAP username filter attributes are invalid. Tried: {', '.join(filters)}. "
+                "For OpenLDAP use uid/cn/mail; for AD use sAMAccountName/userPrincipalName."
+            ) from last_error
+        return "", []
+
+    @staticmethod
+    def user_filters(config: dict, escaped_username: str) -> list[str]:
+        configured_filter = config.get("user_filter")
+        filters: list[str] = []
+        if configured_filter:
+            filters.append(configured_filter.format(username=escaped_username))
+        for attr in LdapClient.username_candidates(config):
+            filters.append(f"({attr}={escaped_username})")
+        return list(dict.fromkeys(filters))
+
+    @staticmethod
+    def username_candidates(config: dict) -> list[str]:
+        configured = config.get("username_attr")
+        candidates = [
+            configured,
+            "uid",
+            "cn",
+            "mail",
+            "userPrincipalName",
+            "sAMAccountName",
+        ]
+        return list(dict.fromkeys(attr for attr in candidates if attr))
+
+    @staticmethod
     def invalid_attribute_from_error(exc: Exception) -> str | None:
         text = str(exc)
         match = re.search(r"invalid attribute type\s+([A-Za-z0-9_.;-]+)", text, re.IGNORECASE)
+        if match:
+            return match.group(1)
+        match = re.search(r"Invalid LDAP attribute '([^']+)'", text, re.IGNORECASE)
         if match:
             return match.group(1)
         return None

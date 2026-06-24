@@ -74,7 +74,7 @@
                 type="info"
                 show-icon
                 :closable="false"
-                title="OpenLDAP 常用 uid/cn/mail/ou；AD 常用 sAMAccountName/displayName/mail/department。若某字段报 invalid attribute type，请改成真实存在的属性或留空。"
+                title="OpenLDAP 常用 uid/cn/mail/ou；AD 常用 sAMAccountName/displayName/mail/department。若报 invalid attribute sAMAccountName，请把 username_attr 和 user_filter 一起改为 uid。"
               />
               <el-form-item>
                 <el-button @click="resetProviderForm">清空</el-button>
