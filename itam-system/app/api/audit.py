@@ -81,7 +81,7 @@ def serialize_rule(rule: AuditRule, fallback: dict | None = None) -> dict:
     return {
         "id": rule.id,
         "rule_code": rule.rule_code,
-        "name": rule.name,
+        "name": fallback.get("name") or rule.name,
         "severity": rule.severity,
         "enabled": rule.enabled,
         "scope_category": rule.scope_category or "",
@@ -95,21 +95,31 @@ def serialize_rule(rule: AuditRule, fallback: dict | None = None) -> dict:
 def list_audit_rules(db: Session = Depends(get_db)):
     persisted = {item.rule_code: item for item in db.query(AuditRule).all()}
     rows = []
+    changed = False
     for item in default_rules():
         saved = persisted.get(item["rule_code"])
-        rows.append(serialize_rule(saved, item) if saved else item)
+        if saved:
+            if saved.name != item["name"]:
+                saved.name = item["name"]
+                changed = True
+            rows.append(serialize_rule(saved, item))
+        else:
+            rows.append(item)
+    if changed:
+        db.commit()
     return rows
 
 
 @router.post("/rules")
 def save_audit_rules(payload: list[AuditRulePayload], db: Session = Depends(get_db)):
+    defaults = {item["rule_code"]: item for item in default_rules()}
     saved_rows = []
     for item in payload:
         rule = db.query(AuditRule).filter(AuditRule.rule_code == item.rule_code).first()
         if not rule:
             rule = AuditRule(rule_code=item.rule_code)
             db.add(rule)
-        rule.name = item.name
+        rule.name = defaults.get(item.rule_code, {}).get("name", item.name)
         rule.severity = item.severity
         rule.enabled = item.enabled
         rule.scope_category = item.scope_category or ""
