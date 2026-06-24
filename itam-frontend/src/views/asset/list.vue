@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">资产管理</h2>
-        <p class="page-subtitle">支持批量导入、出入库、使用人绑定、供应商关联、维修登记、报废审批和采购/质保信息维护</p>
+        <p class="page-subtitle">支持批量导入、批量编辑、批量维修、出入库、责任人绑定、供应商关联和报废审批</p>
       </div>
       <el-button type="primary" @click="importDialog.visible = true">批量导入资产</el-button>
     </div>
@@ -21,6 +21,8 @@
           <el-option v-for="item in suppliers" :key="item.id || item.name" :label="item.name" :value="item.name" />
         </el-select>
         <el-divider direction="vertical" />
+        <el-button :disabled="!selected.length" @click="openBatchEdit">批量编辑</el-button>
+        <el-button :disabled="!selected.length" @click="openBatchRepair">批量维修</el-button>
         <el-button :disabled="!selected.length" @click="openBatch('inbound')">批量入库</el-button>
         <el-button :disabled="!selected.length" @click="openBatch('outbound')">批量出库</el-button>
         <el-button type="danger" :disabled="!selected.length" @click="openBatch('scrap')">批量申请报废</el-button>
@@ -44,11 +46,11 @@
         <el-table-column prop="category" label="类型" width="110" />
         <el-table-column prop="purchase_supplier_name" label="供应商" width="150" show-overflow-tooltip />
         <el-table-column prop="purchase_date" label="采购时间" width="120" />
-        <el-table-column prop="owner" label="使用人" width="130">
-          <template #default="{ row }">{{ displayUser(row.owner) }}</template>
+        <el-table-column label="使用人" width="150">
+          <template #default="{ row }">{{ displayUser(row) }}</template>
         </el-table-column>
-        <el-table-column prop="dept" label="部门" width="120">
-          <template #default="{ row }">{{ row.dept || '未绑定' }}</template>
+        <el-table-column label="部门" width="140">
+          <template #default="{ row }">{{ displayDept(row) }}</template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="110">
           <template #default="{ row }">
@@ -82,57 +84,55 @@
 
     <el-dialog v-model="editDialog.visible" title="调整资产信息" width="900px">
       <el-form :model="editDialog.form" label-width="112px">
-        <div class="edit-grid">
-          <el-form-item label="资产名称"><el-input v-model="editDialog.form.name" /></el-form-item>
-          <el-form-item label="序列号"><el-input v-model="editDialog.form.sn" /></el-form-item>
-          <el-form-item label="设备类型">
-            <el-select v-model="editDialog.form.category" filterable allow-create default-first-option style="width: 100%">
-              <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="状态">
-            <el-select v-model="editDialog.form.status" style="width: 100%">
-              <el-option v-for="item in assetStatuses" :key="item.value" :label="item.label" :value="item.value" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="品牌"><el-input v-model="editDialog.form.brand" /></el-form-item>
-          <el-form-item label="型号"><el-input v-model="editDialog.form.model" /></el-form-item>
-          <el-form-item label="规格"><el-input v-model="editDialog.form.spec" /></el-form-item>
-          <el-form-item label="价值"><el-input-number v-model="editDialog.form.price" :min="0" style="width: 100%" /></el-form-item>
-          <el-form-item label="采购时间">
-            <el-date-picker v-model="editDialog.form.purchase_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-          </el-form-item>
-          <el-form-item label="采购审批单号"><el-input v-model="editDialog.form.purchase_approval_no" /></el-form-item>
-          <el-form-item label="采购供应商">
-            <el-select
-              v-model="editDialog.form.purchase_supplier_name"
-              filterable
-              clearable
-              allow-create
-              default-first-option
-              placeholder="搜索或选择供应商"
-              style="width: 100%"
-            >
-              <el-option v-for="item in suppliers" :key="item.id || item.name" :label="supplierLabel(item)" :value="item.name" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="质保到期">
-            <el-date-picker v-model="editDialog.form.warranty_expire_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-          </el-form-item>
-          <el-form-item label="质保月数"><el-input-number v-model="editDialog.form.warranty_months" :min="0" style="width: 100%" /></el-form-item>
-          <el-form-item label="使用人">
-            <el-select v-model="editDialog.form.owner_user_id" filterable remote clearable reserve-keyword :remote-method="searchUsers" style="width: 100%" @change="fillUserToForm(editDialog.form, $event)">
-              <el-option v-for="user in filteredUsers" :key="user.user_id" :label="userLabel(user)" :value="user.user_id" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="部门"><el-input v-model="editDialog.form.dept_id" /></el-form-item>
-          <el-form-item label="位置"><el-input v-model="editDialog.form.location" /></el-form-item>
-          <el-form-item label="仓库"><el-input v-model="editDialog.form.warehouse" /></el-form-item>
-        </div>
+        <AssetEditFields
+          :form="editDialog.form"
+          :categories="categories"
+          :suppliers="suppliers"
+          :users="filteredUsers"
+          @search-users="searchUsers"
+          @select-user="userId => fillUserToForm(editDialog.form, userId)"
+        />
       </el-form>
       <template #footer>
         <el-button @click="editDialog.visible = false">取消</el-button>
         <el-button type="primary" @click="submitEdit">保存调整</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="batchEdit.visible" title="批量编辑资产" width="760px">
+      <el-alert :title="`本次将更新 ${selected.length} 个资产；未勾选的字段不会覆盖原资产信息。`" type="info" show-icon :closable="false" />
+      <el-form :model="batchEdit.form" label-width="118px" class="batch-form">
+        <div class="batch-edit-grid">
+          <el-checkbox v-model="batchEdit.fields.category">设备类型</el-checkbox>
+          <el-select v-model="batchEdit.form.category" filterable allow-create default-first-option :disabled="!batchEdit.fields.category">
+            <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
+          </el-select>
+
+          <el-checkbox v-model="batchEdit.fields.status">状态</el-checkbox>
+          <el-select v-model="batchEdit.form.status" :disabled="!batchEdit.fields.status">
+            <el-option v-for="item in assetStatuses" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+
+          <el-checkbox v-model="batchEdit.fields.purchase_supplier_name">供应商</el-checkbox>
+          <el-select v-model="batchEdit.form.purchase_supplier_name" filterable clearable allow-create default-first-option :disabled="!batchEdit.fields.purchase_supplier_name">
+            <el-option v-for="item in suppliers" :key="item.id || item.name" :label="supplierLabel(item)" :value="item.name" />
+          </el-select>
+
+          <el-checkbox v-model="batchEdit.fields.owner_user_id">责任人</el-checkbox>
+          <el-select v-model="batchEdit.form.owner_user_id" filterable remote clearable reserve-keyword :remote-method="searchUsers" :disabled="!batchEdit.fields.owner_user_id" @change="fillUserToForm(batchEdit.form, $event)">
+            <el-option v-for="user in filteredUsers" :key="user.user_id" :label="userLabel(user)" :value="user.user_id" />
+          </el-select>
+
+          <el-checkbox v-model="batchEdit.fields.location">位置</el-checkbox>
+          <el-input v-model="batchEdit.form.location" :disabled="!batchEdit.fields.location" />
+
+          <el-checkbox v-model="batchEdit.fields.warehouse">仓库</el-checkbox>
+          <el-input v-model="batchEdit.form.warehouse" :disabled="!batchEdit.fields.warehouse" />
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="batchEdit.visible = false">取消</el-button>
+        <el-button type="primary" @click="submitBatchEdit">确认批量更新</el-button>
       </template>
     </el-dialog>
 
@@ -156,7 +156,7 @@
               <el-option v-for="user in filteredUsers" :key="user.user_id" :label="userLabel(user)" :value="user.user_id" />
             </el-select>
           </el-form-item>
-          <el-form-item label="部门"><el-input v-model="batch.form.dept_id" /></el-form-item>
+          <el-form-item label="部门"><el-input v-model="batch.form.dept_id" disabled /></el-form-item>
           <el-form-item label="位置"><el-input v-model="batch.form.location" /></el-form-item>
           <el-form-item label="备注"><el-input v-model="batch.form.remark" type="textarea" :rows="3" /></el-form-item>
         </template>
@@ -180,8 +180,9 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="repairDialog.visible" title="新增维修记录" width="620px">
-      <el-descriptions v-if="repairDialog.asset" :column="2" border class="repair-asset">
+    <el-dialog v-model="repairDialog.visible" :title="repairDialog.assets.length > 1 ? '批量新增维修记录' : '新增维修记录'" width="620px">
+      <el-alert v-if="repairDialog.assets.length > 1" :title="`本次将为 ${repairDialog.assets.length} 个资产创建维修记录，并更新为维修中。`" type="warning" show-icon :closable="false" class="dialog-alert" />
+      <el-descriptions v-else-if="repairDialog.asset" :column="2" border class="repair-asset">
         <el-descriptions-item label="资产ID">{{ repairDialog.asset.asset_id }}</el-descriptions-item>
         <el-descriptions-item label="资产名称">{{ repairDialog.asset.name }}</el-descriptions-item>
         <el-descriptions-item label="序列号">{{ repairDialog.asset.sn || '-' }}</el-descriptions-item>
@@ -229,12 +230,12 @@
 
 <script setup>
 import { ArrowDown } from '@element-plus/icons-vue'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { assetStatuses, createScrapRequest, getAssets, importAssetsFromExcel, importAssetsFromText, inboundAsset, outboundAsset, statusMap, updateAsset } from '../../api/asset'
+import { assetStatuses, batchUpdateAssets, createScrapRequest, getAssets, importAssetsFromExcel, importAssetsFromText, inboundAsset, outboundAsset, statusMap, updateAsset } from '../../api/asset'
 import { getDeviceTypes } from '../../api/product'
-import { createRepairRecord } from '../../api/repair'
+import { createRepairRecords } from '../../api/repair'
 import { getSuppliers } from '../../api/supplier'
 import { getUsers } from '../../api/user'
 
@@ -247,9 +248,10 @@ const filteredUsers = ref([])
 const suppliers = ref([])
 const filters = reactive({ keyword: '', status: '', category: '', supplier: '' })
 const batch = reactive({ visible: false, type: 'inbound', assets: [], form: defaultBatchForm() })
+const batchEdit = reactive({ visible: false, form: defaultBatchEditForm(), fields: defaultBatchEditFields() })
 const importDialog = reactive({ visible: false, loading: false, content: '', result: null })
 const editDialog = reactive({ visible: false, form: {} })
-const repairDialog = reactive({ visible: false, asset: null, form: defaultRepairForm() })
+const repairDialog = reactive({ visible: false, asset: null, assets: [], form: defaultRepairForm() })
 
 const batchTitle = computed(() => ({ inbound: '批量入库', outbound: '批量出库', scrap: '批量申请报废' }[batch.type]))
 
@@ -293,6 +295,31 @@ function defaultBatchForm() {
   }
 }
 
+function defaultBatchEditForm() {
+  return {
+    category: '',
+    status: '',
+    purchase_supplier_name: '',
+    owner_user_id: '',
+    owner_name: '',
+    dept_id: '',
+    dept_name: '',
+    location: '',
+    warehouse: ''
+  }
+}
+
+function defaultBatchEditFields() {
+  return {
+    category: false,
+    status: false,
+    purchase_supplier_name: false,
+    owner_user_id: false,
+    location: false,
+    warehouse: false
+  }
+}
+
 function defaultRepairForm() {
   return {
     repair_time: new Date().toISOString().slice(0, 10),
@@ -304,9 +331,23 @@ function defaultRepairForm() {
   }
 }
 
-function displayUser(userId) {
-  const user = users.value.find(item => item.user_id === userId || item.username === userId)
-  return user ? user.display_name : userId || '未分配'
+function displayUser(row) {
+  if (row.owner_name) return row.owner_name
+  const user = findUser(row.owner_user_id || row.owner)
+  return user ? user.display_name : row.owner || '未分配'
+}
+
+function displayDept(row) {
+  if (row.dept_name) return row.dept_name
+  const user = findUser(row.owner_user_id || row.owner)
+  return user?.dept_name || row.dept || '未绑定'
+}
+
+function findUser(value) {
+  if (!value) return null
+  const lower = String(value).toLowerCase()
+  const cn = lower.includes('cn=') ? lower.split('cn=', 2)[1].split(',', 1)[0] : ''
+  return users.value.find(user => [user.user_id, user.username, user.external_id, user.email].filter(Boolean).map(String).map(item => item.toLowerCase()).includes(lower) || (cn && String(user.username).toLowerCase() === cn))
 }
 
 function userLabel(user) {
@@ -323,7 +364,7 @@ function searchUsers(query = '') {
   filteredUsers.value = !keyword
     ? users.value
     : users.value.filter(user =>
-        [user.user_id, user.username, user.display_name, user.email, user.dept_id, user.dept_name]
+        [user.user_id, user.username, user.display_name, user.email, user.dept_id, user.dept_name, user.external_id]
           .join(' ')
           .toLowerCase()
           .includes(keyword)
@@ -372,9 +413,48 @@ async function submitEdit() {
   await loadAssets()
 }
 
+function openBatchEdit() {
+  batchEdit.form = defaultBatchEditForm()
+  batchEdit.fields = defaultBatchEditFields()
+  searchUsers('')
+  batchEdit.visible = true
+}
+
+async function submitBatchEdit() {
+  const payload = {}
+  Object.keys(batchEdit.fields).forEach(key => {
+    if (batchEdit.fields[key]) payload[key] = batchEdit.form[key]
+  })
+  if (batchEdit.fields.owner_user_id) {
+    payload.dept_id = batchEdit.form.dept_id
+    payload.location = batchEdit.form.location
+  }
+  if (!Object.keys(payload).length) {
+    ElMessage.warning('请至少勾选一个要更新的字段')
+    return
+  }
+  await batchUpdateAssets(selected.value, payload)
+  batchEdit.visible = false
+  selected.value = []
+  ElMessage.success('批量编辑完成')
+  await loadAssets()
+}
+
 function openRepair(row) {
   if (!canRepair(row)) return
   repairDialog.asset = row
+  repairDialog.assets = [row]
+  Object.assign(repairDialog.form, defaultRepairForm())
+  repairDialog.visible = true
+}
+
+function openBatchRepair() {
+  if (selected.value.some(row => !canRepair(row))) {
+    ElMessage.warning('已报废、待报废或维修中的资产不能重复创建维修单')
+    return
+  }
+  repairDialog.asset = selected.value[0] || null
+  repairDialog.assets = [...selected.value]
   Object.assign(repairDialog.form, defaultRepairForm())
   repairDialog.visible = true
 }
@@ -388,8 +468,9 @@ async function submitRepair() {
     ElMessage.warning('请填写故障原因')
     return
   }
-  await createRepairRecord(repairDialog.asset, repairDialog.form)
+  await createRepairRecords(repairDialog.assets, repairDialog.form)
   repairDialog.visible = false
+  selected.value = []
   ElMessage.success('维修单已创建，资产状态已更新为维修中')
   await loadAssets()
 }
@@ -495,6 +576,49 @@ async function submitBatch() {
   selected.value = []
   await loadAssets()
 }
+
+const AssetEditFields = defineComponent({
+  props: {
+    form: { type: Object, required: true },
+    categories: { type: Array, required: true },
+    suppliers: { type: Array, required: true },
+    users: { type: Array, required: true }
+  },
+  emits: ['search-users', 'select-user'],
+  setup(props, { emit }) {
+    return () =>
+      h('div', { class: 'edit-grid' }, [
+        field('资产名称', h(resolveInput(), { modelValue: props.form.name, 'onUpdate:modelValue': value => (props.form.name = value) })),
+        field('序列号', h(resolveInput(), { modelValue: props.form.sn, 'onUpdate:modelValue': value => (props.form.sn = value) })),
+        field('设备类型', h(resolveSelect(), { modelValue: props.form.category, 'onUpdate:modelValue': value => (props.form.category = value), filterable: true, allowCreate: true, defaultFirstOption: true, style: 'width:100%' }, () => props.categories.map(item => h(resolveOption(), { key: item, label: item, value: item })))),
+        field('状态', h(resolveSelect(), { modelValue: props.form.status, 'onUpdate:modelValue': value => (props.form.status = value), style: 'width:100%' }, () => assetStatuses.map(item => h(resolveOption(), { key: item.value, label: item.label, value: item.value })))),
+        field('品牌', h(resolveInput(), { modelValue: props.form.brand, 'onUpdate:modelValue': value => (props.form.brand = value) })),
+        field('型号', h(resolveInput(), { modelValue: props.form.model, 'onUpdate:modelValue': value => (props.form.model = value) })),
+        field('规格', h(resolveInput(), { modelValue: props.form.spec, 'onUpdate:modelValue': value => (props.form.spec = value) })),
+        field('价值', h(resolveInputNumber(), { modelValue: props.form.price, 'onUpdate:modelValue': value => (props.form.price = value), min: 0, style: 'width:100%' })),
+        field('采购时间', h(resolveDatePicker(), { modelValue: props.form.purchase_date, 'onUpdate:modelValue': value => (props.form.purchase_date = value), type: 'date', valueFormat: 'YYYY-MM-DD', style: 'width:100%' })),
+        field('采购审批单号', h(resolveInput(), { modelValue: props.form.purchase_approval_no, 'onUpdate:modelValue': value => (props.form.purchase_approval_no = value) })),
+        field('采购供应商', h(resolveSelect(), { modelValue: props.form.purchase_supplier_name, 'onUpdate:modelValue': value => (props.form.purchase_supplier_name = value), filterable: true, clearable: true, allowCreate: true, defaultFirstOption: true, style: 'width:100%' }, () => props.suppliers.map(item => h(resolveOption(), { key: item.id || item.name, label: item.name, value: item.name })))),
+        field('质保到期', h(resolveDatePicker(), { modelValue: props.form.warranty_expire_date, 'onUpdate:modelValue': value => (props.form.warranty_expire_date = value), type: 'date', valueFormat: 'YYYY-MM-DD', style: 'width:100%' })),
+        field('质保月数', h(resolveInputNumber(), { modelValue: props.form.warranty_months, 'onUpdate:modelValue': value => (props.form.warranty_months = value), min: 0, style: 'width:100%' })),
+        field('责任人', h(resolveSelect(), { modelValue: props.form.owner_user_id, 'onUpdate:modelValue': value => (props.form.owner_user_id = value), filterable: true, remote: true, clearable: true, reserveKeyword: true, remoteMethod: value => emit('search-users', value), style: 'width:100%', onChange: value => emit('select-user', value) }, () => props.users.map(user => h(resolveOption(), { key: user.user_id, label: `${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`, value: user.user_id })))),
+        field('部门', h(resolveInput(), { modelValue: props.form.dept_id, 'onUpdate:modelValue': value => (props.form.dept_id = value), disabled: true })),
+        field('位置', h(resolveInput(), { modelValue: props.form.location, 'onUpdate:modelValue': value => (props.form.location = value) })),
+        field('仓库', h(resolveInput(), { modelValue: props.form.warehouse, 'onUpdate:modelValue': value => (props.form.warehouse = value) }))
+      ])
+  }
+})
+
+function field(label, child) {
+  return h(resolveFormItem(), { label }, () => child)
+}
+
+function resolveFormItem() { return 'el-form-item' }
+function resolveInput() { return 'el-input' }
+function resolveInputNumber() { return 'el-input-number' }
+function resolveSelect() { return 'el-select' }
+function resolveOption() { return 'el-option' }
+function resolveDatePicker() { return 'el-date-picker' }
 </script>
 
 <style scoped>
@@ -525,7 +649,15 @@ async function submitBatch() {
   margin-top: 16px;
 }
 
-.repair-asset {
+.batch-edit-grid {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.repair-asset,
+.dialog-alert {
   margin-bottom: 16px;
 }
 
@@ -542,7 +674,8 @@ async function submitBatch() {
 }
 
 @media (max-width: 900px) {
-  .edit-grid {
+  .edit-grid,
+  .batch-edit-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -31,10 +31,13 @@ export async function getAssets(params = {}) {
       item.asset_id,
       item.name,
       item.dept,
+      item.dept_name,
       item.sn,
       item.brand,
       item.model,
       item.owner,
+      item.owner_name,
+      item.owner_username,
       item.purchase_approval_no,
       item.purchase_supplier_name
     ].join(' ').toLowerCase()
@@ -78,11 +81,19 @@ export async function updateAsset(assetId, payload) {
     warranty_expire_date: dateToApi(payload.warranty_expire_date),
     warranty_months: payload.warranty_months === '' || payload.warranty_months == null ? null : Number(payload.warranty_months),
     status: payload.status,
-    owner_user_id: payload.owner_user_id || payload.owner || '',
-    dept_id: payload.dept_id || payload.dept || '',
+    owner_user_id: payload.owner_user_id || '',
+    dept_id: payload.dept_id || '',
     location: payload.location || payload.warehouse || ''
   })
   return mapBackendAsset(row)
+}
+
+export async function batchUpdateAssets(rows, payload) {
+  const updated = []
+  for (const row of rows) {
+    updated.push(await updateAsset(row.asset_id, { ...row, ...payload }))
+  }
+  return updated
 }
 
 export async function getAssetDetail(assetId) {
@@ -94,7 +105,7 @@ export async function getAssetDetail(assetId) {
       { type: '建档', status: asset?.status || 'in_stock', operator: '后端系统', time: asset?.created_at || '', description: '资产从后端接口加载' }
     ],
     usageRecords: [
-      { user: asset?.owner || '未分配', dept: asset?.dept || '未绑定', from: asset?.created_at || '-', to: '至今' }
+      { user: asset?.owner_name || asset?.owner || '未分配', dept: asset?.dept_name || asset?.dept || '未绑定', from: asset?.created_at || '-', to: '至今' }
     ],
     inventoryRecords: localInventoryRecords.filter(item => item.asset_id === assetId),
     risks: buildAssetRisks(asset)
@@ -129,7 +140,7 @@ export async function inboundAsset(assetId, payload = {}) {
   const asset = await changeAssetStatus(assetId, 'in_stock', {
     ...payload,
     owner_user_id: '',
-    dept_id: payload.dept_id || '',
+    dept_id: '',
     location: payload.warehouse || payload.location || '',
     action: '入库',
     remark: payload.remark || '资产入库'
@@ -148,7 +159,7 @@ export async function outboundAsset(assetId, payload = {}) {
     action: '出库',
     remark: payload.remark || '资产出库'
   })
-  localInventoryRecords.unshift(buildInventory(assetId, '出库', `${payload.owner_name || asset.owner || '未指定'} / ${payload.dept_name || asset.dept || '未指定'}`, payload.remark || '资产出库'))
+  localInventoryRecords.unshift(buildInventory(assetId, '出库', `${payload.owner_name || asset.owner_name || asset.owner || '未指定'} / ${payload.dept_name || asset.dept_name || asset.dept || '未指定'}`, payload.remark || '资产出库'))
   return asset
 }
 
@@ -249,14 +260,19 @@ function normalizeImportResult(result) {
 
 function mapBackendAsset(row) {
   const config = row.config || {}
+  const ownerName = row.owner_display_name || row.owner_name || ''
+  const deptName = row.dept_name || ''
   return {
     asset_id: row.asset_id,
     name: row.name,
     category: row.category,
     owner: row.owner_user_id || '',
     owner_user_id: row.owner_user_id || '',
+    owner_name: ownerName,
+    owner_username: row.owner_username || '',
     dept: row.dept_id || '',
     dept_id: row.dept_id || '',
+    dept_name: deptName,
     status: row.status || 'in_stock',
     price: Number(row.purchase_price || 0),
     purchase_price: Number(row.purchase_price || 0),

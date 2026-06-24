@@ -14,6 +14,14 @@ export async function createRepairRecord(asset, payload) {
   )
 }
 
+export async function createRepairRecords(assets, payload) {
+  const rows = []
+  for (const asset of assets) {
+    rows.push(await createRepairRecord(asset, payload))
+  }
+  return rows
+}
+
 export async function getRepairRecords(filters = {}) {
   const rows = await request.get('/repair/list')
   return rows.map(mapRepair).filter(item => filterRecord(item, filters))

@@ -69,7 +69,10 @@ class AssetOut(BaseModel):
     warranty_months: Optional[int]
     status: str
     owner_user_id: Optional[str]
+    owner_display_name: Optional[str] = None
+    owner_username: Optional[str] = None
     dept_id: Optional[str]
+    dept_name: Optional[str] = None
     location: Optional[str]
     created_at: datetime
 

@@ -23,8 +23,8 @@
             <el-descriptions-item label="型号">{{ detail.asset?.model || '-' }}</el-descriptions-item>
             <el-descriptions-item label="规格">{{ detail.asset?.spec || '-' }}</el-descriptions-item>
             <el-descriptions-item label="序列号">{{ detail.asset?.sn || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="责任人">{{ detail.asset?.owner || '未分配' }}</el-descriptions-item>
-            <el-descriptions-item label="部门">{{ detail.asset?.dept || '未绑定' }}</el-descriptions-item>
+            <el-descriptions-item label="责任人">{{ ownerName }}</el-descriptions-item>
+            <el-descriptions-item label="部门">{{ deptName }}</el-descriptions-item>
             <el-descriptions-item label="位置">{{ detail.asset?.location || '-' }}</el-descriptions-item>
             <el-descriptions-item label="仓库">{{ detail.asset?.warehouse || '-' }}</el-descriptions-item>
             <el-descriptions-item label="价值">¥{{ Number(detail.asset?.price || 0).toLocaleString() }}</el-descriptions-item>
@@ -123,6 +123,9 @@ const route = useRoute()
 const detail = reactive({ asset: null, lifecycles: [], usageRecords: [], inventoryRecords: [], risks: [] })
 const attachments = ref([])
 const qrUrl = ref('')
+
+const ownerName = computed(() => detail.asset?.owner_name || detail.asset?.owner_username || detail.asset?.owner || '未分配')
+const deptName = computed(() => detail.asset?.dept_name || detail.asset?.dept || '未绑定')
 
 const warrantyTag = computed(() => {
   const value = detail.asset?.warranty_expire_date

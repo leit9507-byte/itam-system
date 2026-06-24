@@ -4,9 +4,11 @@ from io import BytesIO, StringIO
 from typing import Any
 
 from openpyxl import load_workbook
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.asset import Asset
+from app.models.user import UserDirectory
 from app.schemas.asset import AssetBatchImport, AssetCreate, AssetImportRow, AssetTextImport, AssetUpdate
 from app.services.lifecycle_service import LifecycleService
 
@@ -19,6 +21,7 @@ class AssetService:
 
     @staticmethod
     def create_asset(db: Session, payload: AssetCreate, operator: str = "system") -> Asset:
+        user = AssetService.find_user(db, payload.owner_user_id)
         asset = Asset(
             asset_id=getattr(payload, "asset_id", None) or AssetService.generate_asset_id(db),
             name=payload.name,
@@ -34,8 +37,8 @@ class AssetService:
             warranty_expire_date=payload.warranty_expire_date,
             warranty_months=payload.warranty_months,
             status=payload.status,
-            owner_user_id=payload.owner_user_id,
-            dept_id=payload.dept_id,
+            owner_user_id=user.user_id if user else payload.owner_user_id,
+            dept_id=(user.dept_id or user.dept_name) if user else payload.dept_id,
             location=payload.location,
         )
         db.add(asset)
@@ -43,7 +46,7 @@ class AssetService:
         LifecycleService.record(db, asset.asset_id, "CREATE", None, asset.status, operator)
         db.commit()
         db.refresh(asset)
-        return asset
+        return AssetService.to_out(asset, user)
 
     @staticmethod
     def import_assets(db: Session, payload: AssetBatchImport) -> dict:
@@ -82,6 +85,7 @@ class AssetService:
                     dept_id=normalized.dept_id,
                     location=normalized.location,
                 )
+                AssetService.sync_owner_department(db, asset)
                 db.add(asset)
                 db.flush()
                 LifecycleService.record(db, asset.asset_id, "BATCH_IMPORT", None, asset.status, payload.operator)
@@ -97,7 +101,7 @@ class AssetService:
             "created": len(created_assets),
             "skipped": skipped,
             "errors": errors,
-            "assets": created_assets,
+            "assets": [AssetService.to_out(asset) for asset in created_assets],
         }
 
     @staticmethod
@@ -197,8 +201,25 @@ class AssetService:
         return AssetImportRow(**data)
 
     @staticmethod
-    def list_assets(db: Session) -> list[Asset]:
-        return db.query(Asset).order_by(Asset.created_at.desc()).all()
+    def list_assets(db: Session) -> list[dict]:
+        users = AssetService.users_by_identity(db)
+        assets = db.query(Asset).order_by(Asset.created_at.desc()).all()
+        changed = False
+        rows = []
+        for asset in assets:
+            user = users.get(asset.owner_user_id or "")
+            if user:
+                target_dept = user.dept_id or user.dept_name or asset.dept_id
+                if asset.owner_user_id != user.user_id:
+                    asset.owner_user_id = user.user_id
+                    changed = True
+                if target_dept and asset.dept_id != target_dept:
+                    asset.dept_id = target_dept
+                    changed = True
+            rows.append(AssetService.to_out(asset, user))
+        if changed:
+            db.commit()
+        return rows
 
     @staticmethod
     def update_asset(db: Session, asset_id: str, payload: AssetUpdate, operator: str = "system") -> Asset:
@@ -210,11 +231,12 @@ class AssetService:
         old_status = asset.status
         for key, value in data.items():
             setattr(asset, key, value)
+        AssetService.sync_owner_department(db, asset)
 
         LifecycleService.record(db, asset.asset_id, "ASSET_UPDATE", old_status, asset.status, operator)
         db.commit()
         db.refresh(asset)
-        return asset
+        return AssetService.to_out(asset)
 
     @staticmethod
     def change_status(
@@ -234,14 +256,86 @@ class AssetService:
         asset.status = to_status
         if owner_user_id is not None:
             asset.owner_user_id = owner_user_id
-        if dept_id is not None:
+        user = AssetService.sync_owner_department(db, asset)
+        if dept_id is not None and not user:
             asset.dept_id = dept_id
         if location is not None:
             asset.location = location
         LifecycleService.record(db, asset.asset_id, "STATUS_CHANGE", from_status, to_status, operator)
         db.commit()
         db.refresh(asset)
-        return asset
+        return AssetService.to_out(asset, user)
+
+    @staticmethod
+    def find_user(db: Session, value: str | None) -> UserDirectory | None:
+        if not value:
+            return None
+        candidates = [value]
+        if value.startswith("ldap:"):
+            candidates.append(value.removeprefix("ldap:"))
+        lowered = value.lower()
+        if "cn=" in lowered:
+            cn_part = lowered.split("cn=", 1)[1].split(",", 1)[0]
+            if cn_part:
+                candidates.append(cn_part)
+        return (
+            db.query(UserDirectory)
+            .filter(
+                or_(
+                    UserDirectory.user_id.in_(candidates),
+                    UserDirectory.username.in_(candidates),
+                    UserDirectory.external_id.in_(candidates),
+                    UserDirectory.email.in_(candidates),
+                )
+            )
+            .first()
+        )
+
+    @staticmethod
+    def sync_owner_department(db: Session, asset: Asset) -> UserDirectory | None:
+        user = AssetService.find_user(db, asset.owner_user_id)
+        if not user:
+            return None
+        asset.owner_user_id = user.user_id
+        asset.dept_id = user.dept_id or user.dept_name or asset.dept_id
+        return user
+
+    @staticmethod
+    def users_by_identity(db: Session) -> dict[str, UserDirectory]:
+        users = db.query(UserDirectory).all()
+        mapping: dict[str, UserDirectory] = {}
+        for user in users:
+            for value in [user.user_id, user.username, user.external_id, user.email]:
+                if value:
+                    mapping[value] = user
+        return mapping
+
+    @staticmethod
+    def to_out(asset: Asset, user: UserDirectory | None = None) -> dict:
+        user = user or None
+        return {
+            "asset_id": asset.asset_id,
+            "name": asset.name,
+            "category": asset.category,
+            "brand": asset.brand,
+            "model": asset.model,
+            "sn": asset.sn,
+            "config": asset.config,
+            "purchase_price": asset.purchase_price,
+            "purchase_date": asset.purchase_date,
+            "purchase_approval_no": asset.purchase_approval_no,
+            "purchase_supplier_name": asset.purchase_supplier_name,
+            "warranty_expire_date": asset.warranty_expire_date,
+            "warranty_months": asset.warranty_months,
+            "status": asset.status,
+            "owner_user_id": asset.owner_user_id,
+            "owner_display_name": user.display_name if user else None,
+            "owner_username": user.username if user else None,
+            "dept_id": asset.dept_id,
+            "dept_name": user.dept_name if user else None,
+            "location": asset.location,
+            "created_at": asset.created_at,
+        }
 
     @staticmethod
     def parse_datetime(value: Any) -> datetime | None:
