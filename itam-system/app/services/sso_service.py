@@ -1,3 +1,4 @@
+import re
 import ssl
 from urllib.parse import urlparse, urlencode
 
@@ -159,12 +160,12 @@ class LdapClient:
 
         conn = LdapClient.service_connection(config)
         try:
-            ldap = LdapClient.load()
-            if not conn.search(base_dn, search_filter, search_scope=ldap["SUBTREE"], attributes=attributes, size_limit=2):
+            entries = LdapClient.search(conn, base_dn, search_filter, attributes, size_limit=2)
+            if not entries:
                 raise ValueError(f"user not found by filter {search_filter}")
-            if len(conn.entries) > 1:
+            if len(entries) > 1:
                 raise ValueError(f"multiple users matched filter {search_filter}")
-            entry = conn.entries[0]
+            entry = entries[0]
             return entry.entry_dn, LdapClient.entry_attrs(entry, config)
         finally:
             conn.unbind()
@@ -196,13 +197,12 @@ class LdapClient:
 
         conn = LdapClient.service_connection(config)
         try:
-            ldap = LdapClient.load()
             search_filter = config.get("sync_filter") or config.get("user_filter") or "(objectClass=person)"
             attributes = LdapClient.attributes(config)
-            conn.search(base_dn, search_filter, search_scope=ldap["SUBTREE"], attributes=attributes, size_limit=limit)
+            entries = LdapClient.search(conn, base_dn, search_filter, attributes, size_limit=limit)
             users: list[UserUpsert] = []
             username_attr = config.get("username_attr", "sAMAccountName")
-            for entry in conn.entries:
+            for entry in entries:
                 attrs = LdapClient.entry_attrs(entry, config)
                 username = LdapClient.entry_value(entry, username_attr)
                 if not username:
@@ -225,15 +225,14 @@ class LdapClient:
 
     @staticmethod
     def attributes(config: dict) -> list[str]:
-        return list(
-            {
-                config.get("username_attr", "sAMAccountName"),
-                config.get("display_name_attr", "displayName"),
-                config.get("email_attr", "mail"),
-                config.get("dept_id_attr", "departmentNumber"),
-                config.get("dept_name_attr", "department"),
-            }
-        )
+        attrs = [
+            config.get("username_attr", "sAMAccountName"),
+            config.get("display_name_attr", "displayName"),
+            config.get("email_attr", "mail"),
+            config.get("dept_id_attr"),
+            config.get("dept_name_attr"),
+        ]
+        return list(dict.fromkeys(attr for attr in attrs if attr))
 
     @staticmethod
     def entry_attrs(entry, config: dict) -> dict:
@@ -241,8 +240,8 @@ class LdapClient:
             "dn": entry.entry_dn,
             "display_name": LdapClient.entry_value(entry, config.get("display_name_attr", "displayName")),
             "email": LdapClient.entry_value(entry, config.get("email_attr", "mail")),
-            "dept_id": LdapClient.entry_value(entry, config.get("dept_id_attr", "departmentNumber")),
-            "dept_name": LdapClient.entry_value(entry, config.get("dept_name_attr", "department")),
+            "dept_id": LdapClient.entry_value(entry, config.get("dept_id_attr")) if config.get("dept_id_attr") else None,
+            "dept_name": LdapClient.entry_value(entry, config.get("dept_name_attr")) if config.get("dept_name_attr") else None,
         }
 
     @staticmethod
@@ -276,3 +275,34 @@ class LdapClient:
         if port is None:
             port = 636 if use_ssl else 389
         return host, int(port), use_ssl
+
+    @staticmethod
+    def search(conn, base_dn: str, search_filter: str, attributes: list[str], size_limit: int):
+        ldap = LdapClient.load()
+        remaining = list(attributes)
+        while True:
+            try:
+                ok = conn.search(base_dn, search_filter, search_scope=ldap["SUBTREE"], attributes=remaining, size_limit=size_limit)
+                return list(conn.entries) if ok else []
+            except Exception as exc:
+                bad_attr = LdapClient.invalid_attribute_from_error(exc)
+                if not bad_attr or bad_attr not in remaining:
+                    raise ValueError(LdapClient.friendly_ldap_error(exc)) from exc
+                remaining.remove(bad_attr)
+                if not remaining:
+                    raise ValueError(f"All requested LDAP attributes are invalid. Last invalid attribute: {bad_attr}") from exc
+
+    @staticmethod
+    def invalid_attribute_from_error(exc: Exception) -> str | None:
+        text = str(exc)
+        match = re.search(r"invalid attribute type\s+([A-Za-z0-9_.;-]+)", text, re.IGNORECASE)
+        if match:
+            return match.group(1)
+        return None
+
+    @staticmethod
+    def friendly_ldap_error(exc: Exception) -> str:
+        bad_attr = LdapClient.invalid_attribute_from_error(exc)
+        if bad_attr:
+            return f"Invalid LDAP attribute '{bad_attr}'. Remove it from config or replace it with a real schema attribute such as ou/cn/mail."
+        return str(exc)

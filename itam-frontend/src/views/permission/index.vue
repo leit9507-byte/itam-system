@@ -74,7 +74,7 @@
                 type="info"
                 show-icon
                 :closable="false"
-                title="AD 常用登录名是 sAMAccountName；OpenLDAP 常用 uid。若没有服务账号，可填写 user_dn_template 走直接绑定。"
+                title="OpenLDAP 常用 uid/cn/mail/ou；AD 常用 sAMAccountName/displayName/mail/department。若某字段报 invalid attribute type，请改成真实存在的属性或留空。"
               />
               <el-form-item>
                 <el-button @click="resetProviderForm">清空</el-button>
@@ -206,13 +206,13 @@ function defaultConfig(type = 'ldap') {
       bind_dn: 'CN=ldap-reader,OU=Service Accounts,DC=example,DC=com',
       bind_password: 'change-me',
       base_dn: 'DC=example,DC=com',
-      user_filter: '(&(objectClass=person)(sAMAccountName={username}))',
+      user_filter: '(&(objectClass=person)(uid={username}))',
       sync_filter: '(objectClass=person)',
-      username_attr: 'sAMAccountName',
-      display_name_attr: 'displayName',
+      username_attr: 'uid',
+      display_name_attr: 'cn',
       email_attr: 'mail',
-      dept_id_attr: 'departmentNumber',
-      dept_name_attr: 'department',
+      dept_id_attr: 'ou',
+      dept_name_attr: 'ou',
       default_role: 'user',
       sync_limit: 200,
       test_username: ''
