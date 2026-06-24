@@ -61,9 +61,10 @@
         <el-table-column prop="price" label="价值" width="120">
           <template #default="{ row }">¥{{ Number(row.price || 0).toLocaleString() }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="230" fixed="right">
+        <el-table-column label="操作" width="270" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="goDetail(row)">详细</el-button>
+            <el-button type="primary" link @click="openEdit(row)">编辑</el-button>
             <el-button type="primary" link :disabled="!canInbound(row)" @click="openSingleInbound(row)">入库</el-button>
             <el-button type="warning" link :disabled="!canOutbound(row)" @click="openSingleOutbound(row)">出库</el-button>
             <el-dropdown trigger="click" @command="command => handleMoreCommand(command, row)">
@@ -101,14 +102,20 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="batchEdit.visible" title="批量编辑资产" width="760px">
+    <el-dialog v-model="batchEdit.visible" title="批量编辑资产" width="960px">
       <el-alert :title="`本次将更新 ${selected.length} 个资产；未勾选的字段不会覆盖原资产信息。`" type="info" show-icon :closable="false" />
       <el-form :model="batchEdit.form" label-width="118px" class="batch-form">
         <div class="batch-edit-grid">
+          <el-checkbox v-model="batchEdit.fields.name">资产名称</el-checkbox>
+          <el-input v-model="batchEdit.form.name" :disabled="!batchEdit.fields.name" />
+
           <el-checkbox v-model="batchEdit.fields.company">所属公司</el-checkbox>
           <el-select v-model="batchEdit.form.company" filterable clearable :disabled="!batchEdit.fields.company">
             <el-option v-for="item in companies" :key="item.id || item.name" :label="item.name" :value="item.name" />
           </el-select>
+
+          <el-checkbox v-model="batchEdit.fields.sn">序列号</el-checkbox>
+          <el-input v-model="batchEdit.form.sn" :disabled="!batchEdit.fields.sn" />
 
           <el-checkbox v-model="batchEdit.fields.category">设备类型</el-checkbox>
           <el-select v-model="batchEdit.form.category" filterable allow-create default-first-option :disabled="!batchEdit.fields.category">
@@ -120,15 +127,42 @@
             <el-option v-for="item in assetStatuses" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
 
+          <el-checkbox v-model="batchEdit.fields.brand">品牌</el-checkbox>
+          <el-input v-model="batchEdit.form.brand" :disabled="!batchEdit.fields.brand" />
+
+          <el-checkbox v-model="batchEdit.fields.model">型号</el-checkbox>
+          <el-input v-model="batchEdit.form.model" :disabled="!batchEdit.fields.model" />
+
+          <el-checkbox v-model="batchEdit.fields.spec">规格</el-checkbox>
+          <el-input v-model="batchEdit.form.spec" :disabled="!batchEdit.fields.spec" />
+
+          <el-checkbox v-model="batchEdit.fields.price">价值</el-checkbox>
+          <el-input-number v-model="batchEdit.form.price" :min="0" :disabled="!batchEdit.fields.price" style="width: 100%" />
+
+          <el-checkbox v-model="batchEdit.fields.purchase_date">采购时间</el-checkbox>
+          <el-date-picker v-model="batchEdit.form.purchase_date" type="date" value-format="YYYY-MM-DD" :disabled="!batchEdit.fields.purchase_date" style="width: 100%" />
+
+          <el-checkbox v-model="batchEdit.fields.purchase_approval_no">审批单号</el-checkbox>
+          <el-input v-model="batchEdit.form.purchase_approval_no" :disabled="!batchEdit.fields.purchase_approval_no" />
+
           <el-checkbox v-model="batchEdit.fields.purchase_supplier_name">供应商</el-checkbox>
           <el-select v-model="batchEdit.form.purchase_supplier_name" filterable clearable allow-create default-first-option :disabled="!batchEdit.fields.purchase_supplier_name">
             <el-option v-for="item in suppliers" :key="item.id || item.name" :label="supplierLabel(item)" :value="item.name" />
           </el-select>
 
+          <el-checkbox v-model="batchEdit.fields.warranty_expire_date">质保到期</el-checkbox>
+          <el-date-picker v-model="batchEdit.form.warranty_expire_date" type="date" value-format="YYYY-MM-DD" :disabled="!batchEdit.fields.warranty_expire_date" style="width: 100%" />
+
+          <el-checkbox v-model="batchEdit.fields.warranty_months">质保月数</el-checkbox>
+          <el-input-number v-model="batchEdit.form.warranty_months" :min="0" :disabled="!batchEdit.fields.warranty_months" style="width: 100%" />
+
           <el-checkbox v-model="batchEdit.fields.owner_user_id">责任人</el-checkbox>
           <el-select v-model="batchEdit.form.owner_user_id" filterable remote clearable reserve-keyword :remote-method="searchUsers" :disabled="!batchEdit.fields.owner_user_id" @change="fillUserToForm(batchEdit.form, $event)">
             <el-option v-for="user in filteredUsers" :key="user.user_id" :label="userLabel(user)" :value="user.user_id" />
           </el-select>
+
+          <el-checkbox v-model="batchEdit.fields.dept_id">部门</el-checkbox>
+          <el-input v-model="batchEdit.form.dept_id" :disabled="!batchEdit.fields.dept_id" />
 
           <el-checkbox v-model="batchEdit.fields.location">位置</el-checkbox>
           <el-input v-model="batchEdit.form.location" :disabled="!batchEdit.fields.location" />
@@ -310,10 +344,20 @@ function defaultBatchForm() {
 
 function defaultBatchEditForm() {
   return {
+    name: '',
     company: '',
+    sn: '',
     category: '',
     status: '',
+    brand: '',
+    model: '',
+    spec: '',
+    price: 0,
+    purchase_date: '',
+    purchase_approval_no: '',
     purchase_supplier_name: '',
+    warranty_expire_date: '',
+    warranty_months: 0,
     owner_user_id: '',
     owner_name: '',
     dept_id: '',
@@ -325,11 +369,22 @@ function defaultBatchEditForm() {
 
 function defaultBatchEditFields() {
   return {
+    name: false,
     company: false,
+    sn: false,
     category: false,
     status: false,
+    brand: false,
+    model: false,
+    spec: false,
+    price: false,
+    purchase_date: false,
+    purchase_approval_no: false,
     purchase_supplier_name: false,
+    warranty_expire_date: false,
+    warranty_months: false,
     owner_user_id: false,
+    dept_id: false,
     location: false,
     warehouse: false
   }
