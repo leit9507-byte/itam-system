@@ -13,12 +13,13 @@ const routes = [
       { path: 'asset/list', name: 'AssetList', component: () => import('../views/asset/list.vue'), meta: { title: '资产管理' } },
       { path: 'asset/detail/:id', name: 'AssetDetail', component: () => import('../views/asset/detail.vue'), meta: { title: '资产详情' } },
       { path: 'purchase', name: 'Purchase', component: () => import('../views/purchase/index.vue'), meta: { title: '采购管理' } },
+      { path: 'supplier', name: 'Supplier', component: () => import('../views/supplier/index.vue'), meta: { title: '供应商管理' } },
       { path: 'stocktake', name: 'Stocktake', component: () => import('../views/stocktake/index.vue'), meta: { title: '资产盘点' } },
       { path: 'repair', name: 'Repair', component: () => import('../views/repair/index.vue'), meta: { title: '维修管理' } },
       { path: 'audit', name: 'Audit', component: () => import('../views/audit/index.vue'), meta: { title: '审计中心' } },
+      { path: 'risk', redirect: '/audit' },
       { path: 'lifecycle', name: 'Lifecycle', component: () => import('../views/lifecycle/index.vue'), meta: { title: '生命周期' } },
       { path: 'scrap', name: 'ScrapApproval', component: () => import('../views/scrap/index.vue'), meta: { title: '报废审批' } },
-      { path: 'risk', name: 'Risk', component: () => import('../views/risk/index.vue'), meta: { title: '风险分析' } },
       { path: 'report', name: 'Report', component: () => import('../views/report/index.vue'), meta: { title: '报告中心' } },
       { path: 'permission', name: 'Permission', component: () => import('../views/permission/index.vue'), meta: { title: '权限管理' } }
     ]

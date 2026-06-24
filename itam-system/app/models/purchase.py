@@ -9,6 +9,7 @@ class Purchase(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     purchase_no = Column(String(64), unique=True, nullable=False, index=True)
+    supplier_name = Column(String(128), nullable=True, index=True)
     total_amount = Column(Float, default=0)
     status = Column(String(32), default="created", index=True)
 

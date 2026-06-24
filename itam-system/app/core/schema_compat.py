@@ -10,6 +10,10 @@ def ensure_compatible_schema(engine) -> None:
         add_column(engine, columns, "user_directory", "locked_until", "DATETIME NULL")
         add_column(engine, columns, "user_directory", "last_login_at", "DATETIME NULL")
 
+    if "purchases" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("purchases")}
+        add_column(engine, columns, "purchases", "supplier_name", "VARCHAR(128) NULL")
+
 
 def add_column(engine, columns: set[str], table: str, column: str, definition: str) -> None:
     if column in columns:

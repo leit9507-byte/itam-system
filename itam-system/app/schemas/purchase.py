@@ -16,6 +16,7 @@ class PurchaseItemCreate(BaseModel):
 
 class PurchaseCreate(BaseModel):
     purchase_no: str
+    supplier_name: Optional[str] = None
     total_amount: float = Field(default=0, ge=0)
     status: str = "created"
     items: List[PurchaseItemCreate] = Field(default_factory=list)
@@ -66,6 +67,7 @@ class PurchaseOut(BaseModel):
 
     id: int
     purchase_no: str
+    supplier_name: Optional[str] = None
     total_amount: float
     status: str
     items: List[PurchaseItemOut] = Field(default_factory=list)

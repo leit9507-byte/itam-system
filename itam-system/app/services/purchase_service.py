@@ -16,6 +16,7 @@ class PurchaseService:
     def create_purchase(db: Session, payload: PurchaseCreate) -> Purchase:
         purchase = Purchase(
             purchase_no=payload.purchase_no,
+            supplier_name=payload.supplier_name,
             total_amount=payload.total_amount,
             status=payload.status,
         )

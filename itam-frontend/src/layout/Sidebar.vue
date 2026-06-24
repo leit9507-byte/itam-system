@@ -7,13 +7,13 @@
     <el-menu :default-active="route.path" router class="menu" :collapse="store.collapsed">
       <el-menu-item index="/dashboard"><el-icon><DataBoard /></el-icon><span>资产总览</span></el-menu-item>
       <el-menu-item index="/asset/list"><el-icon><Monitor /></el-icon><span>资产管理</span></el-menu-item>
+      <el-menu-item index="/purchase"><el-icon><ShoppingCart /></el-icon><span>采购管理</span></el-menu-item>
+      <el-menu-item index="/supplier"><el-icon><OfficeBuilding /></el-icon><span>供应商管理</span></el-menu-item>
       <el-menu-item index="/stocktake"><el-icon><Tickets /></el-icon><span>资产盘点</span></el-menu-item>
       <el-menu-item index="/repair"><el-icon><Tools /></el-icon><span>维修管理</span></el-menu-item>
-      <el-menu-item index="/purchase"><el-icon><ShoppingCart /></el-icon><span>采购管理</span></el-menu-item>
       <el-menu-item index="/audit"><el-icon><View /></el-icon><span>审计中心</span></el-menu-item>
       <el-menu-item index="/lifecycle"><el-icon><Clock /></el-icon><span>生命周期</span></el-menu-item>
       <el-menu-item index="/scrap"><el-icon><CircleClose /></el-icon><span>报废审批</span></el-menu-item>
-      <el-menu-item index="/risk"><el-icon><TrendCharts /></el-icon><span>风险分析</span></el-menu-item>
       <el-menu-item index="/report"><el-icon><Document /></el-icon><span>报告中心</span></el-menu-item>
       <el-menu-item index="/permission"><el-icon><Lock /></el-icon><span>权限管理</span></el-menu-item>
     </el-menu>
@@ -22,7 +22,7 @@
 
 <script setup>
 import { useRoute } from 'vue-router'
-import { CircleClose, Clock, DataBoard, Document, Lock, Monitor, ShoppingCart, Tickets, Tools, TrendCharts, View } from '@element-plus/icons-vue'
+import { CircleClose, Clock, DataBoard, Document, Lock, Monitor, OfficeBuilding, ShoppingCart, Tickets, Tools, View } from '@element-plus/icons-vue'
 import { useAppStore } from '../store'
 
 const route = useRoute()

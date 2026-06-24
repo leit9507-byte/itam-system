@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">采购管理</h2>
-        <p class="page-subtitle">一张采购单可包含多种设备，验收时按明细填写序列号并自动入库生成资产</p>
+        <p class="page-subtitle">一张采购单可包含多种设备，支持供应商、审批单号、验收明细和自动入库</p>
       </div>
       <div class="toolbar">
         <el-button @click="catalogDialog = true">基础资料</el-button>
@@ -31,6 +31,7 @@
         </el-table-column>
         <el-table-column prop="purchase_no" label="采购单号" width="160" />
         <el-table-column prop="approval_no" label="审批单号" width="160" />
+        <el-table-column prop="supplier_name" label="供应商" width="170" />
         <el-table-column label="采购内容" min-width="260">
           <template #default="{ row }">
             <div class="purchase-summary">
@@ -57,6 +58,9 @@
         <div class="header-form">
           <el-form-item label="采购单号"><el-input v-model="form.purchase_no" /></el-form-item>
           <el-form-item label="审批单号"><el-input v-model="form.approval_no" /></el-form-item>
+          <el-form-item label="供应商">
+            <el-input v-model="form.supplier_name" placeholder="填写或选择供应商名称" />
+          </el-form-item>
           <el-form-item label="申请部门"><el-input v-model="form.dept" /></el-form-item>
         </div>
       </el-form>
@@ -81,24 +85,12 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="类型" width="130">
-          <template #default="{ row }"><el-input v-model="row.category" /></template>
-        </el-table-column>
-        <el-table-column label="品牌" width="130">
-          <template #default="{ row }"><el-input v-model="row.brand" /></template>
-        </el-table-column>
-        <el-table-column label="数量" width="110">
-          <template #default="{ row }"><el-input-number v-model="row.quantity" :min="1" style="width: 100%" /></template>
-        </el-table-column>
-        <el-table-column label="单价" width="140">
-          <template #default="{ row }"><el-input-number v-model="row.unit_price" :min="0" style="width: 100%" /></template>
-        </el-table-column>
-        <el-table-column label="仓库" width="150">
-          <template #default="{ row }"><el-input v-model="row.warehouse" /></template>
-        </el-table-column>
-        <el-table-column label="操作" width="80">
-          <template #default="{ $index }"><el-button link type="danger" @click="removeLine($index)">删除</el-button></template>
-        </el-table-column>
+        <el-table-column label="类型" width="130"><template #default="{ row }"><el-input v-model="row.category" /></template></el-table-column>
+        <el-table-column label="品牌" width="130"><template #default="{ row }"><el-input v-model="row.brand" /></template></el-table-column>
+        <el-table-column label="数量" width="110"><template #default="{ row }"><el-input-number v-model="row.quantity" :min="1" style="width: 100%" /></template></el-table-column>
+        <el-table-column label="单价" width="140"><template #default="{ row }"><el-input-number v-model="row.unit_price" :min="0" style="width: 100%" /></template></el-table-column>
+        <el-table-column label="仓库" width="150"><template #default="{ row }"><el-input v-model="row.warehouse" /></template></el-table-column>
+        <el-table-column label="操作" width="80"><template #default="{ $index }"><el-button link type="danger" @click="removeLine($index)">删除</el-button></template></el-table-column>
       </el-table>
       <template #footer>
         <span class="amount">合计：¥{{ totalAmount.toLocaleString() }}</span>
@@ -205,7 +197,7 @@ async function load() {
 }
 
 function defaultForm() {
-  return { purchase_no: `PO-${Date.now()}`, approval_no: '', dept: '', items: [defaultLine()] }
+  return { purchase_no: `PO-${Date.now()}`, approval_no: '', supplier_name: '', dept: '', items: [defaultLine()] }
 }
 
 function defaultLine() {
@@ -343,7 +335,7 @@ async function saveProduct() {
 
 .header-form {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -381,5 +373,13 @@ async function saveProduct() {
 
 .product-form {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 980px) {
+  .header-form,
+  .catalog-grid,
+  .product-form {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

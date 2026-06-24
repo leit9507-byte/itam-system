@@ -2,8 +2,8 @@
   <div class="audit-page">
     <div class="page-header">
       <div>
-        <h2 class="page-title">AI资产审计中心</h2>
-        <p class="page-subtitle">基于后端规则引擎、正式资产台账和采购数据生成风险结果</p>
+        <h2 class="page-title">审计中心</h2>
+        <p class="page-subtitle">合并 AI 资产审计与风险分析，基于正式资产台账、采购数据和规则引擎生成风险结果</p>
       </div>
       <el-space>
         <el-button :icon="Document" @click="router.push('/report')">生成报告</el-button>
@@ -62,10 +62,25 @@
           <div ref="scoreRef" class="chart compact-chart" />
         </el-card>
         <el-card shadow="never">
-          <template #header>部门风险排行</template>
-          <div ref="deptRef" class="chart compact-chart" />
+          <template #header>库存与闲置结构</template>
+          <div ref="idleRef" class="chart compact-chart" />
         </el-card>
       </div>
+    </section>
+
+    <section class="analysis-section">
+      <el-card shadow="never">
+        <template #header>
+          <div class="card-header">
+            <span>风险分析</span>
+            <el-tag type="warning">已合并到审计中心</el-tag>
+          </div>
+        </template>
+        <div class="analysis-grid">
+          <div ref="trendRef" class="chart" />
+          <div ref="deptRef" class="chart" />
+        </div>
+      </el-card>
     </section>
 
     <section class="detail-grid">
@@ -91,8 +106,10 @@
       </el-card>
 
       <el-card shadow="never">
-        <template #header>库存与闲置结构</template>
-        <div ref="idleRef" class="chart" />
+        <template #header>处置建议</template>
+        <el-space direction="vertical" alignment="stretch" class="suggestions">
+          <el-alert v-for="item in result?.suggestions || []" :key="item" :title="item" type="info" show-icon :closable="false" />
+        </el-space>
       </el-card>
     </section>
 
@@ -128,20 +145,6 @@
         </el-table-column>
       </el-table>
     </el-card>
-
-    <el-card shadow="never">
-      <template #header>处置建议</template>
-      <el-space direction="vertical" alignment="stretch" class="suggestions">
-        <el-alert
-          v-for="item in result?.suggestions || []"
-          :key="item"
-          :title="item"
-          type="info"
-          show-icon
-          :closable="false"
-        />
-      </el-space>
-    </el-card>
   </div>
 </template>
 
@@ -160,6 +163,7 @@ const severityFilter = ref('全部')
 const activeRule = ref('')
 const severityOptions = ['全部', '高', '中', '低']
 const scoreRef = ref(null)
+const trendRef = ref(null)
 const deptRef = ref(null)
 const idleRef = ref(null)
 const charts = []
@@ -198,40 +202,46 @@ function renderCharts() {
   charts.length = 0
   if (!result.value) return
 
-  if (scoreRef.value) {
-    const score = echarts.init(scoreRef.value)
-    score.setOption({
-      tooltip: { trigger: 'axis' },
-      grid: { left: 34, right: 16, top: 20, bottom: 28 },
-      xAxis: { type: 'category', data: result.value.riskTrend.map(item => item.name) },
-      yAxis: { type: 'value', min: 0, max: 100 },
-      series: [{ name: '风险评分', type: 'bar', barWidth: 42, data: result.value.riskTrend.map(item => item.value), itemStyle: { color: '#dc2626', borderRadius: [4, 4, 0, 0] } }]
-    })
-    charts.push(score)
-  }
+  const riskTrend = result.value.riskTrend?.length ? result.value.riskTrend : [{ name: '本次审计', value: result.value.risk_score || 0 }]
+  const deptRows = result.value.deptRank?.length ? result.value.deptRank : [{ dept: '暂无风险', score: 0 }]
 
-  if (deptRef.value) {
-    const dept = echarts.init(deptRef.value)
-    const deptRows = result.value.deptRank.length ? result.value.deptRank : [{ dept: '暂无风险', score: 0 }]
-    dept.setOption({
-      tooltip: { trigger: 'axis' },
-      grid: { left: 78, right: 18, top: 20, bottom: 24 },
-      xAxis: { type: 'value' },
-      yAxis: { type: 'category', data: deptRows.map(item => item.dept) },
-      series: [{ name: '风险分', type: 'bar', data: deptRows.map(item => item.score), itemStyle: { color: '#b45309', borderRadius: [0, 4, 4, 0] } }]
-    })
-    charts.push(dept)
-  }
+  const score = echarts.init(scoreRef.value)
+  score.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 34, right: 16, top: 20, bottom: 28 },
+    xAxis: { type: 'category', data: riskTrend.map(item => item.name) },
+    yAxis: { type: 'value', min: 0, max: 100 },
+    series: [{ name: '风险评分', type: 'bar', barWidth: 42, data: riskTrend.map(item => item.value), itemStyle: { color: '#dc2626', borderRadius: [4, 4, 0, 0] } }]
+  })
 
-  if (idleRef.value) {
-    const idle = echarts.init(idleRef.value)
-    idle.setOption({
-      tooltip: { trigger: 'item' },
-      legend: { bottom: 0 },
-      series: [{ type: 'pie', radius: ['45%', '70%'], center: ['50%', '44%'], data: result.value.idleStats }]
-    })
-    charts.push(idle)
-  }
+  const idle = echarts.init(idleRef.value)
+  idle.setOption({
+    tooltip: { trigger: 'item' },
+    legend: { bottom: 0 },
+    series: [{ type: 'pie', radius: ['45%', '70%'], center: ['50%', '44%'], data: result.value.idleStats }]
+  })
+
+  const trend = echarts.init(trendRef.value)
+  trend.setOption({
+    title: { text: '风险趋势', left: 8, top: 0, textStyle: { fontSize: 14 } },
+    tooltip: { trigger: 'axis' },
+    grid: { left: 40, right: 18, top: 48, bottom: 30 },
+    xAxis: { type: 'category', data: riskTrend.map(item => item.name) },
+    yAxis: { type: 'value', max: 100 },
+    series: [{ name: '风险评分', type: 'line', smooth: true, areaStyle: {}, data: riskTrend.map(item => item.value), itemStyle: { color: '#b45309' } }]
+  })
+
+  const dept = echarts.init(deptRef.value)
+  dept.setOption({
+    title: { text: '部门风险排行', left: 8, top: 0, textStyle: { fontSize: 14 } },
+    tooltip: { trigger: 'axis' },
+    grid: { left: 78, right: 18, top: 48, bottom: 24 },
+    xAxis: { type: 'value' },
+    yAxis: { type: 'category', data: deptRows.map(item => item.dept) },
+    series: [{ name: '风险分', type: 'bar', data: deptRows.map(item => item.score), itemStyle: { color: '#b45309', borderRadius: [0, 4, 4, 0] } }]
+  })
+
+  charts.push(score, idle, trend, dept)
 }
 
 function focusRule(rule) {
@@ -352,18 +362,20 @@ function severityLabel(severity) {
 }
 
 .chart-stack,
-.detail-grid {
+.detail-grid,
+.analysis-grid {
   display: grid;
   gap: 16px;
 }
 
-.detail-grid {
-  grid-template-columns: minmax(520px, 1.2fr) minmax(320px, 0.8fr);
+.detail-grid,
+.analysis-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .chart {
   width: 100%;
-  height: 260px;
+  height: 280px;
 }
 
 .compact-chart {
@@ -389,24 +401,18 @@ function severityLabel(severity) {
 @media (max-width: 1280px) {
   .summary-grid,
   .risk-section,
-  .detail-grid {
+  .detail-grid,
+  .analysis-grid {
     grid-template-columns: 1fr;
-  }
-
-  .summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 760px) {
-  .summary-grid,
   .risk-list,
-  .score-body {
+  .score-body,
+  .card-header,
+  .table-tools {
     grid-template-columns: 1fr;
-  }
-
-  .table-tools,
-  .card-header {
     align-items: flex-start;
     flex-direction: column;
   }

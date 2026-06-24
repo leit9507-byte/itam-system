@@ -19,6 +19,7 @@ export async function createPurchase(payload) {
   const totalAmount = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
   const row = await request.post('/purchase/create', {
     purchase_no: payload.purchase_no || payload.approval_no || `PO-${Date.now()}`,
+    supplier_name: payload.supplier_name || '',
     total_amount: totalAmount,
     status: payload.status || 'created',
     items
@@ -66,6 +67,7 @@ function mapBackendPurchase(row) {
     id: row.purchase_no,
     purchase_no: row.purchase_no,
     approval_no: row.purchase_no,
+    supplier_name: row.supplier_name || '未指定供应商',
     total_amount: Number(row.total_amount || 0),
     status: row.status || 'created',
     status_label: statusLabelMap[row.status] || row.status || '审批中',
@@ -83,7 +85,9 @@ function mapBackendPurchase(row) {
       location: item.location || '',
       dept: item.dept_id || '',
       dept_id: item.dept_id || '',
-      spec: ''
+      spec: '',
+      supplier_name: row.supplier_name || '未指定供应商',
+      purchase_no: row.purchase_no
     })),
     quantity: items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
   }
