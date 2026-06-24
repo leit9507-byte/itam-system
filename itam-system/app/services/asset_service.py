@@ -11,6 +11,7 @@ from app.models.asset import Asset
 from app.models.user import UserDirectory
 from app.schemas.asset import AssetBatchImport, AssetCreate, AssetImportRow, AssetTextImport, AssetUpdate
 from app.services.lifecycle_service import LifecycleService
+from app.services.supplier_service import SupplierService
 
 
 class AssetService:
@@ -41,6 +42,7 @@ class AssetService:
             dept_id=(user.dept_id or user.dept_name) if user else payload.dept_id,
             location=payload.location,
         )
+        SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
         db.add(asset)
         db.flush()
         LifecycleService.record(db, asset.asset_id, "CREATE", None, asset.status, operator)
@@ -86,6 +88,7 @@ class AssetService:
                     location=normalized.location,
                 )
                 AssetService.sync_owner_department(db, asset)
+                SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
                 db.add(asset)
                 db.flush()
                 LifecycleService.record(db, asset.asset_id, "BATCH_IMPORT", None, asset.status, payload.operator)
@@ -232,6 +235,7 @@ class AssetService:
         for key, value in data.items():
             setattr(asset, key, value)
         AssetService.sync_owner_department(db, asset)
+        SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
 
         LifecycleService.record(db, asset.asset_id, "ASSET_UPDATE", old_status, asset.status, operator)
         db.commit()
