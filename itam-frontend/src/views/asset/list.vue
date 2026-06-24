@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">资产管理</h2>
-        <p class="page-subtitle">支持 Excel 导入、批量出入库、用户领用、资产调整和报废审批</p>
+        <p class="page-subtitle">支持 Excel 导入、批量出入库、用户领用、资产调整、维修登记和报废审批</p>
       </div>
       <el-button type="primary" @click="importDialog.visible = true">批量导入资产</el-button>
     </div>
@@ -51,18 +51,49 @@
           </template>
         </el-table-column>
         <el-table-column prop="price" label="价值" width="120">
-          <template #default="{ row }">￥{{ Number(row.price || 0).toLocaleString() }}</template>
+          <template #default="{ row }">¥{{ Number(row.price || 0).toLocaleString() }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="250" fixed="right">
+        <el-table-column label="操作" width="320" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="goDetail(row)">详情</el-button>
             <el-button type="primary" link @click="openEdit(row)">编辑</el-button>
             <el-button type="warning" link :disabled="['scrapped', 'pending_scrap'].includes(row.status)" @click="openSingleOutbound(row)">出库</el-button>
             <el-button type="danger" link :disabled="['scrapped', 'pending_scrap'].includes(row.status)" @click="openSingleScrap(row)">报废</el-button>
+            <el-button type="warning" link :disabled="['scrapped', 'pending_scrap', 'repair'].includes(row.status)" @click="openRepair(row)">维修</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
+
+    <el-dialog v-model="repairDialog.visible" title="新增维修记录" width="620px">
+      <el-descriptions v-if="repairDialog.asset" :column="2" border class="repair-asset">
+        <el-descriptions-item label="资产ID">{{ repairDialog.asset.asset_id }}</el-descriptions-item>
+        <el-descriptions-item label="资产名称">{{ repairDialog.asset.name }}</el-descriptions-item>
+        <el-descriptions-item label="序列号">{{ repairDialog.asset.sn || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="当前状态">{{ statusMap[repairDialog.asset.status]?.label || repairDialog.asset.status }}</el-descriptions-item>
+      </el-descriptions>
+      <el-form :model="repairDialog.form" label-width="100px" class="repair-form">
+        <el-form-item label="维修时间" required>
+          <el-date-picker v-model="repairDialog.form.repair_time" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="故障原因" required>
+          <el-input v-model="repairDialog.form.fault_reason" type="textarea" :rows="4" placeholder="例如：无法开机、屏幕损坏、主板故障等" />
+        </el-form-item>
+        <el-form-item label="维修费用" required>
+          <el-input-number v-model="repairDialog.form.repair_cost" :min="0" :precision="2" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="维修商">
+          <el-input v-model="repairDialog.form.vendor" placeholder="可填写供应商或内部维修人" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="repairDialog.form.remark" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="repairDialog.visible = false">取消</el-button>
+        <el-button type="primary" @click="submitRepair">创建维修单</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="editDialog.visible" title="调整资产信息" width="760px">
       <el-form :model="editDialog.form" label-width="100px">
@@ -169,6 +200,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { assetStatuses, createScrapRequest, getAssets, importAssetsFromExcel, importAssetsFromText, inboundAsset, outboundAsset, statusMap, updateAsset } from '../../api/asset'
 import { getDeviceTypes } from '../../api/product'
+import { createRepairRecord } from '../../api/repair'
 import { getUsers } from '../../api/user'
 
 const router = useRouter()
@@ -180,6 +212,7 @@ const filters = reactive({ keyword: '', status: '', category: '' })
 const batch = reactive({ visible: false, type: 'inbound', assets: [], form: defaultBatchForm() })
 const importDialog = reactive({ visible: false, loading: false, content: '', result: null })
 const editDialog = reactive({ visible: false, form: {} })
+const repairDialog = reactive({ visible: false, asset: null, form: defaultRepairForm() })
 
 const batchTitle = computed(() => ({ inbound: '批量入库', outbound: '批量出库', scrap: '批量申请报废' }[batch.type]))
 
@@ -218,6 +251,17 @@ function defaultBatchForm() {
   }
 }
 
+function defaultRepairForm() {
+  return {
+    repair_time: new Date().toISOString().slice(0, 10),
+    fault_reason: '',
+    repair_cost: 0,
+    vendor: '',
+    operator: '资产管理员',
+    remark: ''
+  }
+}
+
 function displayUser(userId) {
   const user = users.value.find(item => item.user_id === userId || item.username === userId)
   return user ? `${user.display_name}` : userId || '未分配'
@@ -245,6 +289,27 @@ async function submitEdit() {
   await updateAsset(editDialog.form.asset_id, editDialog.form)
   editDialog.visible = false
   ElMessage.success('资产信息已更新')
+  await loadAssets()
+}
+
+function openRepair(row) {
+  repairDialog.asset = row
+  Object.assign(repairDialog.form, defaultRepairForm())
+  repairDialog.visible = true
+}
+
+async function submitRepair() {
+  if (!repairDialog.form.repair_time) {
+    ElMessage.warning('请选择维修时间')
+    return
+  }
+  if (!repairDialog.form.fault_reason.trim()) {
+    ElMessage.warning('请填写故障原因')
+    return
+  }
+  await createRepairRecord(repairDialog.asset, repairDialog.form)
+  repairDialog.visible = false
+  ElMessage.success('维修单已创建，资产状态已更新为维修中')
   await loadAssets()
 }
 
@@ -340,8 +405,13 @@ async function submitBatch() {
 
 .batch-form,
 .import-textarea,
-.import-result {
+.import-result,
+.repair-form {
   margin-top: 16px;
+}
+
+.repair-asset {
+  margin-bottom: 16px;
 }
 
 .upload-row,

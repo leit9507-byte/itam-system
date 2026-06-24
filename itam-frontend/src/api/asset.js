@@ -6,7 +6,7 @@ export const assetStatuses = [
   { label: '在用', value: 'in_use', type: 'success' },
   { label: '闲置', value: 'idle', type: 'warning' },
   { label: '借出', value: 'borrowed', type: 'warning' },
-  { label: '维修', value: 'repair', type: 'danger' },
+  { label: '维修中', value: 'repair', type: 'danger' },
   { label: '已出库', value: 'out_stock', type: 'info' },
   { label: '待报废', value: 'pending_scrap', type: 'warning' },
   { label: '已报废', value: 'scrapped', type: 'info' }

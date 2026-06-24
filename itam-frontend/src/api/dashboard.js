@@ -1,13 +1,15 @@
 import { getAssets } from './asset'
 import { getPurchases } from './purchase'
+import { getRepairDashboard } from './repair'
 
 const categoryNames = ['笔记本电脑', '台式机', 'Mac设备', '显示器', '服务器', '存储设备', '网络设备', '软件授权', '其他']
 const departmentNames = ['研发中心', '美术中心', '运营中心', '发行中心', '财务部', '行政部', 'IT部']
 
 export async function getEnterpriseDashboard(filters = {}) {
-  const [{ list: allAssets }, purchases] = await Promise.all([
+  const [{ list: allAssets }, purchases, repairDashboard] = await Promise.all([
     getAssets({}),
-    getPurchases().catch(() => [])
+    getPurchases().catch(() => []),
+    getRepairDashboard(filters).catch(() => ({ total: 0, inProgress: 0, totalCost: 0, topFaults: [] }))
   ])
 
   const assets = filterByDateRange(allAssets, filters.dateRange, 'created_at')
@@ -45,7 +47,7 @@ export async function getEnterpriseDashboard(filters = {}) {
       { name: '闲置', value: idle },
       { name: '已报废', value: countStatus(allAssetsInScope, 'scrapped') }
     ],
-    maintenance: buildMaintenance(allAssetsInScope)
+    maintenance: buildMaintenance(repairDashboard, allAssetsInScope)
   }
 }
 
@@ -152,13 +154,15 @@ function filterPurchasesForCurrentData(purchases, dateRange) {
   return purchases.filter(item => !item.created_at || inDateRange(item.created_at, dateRange))
 }
 
-function buildMaintenance(assets) {
+function buildMaintenance(repairDashboard, assets) {
   const repairAssets = assets.filter(item => item.status === 'repair')
   return {
-    top10: repairAssets.slice(0, 10).map(item => ({ name: item.name, count: 1 })),
-    mttr: repairAssets.length ? '待维修记录计算' : '0小时',
-    monthCost: 0,
-    yearCost: 0
+    top10: repairDashboard.topFaults?.length
+      ? repairDashboard.topFaults.map(item => ({ name: item.name, count: item.value }))
+      : repairAssets.slice(0, 10).map(item => ({ name: item.name, count: 1 })),
+    mttr: repairDashboard.total ? '待完工时间计算' : '0小时',
+    monthCost: repairDashboard.totalCost || 0,
+    yearCost: repairDashboard.totalCost || 0
   }
 }
 
