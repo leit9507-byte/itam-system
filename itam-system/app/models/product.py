@@ -25,4 +25,5 @@ class ProductCatalog(Base):
     spec = Column(String(255), nullable=True)
     unit_price = Column(Float, default=0)
     default_warehouse = Column(String(128), nullable=True)
+    retirement_years = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

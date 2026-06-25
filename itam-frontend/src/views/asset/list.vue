@@ -149,11 +149,8 @@
             <el-option v-for="item in suppliers" :key="item.id || item.name" :label="supplierLabel(item)" :value="item.name" />
           </el-select>
 
-          <el-checkbox v-model="batchEdit.fields.warranty_expire_date">质保到期</el-checkbox>
-          <el-date-picker v-model="batchEdit.form.warranty_expire_date" type="date" value-format="YYYY-MM-DD" :disabled="!batchEdit.fields.warranty_expire_date" style="width: 100%" />
-
-          <el-checkbox v-model="batchEdit.fields.warranty_months">质保月数</el-checkbox>
-          <el-input-number v-model="batchEdit.form.warranty_months" :min="0" :disabled="!batchEdit.fields.warranty_months" style="width: 100%" />
+          <el-checkbox v-model="batchEdit.fields.warranty_years">维保年限</el-checkbox>
+          <el-input-number v-model="batchEdit.form.warranty_years" :min="0" :step="1" :precision="0" :disabled="!batchEdit.fields.warranty_years" style="width: 100%" />
 
           <el-checkbox v-model="batchEdit.fields.owner_user_id">责任人</el-checkbox>
           <el-select v-model="batchEdit.form.owner_user_id" filterable remote clearable reserve-keyword :remote-method="searchUsers" :disabled="!batchEdit.fields.owner_user_id" @change="fillUserToForm(batchEdit.form, $event)">
@@ -248,7 +245,7 @@
     </el-dialog>
 
     <el-dialog v-model="importDialog.visible" title="批量导入资产" width="900px">
-      <el-alert title="支持上传 .xlsx/.xlsm，也支持从 Excel 复制粘贴。推荐表头：资产名称、设备类型、品牌、型号、序列号、价格、采购日期、采购审批单号、采购供应商、质保到期、使用人、部门、仓库、状态。" type="info" show-icon :closable="false" />
+      <el-alert title="支持上传 .xlsx/.xlsm，也支持从 Excel 复制粘贴。推荐表头：资产名称、设备类型、品牌、型号、序列号、价格、采购日期、采购审批单号、采购供应商、维保年限、使用人、部门、仓库、状态。" type="info" show-icon :closable="false" />
       <div class="upload-row">
         <el-upload :show-file-list="false" accept=".xlsx,.xlsm" :before-upload="submitExcelImport">
           <el-button type="primary">上传 Excel 文件</el-button>
@@ -355,8 +352,7 @@ function defaultBatchEditForm() {
     purchase_date: '',
     purchase_approval_no: '',
     purchase_supplier_name: '',
-    warranty_expire_date: '',
-    warranty_months: 0,
+    warranty_years: 0,
     owner_user_id: '',
     owner_name: '',
     dept_id: '',
@@ -380,8 +376,7 @@ function defaultBatchEditFields() {
     purchase_date: false,
     purchase_approval_no: false,
     purchase_supplier_name: false,
-    warranty_expire_date: false,
-    warranty_months: false,
+    warranty_years: false,
     owner_user_id: false,
     dept_id: false,
     location: false,
@@ -426,6 +421,18 @@ function userLabel(user) {
 function supplierLabel(item) {
   const meta = [item.contact, item.phone].filter(Boolean).join(' / ')
   return meta ? `${item.name} (${meta})` : item.name
+}
+
+function warrantyExpirePreview(form) {
+  if (!form?.purchase_date || !form?.warranty_years) return form?.warranty_expire_date || ''
+  return addYears(form.purchase_date, Number(form.warranty_years))
+}
+
+function addYears(value, years) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime()) || !years) return ''
+  date.setFullYear(date.getFullYear() + Number(years))
+  return date.toISOString().slice(0, 10)
 }
 
 function searchUsers(query = '') {
@@ -595,9 +602,9 @@ function validateBatchAssets(type, rows) {
 
 function fillImportExample() {
   importDialog.content = [
-    '资产名称,设备类型,品牌,型号,序列号,价格,采购日期,采购审批单号,采购供应商,质保到期,使用人,部门,仓库,状态',
-    'ThinkPad X1 Carbon,笔记本电脑,Lenovo,X1 Carbon Gen 12,SN-IMPORT-001,15000,2026-06-24,OA-20260624-001,联想授权供应商,2029-06-24,U-ADMIN,IT,上海IT仓,in_stock',
-    'Dell U2723QE,显示器,Dell,U2723QE,SN-IMPORT-002,3999,2026-06-24,OA-20260624-001,Dell渠道商,2029-06-24,U-AUDITOR,AUDIT,上海IT仓,in_stock'
+    '资产名称,设备类型,品牌,型号,序列号,价格,采购日期,采购审批单号,采购供应商,维保年限,使用人,部门,仓库,状态',
+    'ThinkPad X1 Carbon,笔记本电脑,Lenovo,X1 Carbon Gen 12,SN-IMPORT-001,15000,2026-06-24,OA-20260624-001,联想授权供应商,3,U-ADMIN,IT,上海IT仓,in_stock',
+    'Dell U2723QE,显示器,Dell,U2723QE,SN-IMPORT-002,3999,2026-06-24,OA-20260624-001,Dell渠道商,3,U-AUDITOR,AUDIT,上海IT仓,in_stock'
   ].join('\n')
 }
 
@@ -669,8 +676,8 @@ const AssetEditFields = defineComponent({
         field('采购时间', h(resolveDatePicker(), { modelValue: props.form.purchase_date, 'onUpdate:modelValue': value => (props.form.purchase_date = value), type: 'date', valueFormat: 'YYYY-MM-DD', style: 'width:100%' })),
         field('采购审批单号', h(resolveInput(), { modelValue: props.form.purchase_approval_no, 'onUpdate:modelValue': value => (props.form.purchase_approval_no = value) })),
         field('采购供应商', h(resolveSelect(), { modelValue: props.form.purchase_supplier_name, 'onUpdate:modelValue': value => (props.form.purchase_supplier_name = value), filterable: true, clearable: true, allowCreate: true, defaultFirstOption: true, style: 'width:100%' }, () => props.suppliers.map(item => h(resolveOption(), { key: item.id || item.name, label: item.name, value: item.name })))),
-        field('质保到期', h(resolveDatePicker(), { modelValue: props.form.warranty_expire_date, 'onUpdate:modelValue': value => (props.form.warranty_expire_date = value), type: 'date', valueFormat: 'YYYY-MM-DD', style: 'width:100%' })),
-        field('质保月数', h(resolveInputNumber(), { modelValue: props.form.warranty_months, 'onUpdate:modelValue': value => (props.form.warranty_months = value), min: 0, style: 'width:100%' })),
+        field('维保年限', h(resolveInputNumber(), { modelValue: props.form.warranty_years, 'onUpdate:modelValue': value => (props.form.warranty_years = value), min: 0, step: 1, precision: 0, style: 'width:100%' })),
+        field('维保到期', h(resolveInput(), { modelValue: warrantyExpirePreview(props.form), disabled: true, placeholder: '根据采购时间和维保年限自动计算' })),
         field('责任人', h(resolveSelect(), { modelValue: props.form.owner_user_id, 'onUpdate:modelValue': value => (props.form.owner_user_id = value), filterable: true, remote: true, clearable: true, reserveKeyword: true, remoteMethod: value => emit('search-users', value), style: 'width:100%', onChange: value => emit('select-user', value) }, () => props.users.map(user => h(resolveOption(), { key: user.user_id, label: `${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`, value: user.user_id })))),
         field('部门', h(resolveInput(), { modelValue: props.form.dept_id, 'onUpdate:modelValue': value => (props.form.dept_id = value), disabled: true })),
         field('位置', h(resolveInput(), { modelValue: props.form.location, 'onUpdate:modelValue': value => (props.form.location = value) })),

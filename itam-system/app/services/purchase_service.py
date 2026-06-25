@@ -35,6 +35,7 @@ class PurchaseService:
                     model=item.model,
                     quantity=item.quantity,
                     unit_price=item.unit_price,
+                    retirement_years=item.retirement_years,
                     location=item.location,
                     dept_id=item.dept_id,
                 )
@@ -63,7 +64,7 @@ class PurchaseService:
                     brand=item.brand,
                     model=item.model,
                     sn=None,
-                    config={},
+                    config={"retirement_years": item.retirement_years} if item.retirement_years else {},
                     purchase_price=item.unit_price,
                     purchase_date=purchase_date,
                     purchase_approval_no=purchase.purchase_no,
@@ -73,6 +74,7 @@ class PurchaseService:
                     dept_id=item.dept_id,
                     location=item.location,
                 )
+                AssetService.apply_warranty_expire(asset)
                 db.add(asset)
                 db.flush()
                 LifecycleService.record(db, asset.asset_id, "PURCHASE", None, "in_stock", operator)
@@ -110,6 +112,8 @@ class PurchaseService:
                     config["spec"] = accepted.spec
                 config["purchase_no"] = purchase.purchase_no
                 config["purchase_item_id"] = item.id
+                if item.retirement_years:
+                    config["retirement_years"] = item.retirement_years
                 asset = Asset(
                     asset_id=AssetService.generate_asset_id(db),
                     name=accepted.name or item.name,
@@ -129,6 +133,7 @@ class PurchaseService:
                     dept_id=accepted.dept_id if accepted.dept_id is not None else item.dept_id,
                     location=accepted.location if accepted.location is not None else item.location,
                 )
+                AssetService.apply_warranty_expire(asset)
                 db.add(asset)
                 db.flush()
                 LifecycleService.record(db, asset.asset_id, "PURCHASE_ACCEPTANCE", None, "in_stock", payload.operator)

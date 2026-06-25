@@ -125,9 +125,9 @@ def ensure_seed(db: Session) -> None:
     if db.query(ProductCatalog).count() == 0:
         db.add_all(
             [
-                ProductCatalog(product_name="ThinkPad X1 Carbon", device_type="笔记本电脑", brand="Lenovo", model="X1 Carbon Gen 12", spec="Ultra 7 / 32GB / 1TB", unit_price=15000, default_warehouse="上海 IT 仓"),
-                ProductCatalog(product_name="MacBook Pro 14", device_type="笔记本电脑", brand="Apple", model="M3 Pro", spec="18GB / 512GB", unit_price=17000, default_warehouse="上海 IT 仓"),
-                ProductCatalog(product_name="Dell U2723QE", device_type="显示器", brand="Dell", model="U2723QE", spec="27寸 4K", unit_price=3999, default_warehouse="上海 IT 仓"),
+                ProductCatalog(product_name="ThinkPad X1 Carbon", device_type="笔记本电脑", brand="Lenovo", model="X1 Carbon Gen 12", spec="Ultra 7 / 32GB / 1TB", unit_price=15000, default_warehouse="上海 IT 仓", retirement_years=4),
+                ProductCatalog(product_name="MacBook Pro 14", device_type="笔记本电脑", brand="Apple", model="M3 Pro", spec="18GB / 512GB", unit_price=17000, default_warehouse="上海 IT 仓", retirement_years=4),
+                ProductCatalog(product_name="Dell U2723QE", device_type="显示器", brand="Dell", model="U2723QE", spec="27寸 4K", unit_price=3999, default_warehouse="上海 IT 仓", retirement_years=6),
             ]
         )
     db.commit()

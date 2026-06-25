@@ -16,6 +16,28 @@ from app.services.supplier_service import SupplierService
 
 class AssetService:
     @staticmethod
+    def apply_warranty_expire(asset: Asset) -> None:
+        if not asset.purchase_date or not asset.warranty_months:
+            return
+        asset.warranty_expire_date = AssetService.add_months(asset.purchase_date, asset.warranty_months)
+
+    @staticmethod
+    def add_months(value: datetime, months: int) -> datetime:
+        month_index = value.month - 1 + int(months)
+        year = value.year + month_index // 12
+        month = month_index % 12 + 1
+        day = min(value.day, AssetService.days_in_month(year, month))
+        return value.replace(year=year, month=month, day=day)
+
+    @staticmethod
+    def days_in_month(year: int, month: int) -> int:
+        if month == 12:
+            next_month = datetime(year + 1, 1, 1)
+        else:
+            next_month = datetime(year, month + 1, 1)
+        return (next_month - datetime(year, month, 1)).days
+
+    @staticmethod
     def generate_asset_id(db: Session, prefix: str = "ITAM") -> str:
         count = db.query(Asset).count() + 1
         return f"{prefix}-{count:06d}"
@@ -43,6 +65,7 @@ class AssetService:
             dept_id=(user.dept_id or user.dept_name) if user else payload.dept_id,
             location=payload.location,
         )
+        AssetService.apply_warranty_expire(asset)
         SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
         db.add(asset)
         db.flush()
@@ -89,6 +112,7 @@ class AssetService:
                     dept_id=normalized.dept_id,
                     location=normalized.location,
                 )
+                AssetService.apply_warranty_expire(asset)
                 AssetService.sync_owner_department(db, asset)
                 SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
                 db.add(asset)
@@ -160,6 +184,8 @@ class AssetService:
             return default
 
         price = pick("purchase_price", "price", "unit_price", "采购价格", "价格", "单价", default=0)
+        warranty_years = AssetService.parse_int(pick("warranty_years", "维保年限", "质保年限"))
+        warranty_months = warranty_years * 12 if warranty_years is not None else AssetService.parse_int(pick("warranty_months", "质保月数", "维保月数", "质保"))
         config = {
             "spec": pick("spec", "规格", "配置", default=""),
             "warehouse": pick("warehouse", "仓库", default=""),
@@ -178,7 +204,7 @@ class AssetService:
             purchase_approval_no=pick("purchase_approval_no", "采购审批单号", "审批单号", "采购单号"),
             purchase_supplier_name=pick("purchase_supplier_name", "采购供应商", "供应商"),
             warranty_expire_date=AssetService.parse_datetime(pick("warranty_expire_date", "质保到期", "质保到期日")),
-            warranty_months=AssetService.parse_int(pick("warranty_months", "质保月数", "质保")),
+            warranty_months=warranty_months,
             status=pick("status", "状态", default="in_stock"),
             owner_user_id=pick("owner_user_id", "owner", "使用人", "责任人"),
             dept_id=pick("dept_id", "dept", "部门"),
@@ -236,6 +262,7 @@ class AssetService:
         old_status = asset.status
         for key, value in data.items():
             setattr(asset, key, value)
+        AssetService.apply_warranty_expire(asset)
         AssetService.sync_owner_department(db, asset)
         SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
 

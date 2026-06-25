@@ -68,6 +68,9 @@ export async function importAssets(items, operator = 'asset-import') {
 }
 
 export async function updateAsset(assetId, payload) {
+  const warrantyYears = payload.warranty_years === '' || payload.warranty_years == null ? null : Number(payload.warranty_years)
+  const warrantyMonths = warrantyYears == null ? null : warrantyYears * 12
+  const warrantyExpireDate = warrantyYears && payload.purchase_date ? addYears(payload.purchase_date, warrantyYears) : payload.warranty_expire_date
   const row = await request.put(`/asset/${assetId}`, {
     name: payload.name,
     company: payload.company || '',
@@ -80,8 +83,8 @@ export async function updateAsset(assetId, payload) {
     purchase_date: dateToApi(payload.purchase_date),
     purchase_approval_no: payload.purchase_approval_no || '',
     purchase_supplier_name: payload.purchase_supplier_name || '',
-    warranty_expire_date: dateToApi(payload.warranty_expire_date),
-    warranty_months: payload.warranty_months === '' || payload.warranty_months == null ? null : Number(payload.warranty_months),
+    warranty_expire_date: dateToApi(warrantyExpireDate),
+    warranty_months: warrantyMonths,
     status: payload.status,
     owner_user_id: payload.owner_user_id || '',
     dept_id: payload.dept_id || '',
@@ -238,6 +241,7 @@ function mapBackendAsset(row) {
   const deptName = row.dept_name || ''
   return {
     asset_id: row.asset_id,
+    config,
     company: row.company || '',
     name: row.name,
     category: row.category,
@@ -256,6 +260,8 @@ function mapBackendAsset(row) {
     purchase_supplier_name: row.purchase_supplier_name || '',
     warranty_expire_date: formatDate(row.warranty_expire_date),
     warranty_months: row.warranty_months ?? '',
+    warranty_years: row.warranty_months ? Math.round(Number(row.warranty_months) / 12) : '',
+    retirement_years: config.retirement_years || '',
     brand: row.brand || '',
     model: row.model || '',
     spec: config.spec || '',
@@ -357,4 +363,12 @@ function formatDateTime(value) {
 function dateToApi(value) {
   if (!value) return null
   return `${value}T00:00:00`
+}
+
+function addYears(value, years) {
+  if (!value || !years) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  date.setFullYear(date.getFullYear() + Number(years))
+  return date.toISOString().slice(0, 10)
 }

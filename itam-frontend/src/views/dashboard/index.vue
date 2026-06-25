@@ -40,6 +40,29 @@
       </el-card>
     </section>
 
+    <section class="dashboard-section">
+      <el-card shadow="never">
+        <template #header>即将退役资产</template>
+        <el-table :data="data.retirementSoonAssets" border stripe empty-text="未来 180 天暂无到退役时间资产">
+          <el-table-column prop="asset_id" label="资产ID" width="130" />
+          <el-table-column prop="name" label="资产名称" min-width="180" />
+          <el-table-column prop="brand" label="品牌" width="110" />
+          <el-table-column prop="model" label="型号" width="150" />
+          <el-table-column prop="retirement_years" label="退役年限" width="100">
+            <template #default="{ row }">{{ row.retirement_years }} 年</template>
+          </el-table-column>
+          <el-table-column prop="retirement_date" label="退役日期" width="130" />
+          <el-table-column prop="days_remaining" label="剩余天数" width="120">
+            <template #default="{ row }">
+              <el-tag :type="row.overdue ? 'danger' : row.days_remaining <= 30 ? 'warning' : 'info'">
+                {{ row.overdue ? `已超 ${Math.abs(row.days_remaining)} 天` : `${row.days_remaining} 天` }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-card>
+    </section>
+
     <section class="dashboard-section two-column">
       <el-card shadow="never">
         <template #header>近 12 个月采购趋势</template>
@@ -92,6 +115,7 @@ const data = reactive({
   categoryDistribution: [],
   purchaseTrend: { months: [], amount: [], quantity: [] },
   lifecycleDistribution: [],
+  retirementSoonAssets: [],
   maintenance: { top10: [], mttr: '0小时', monthCost: 0, yearCost: 0 }
 })
 

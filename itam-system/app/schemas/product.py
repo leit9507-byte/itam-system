@@ -26,6 +26,7 @@ class ProductUpsert(BaseModel):
     spec: Optional[str] = None
     unit_price: float = 0
     default_warehouse: Optional[str] = None
+    retirement_years: Optional[int] = None
 
 
 class ProductOut(BaseModel):
@@ -39,4 +40,5 @@ class ProductOut(BaseModel):
     spec: Optional[str]
     unit_price: float
     default_warehouse: Optional[str]
+    retirement_years: Optional[int]
     created_at: datetime

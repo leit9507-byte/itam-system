@@ -1,5 +1,6 @@
 import { getAssets } from './asset'
 import { getPurchases } from './purchase'
+import { getProducts } from './product'
 import { getRepairDashboard } from './repair'
 
 const categoryNames = ['笔记本电脑', '台式机', 'Mac设备', '显示器', '服务器', '存储设备', '网络设备', '软件授权', '其他']
@@ -14,9 +15,10 @@ const lifecycleNames = {
 }
 
 export async function getEnterpriseDashboard(filters = {}) {
-  const [{ list: allAssets }, purchases, repairDashboard] = await Promise.all([
+  const [{ list: allAssets }, purchases, products, repairDashboard] = await Promise.all([
     getAssets({}),
     getPurchases().catch(() => []),
+    getProducts().catch(() => []),
     getRepairDashboard(filters).catch(() => ({ total: 0, inProgress: 0, totalCost: 0, topFaults: [] }))
   ])
 
@@ -30,7 +32,9 @@ export async function getEnterpriseDashboard(filters = {}) {
   const repair = countStatus(assets, 'repair')
   const thisMonthAssets = allAssets.filter(item => isMonth(item.created_at, 0)).length
   const previousMonthAssets = allAssets.filter(item => isMonth(item.created_at, 1)).length
-  const scrappingSoon = countStatus(assets, 'pending_scrap')
+  const retirementSoonAssets = buildRetirementSoonAssets(assets, products)
+  const allRetirementSoonAssets = buildRetirementSoonAssets(allAssets, products)
+  const retirementSoon = retirementSoonAssets.length
 
   return {
     metrics: [
@@ -41,12 +45,13 @@ export async function getEnterpriseDashboard(filters = {}) {
       metric('闲置资产', idle, '项', '', compare(idle, countStatus(allAssets, 'idle')), statusTrend(assets, 'idle'), 'warning'),
       metric('维修中资产', repair, '项', '', compare(repair, countStatus(allAssets, 'repair')), statusTrend(assets, 'repair'), 'danger'),
       metric('本月新增资产', thisMonthAssets, '项', '', compare(thisMonthAssets, previousMonthAssets), monthTrendFromAssets(allAssets, 'count'), 'primary'),
-      metric('即将报废资产', scrappingSoon, '项', '', compare(scrappingSoon, countStatus(allAssets, 'pending_scrap')), statusTrend(assets, 'pending_scrap'), 'danger')
+      metric('即将退役资产', retirementSoon, '项', '', compare(retirementSoon, allRetirementSoonAssets.length), retirementTrend(assets, products), 'danger')
     ],
     categoryDistribution: buildCategoryDistribution(assets),
     departmentDistribution: buildDepartmentDistribution(assets),
     purchaseTrend: buildPurchaseTrend(purchases, filters.dateRange),
     lifecycleDistribution: buildLifecycleDistribution(assets, purchases),
+    retirementSoonAssets,
     maintenance: buildMaintenance(repairDashboard, assets)
   }
 }
@@ -101,6 +106,68 @@ function monthTrendFromAssets(assets, mode) {
 function statusTrend(assets, status) {
   const current = countStatus(assets, status)
   return [0, 0, 0, 0, current]
+}
+
+function retirementTrend(assets, products) {
+  const now = new Date()
+  return [4, 3, 2, 1, 0].map(offset => {
+    const target = new Date(now.getFullYear(), now.getMonth() - offset, 1)
+    return buildRetirementSoonAssets(assets, products).filter(item => {
+      const date = new Date(item.retirement_date)
+      return date.getFullYear() === target.getFullYear() && date.getMonth() === target.getMonth()
+    }).length
+  })
+}
+
+function buildRetirementSoonAssets(assets, products) {
+  const now = new Date()
+  const deadline = new Date(now)
+  deadline.setDate(deadline.getDate() + 180)
+  return assets
+    .map(asset => {
+      const years = resolveRetirementYears(asset, products)
+      if (!years || !asset.purchase_date || ['scrapped'].includes(asset.status)) return null
+      const retirementDate = addYears(asset.purchase_date, years)
+      if (!retirementDate) return null
+      const days = Math.ceil((retirementDate.getTime() - now.getTime()) / 86400000)
+      if (days > 180) return null
+      return {
+        asset_id: asset.asset_id,
+        name: asset.name,
+        brand: asset.brand,
+        model: asset.model,
+        retirement_years: years,
+        retirement_date: retirementDate.toISOString().slice(0, 10),
+        days_remaining: days,
+        overdue: days < 0
+      }
+    })
+    .filter(Boolean)
+}
+
+function resolveRetirementYears(asset, products) {
+  const configYears = Number(asset.retirement_years || asset.config?.retirement_years || 0)
+  if (configYears > 0) return configYears
+  const product = products.find(item => productMatchesAsset(item, asset))
+  return Number(product?.retirement_years || 0)
+}
+
+function productMatchesAsset(product, asset) {
+  const sameName = normalizeText(product.product_name) === normalizeText(asset.name)
+  const sameModel = normalizeText(product.model) === normalizeText(asset.model)
+  const sameBrand = !product.brand || !asset.brand || normalizeText(product.brand) === normalizeText(asset.brand)
+  return sameName && sameModel && sameBrand
+}
+
+function normalizeText(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function addYears(value, years) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  date.setFullYear(date.getFullYear() + Number(years))
+  return date
 }
 
 function buildCategoryDistribution(assets) {

@@ -13,6 +13,7 @@ export async function createPurchase(payload) {
     model: item.model,
     quantity: Number(item.quantity || 1),
     unit_price: Number(item.unit_price || 0),
+    retirement_years: item.retirement_years ? Number(item.retirement_years) : null,
     location: item.warehouse || item.location,
     dept_id: item.dept || item.dept_id
   }))
@@ -36,7 +37,13 @@ export function approvePurchase(row) {
 export async function acceptPurchase(purchaseNo, acceptances) {
   const result = await request.post(`/purchase/accept?purchase_no=${encodeURIComponent(purchaseNo)}`, {
     operator: '采购验收员',
-    acceptances
+    acceptances: acceptances.map(item => ({
+      ...item,
+      assets: (item.assets || []).map(asset => ({
+        ...asset,
+        warranty_months: asset.warranty_years ? Number(asset.warranty_years) * 12 : asset.warranty_months || null
+      }))
+    }))
   })
   return {
     purchase: mapBackendPurchase(result.purchase),
@@ -80,12 +87,14 @@ function mapBackendPurchase(row) {
       model: item.model || '',
       quantity: Number(item.quantity || 0),
       unit_price: Number(item.unit_price || 0),
+      retirement_years: item.retirement_years ?? null,
       total_amount: Number(item.quantity || 0) * Number(item.unit_price || 0),
       warehouse: item.location || '',
       location: item.location || '',
       dept: item.dept_id || '',
       dept_id: item.dept_id || '',
       spec: '',
+      warranty_years: '',
       supplier_name: row.supplier_name || '未指定供应商',
       purchase_no: row.purchase_no
     })),

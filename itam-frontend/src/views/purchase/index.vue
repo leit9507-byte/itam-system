@@ -110,6 +110,7 @@
           <el-table-column label="序列号" min-width="150"><template #default="{ row }"><el-input v-model="row.sn" /></template></el-table-column>
           <el-table-column label="资产名称" min-width="160"><template #default="{ row }"><el-input v-model="row.name" /></template></el-table-column>
           <el-table-column label="规格" min-width="160"><template #default="{ row }"><el-input v-model="row.spec" /></template></el-table-column>
+          <el-table-column label="维保年限" width="120"><template #default="{ row }"><el-input-number v-model="row.warranty_years" :min="0" :step="1" :precision="0" style="width: 100%" /></template></el-table-column>
           <el-table-column label="部门" width="130"><template #default="{ row }"><el-input v-model="row.dept_id" /></template></el-table-column>
           <el-table-column label="使用人" width="130"><template #default="{ row }"><el-input v-model="row.owner_user_id" /></template></el-table-column>
           <el-table-column label="位置/仓库" width="150"><template #default="{ row }"><el-input v-model="row.location" /></template></el-table-column>
@@ -151,6 +152,7 @@
             <el-input v-model="productForm.spec" placeholder="规格" />
             <el-input-number v-model="productForm.unit_price" :min="0" placeholder="单价" style="width: 100%" />
             <el-input v-model="productForm.default_warehouse" placeholder="默认仓库" />
+            <el-input-number v-model="productForm.retirement_years" :min="0" :step="1" :precision="0" placeholder="退役年限" style="width: 100%" />
             <el-button type="primary" @click="saveProduct">保存产品</el-button>
           </div>
           <el-table :data="products" border>
@@ -158,6 +160,7 @@
             <el-table-column prop="device_type" label="类型" width="100" />
             <el-table-column prop="brand" label="品牌" width="100" />
             <el-table-column prop="model" label="型号" width="130" />
+            <el-table-column prop="retirement_years" label="退役年限" width="100" />
             <el-table-column label="操作" width="90">
               <template #default="{ row }"><el-button link type="primary" @click="editProduct(row)">编辑</el-button></template>
             </el-table-column>
@@ -201,11 +204,11 @@ function defaultForm() {
 }
 
 function defaultLine() {
-  return { product_id: null, product_name: '', category: '', brand: '', model: '', spec: '', quantity: 1, unit_price: 0, warehouse: '', dept: '' }
+  return { product_id: null, product_name: '', category: '', brand: '', model: '', spec: '', quantity: 1, unit_price: 0, warehouse: '', dept: '', retirement_years: null }
 }
 
 function defaultProductForm() {
-  return { id: null, product_name: '', device_type: '', brand: '', model: '', spec: '', unit_price: 0, default_warehouse: '' }
+  return { id: null, product_name: '', device_type: '', brand: '', model: '', spec: '', unit_price: 0, default_warehouse: '', retirement_years: null }
 }
 
 function openCreate() {
@@ -232,7 +235,8 @@ function selectProduct(row) {
     model: product.model,
     spec: product.spec,
     unit_price: product.unit_price,
-    warehouse: product.default_warehouse
+    warehouse: product.default_warehouse,
+    retirement_years: product.retirement_years
   })
 }
 
@@ -261,6 +265,7 @@ function openReceive(row) {
     unit_price: item.unit_price,
     warehouse: item.warehouse,
     dept: item.dept,
+    retirement_years: item.retirement_years,
     assets: buildAcceptanceAssets(item)
   }))
   receiveDialog.value = true
@@ -277,6 +282,8 @@ function buildAcceptanceAssets(item) {
     location: item.warehouse,
     dept_id: item.dept,
     owner_user_id: '',
+    warranty_years: '',
+    retirement_years: item.retirement_years,
     purchase_price: item.unit_price
   }))
 }
