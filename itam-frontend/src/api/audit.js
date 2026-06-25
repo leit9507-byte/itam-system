@@ -79,25 +79,22 @@ export async function getRiskAnalytics() {
 }
 
 export function getReports() {
-  return Promise.resolve([
-    { id: 'R20260601', name: '6月资产审计报告', type: '审计报告', status: '已生成', created_at: '2026-06-01' },
-    { id: 'R20260501', name: '5月风险分析报告', type: '风险报告', status: '已归档', created_at: '2026-05-01' }
-  ])
+  return Promise.resolve([])
 }
 
-export function generateReport() {
-  return runAudit().then(result => ({
-    id: `R${Date.now()}`,
-    name: '即时审计报告',
-    html: `
-      <h2>ITAM 资产审计报告</h2>
-      <p>本报告基于当前正式资产台账、采购单和后端规则引擎生成。</p>
-      <p>总资产：${result.total_assets}，风险评分：${result.risk_score}，规则命中：${result.violations.length}</p>
-      <ul>
-        ${result.suggestions.map(item => `<li>${item}</li>`).join('')}
-      </ul>
-    `
-  }))
+export async function generateReport() {
+  const result = await request.post('/audit/run', { users: [] })
+  const html = await request.get('/audit/report', { responseType: 'text' })
+  return {
+    id: `AR-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}`,
+    name: '即时资产审计报告',
+    type: '审计报告',
+    status: '已生成',
+    created_at: new Date().toISOString().slice(0, 10),
+    total_assets: result.total_assets,
+    risk_score: result.risk_score,
+    html
+  }
 }
 
 function normalizeViolations(rows, assets, users, rules, responses) {
@@ -118,12 +115,12 @@ function normalizeViolations(rows, assets, users, rules, responses) {
       violation_key: violationKey,
       person_group_key: groupKey,
       asset_id: row.asset_id,
-      asset_name: asset?.name || '-',
-      dept: asset?.dept_name || asset?.dept || '未绑定',
-      owner: user?.display_name || asset?.owner_name || asset?.owner || '未分配',
+      asset_name: asset?.name || row.asset_name || '-',
+      dept: user?.dept_name || asset?.dept_name || asset?.dept || row.dept || '未绑定',
+      owner: user?.display_name || asset?.owner_name || asset?.owner || row.owner_name || '未分配',
       owner_user_id: row.owner_user_id || asset?.owner_user_id || '',
       user_status: user?.status || '',
-      price: Number(asset?.price || 0),
+      price: Number(asset?.price || row.price || 0),
       rule,
       type: ruleLabels[rule] || savedRule?.name || row.type || rule,
       audit_scope: auditScope,
@@ -131,10 +128,10 @@ function normalizeViolations(rows, assets, users, rules, responses) {
       severity: row.severity || savedRule?.severity || 'medium',
       severity_label: severityLabels[row.severity] || row.severity || '中',
       message: row.message || '发现资产合规风险',
-      decision: response.decision || groupResponse.decision || 'pending',
-      response_reason: response.reason || groupResponse.reason || '',
-      responder: response.responder || groupResponse.responder || '',
-      response_updated_at: response.updated_at || groupResponse.updated_at || ''
+      decision: response.decision || groupResponse.decision || row.decision || 'pending',
+      response_reason: response.reason || groupResponse.reason || row.response_reason || '',
+      responder: response.responder || groupResponse.responder || row.responder || '',
+      response_updated_at: response.updated_at || groupResponse.updated_at || row.response_updated_at || ''
     }
   })
 }

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <title>IT资产审计报告</title>
+    <style>
+      body { margin: 0; padding: 32px; color: #1f2933; font-family: Arial, "Microsoft YaHei", sans-serif; background: #f5f7f6; }
+      main { max-width: 1180px; margin: 0 auto; background: #fff; border: 1px solid #dfe5e2; border-radius: 8px; padding: 28px; }
+      h1 { margin: 0 0 8px; font-size: 28px; }
+      h2 { margin: 28px 0 12px; font-size: 20px; }
+      h3 { margin: 18px 0 8px; font-size: 16px; }
+      p { line-height: 1.7; }
+      .muted { color: #66746c; }
+      .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 24px 0; }
+      .card { border: 1px solid #dfe5e2; border-radius: 8px; padding: 16px; background: #fbfcfb; }
+      .card strong { display: block; margin-top: 6px; font-size: 28px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+      th, td { padding: 10px; border-bottom: 1px solid #dfe5e2; text-align: left; vertical-align: top; }
+      th { color: #66746c; background: #f3f6f4; }
+      .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #eef2ff; color: #3730a3; }
+      .accepted { background: #dcfce7; color: #166534; }
+      .non_compliant { background: #fee2e2; color: #991b1b; }
+      .pending { background: #f1f5f9; color: #475569; }
+      .high { color: #b91c1c; font-weight: 700; }
+      .medium { color: #b45309; font-weight: 700; }
+      .low { color: #15803d; font-weight: 700; }
+      .asset-list { margin: 8px 0 0; padding-left: 18px; }
+      .asset-list li { margin: 4px 0; }
+      li { margin: 8px 0; }
+      @media print {
+        body { background: #fff; padding: 0; }
+        main { border: none; max-width: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>IT资产审计报告</h1>
+      <p class="muted">本报告由 ITAM 审计引擎基于当前正式资产、用户、规则和审计答复自动生成。</p>
+
+      <section class="summary">
+        <div class="card">总资产<strong>{{ result.total_assets }}</strong></div>
+        <div class="card">风险评分<strong>{{ result.risk_score }}</strong></div>
+        <div class="card">人员审计对象<strong>{{ result.person_groups | length }}</strong></div>
+        <div class="card">资产审计命中<strong>{{ result.asset_violations | length }}</strong></div>
+      </section>
+
+      <h2>人员审计与统一答复</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>责任人</th>
+            <th>风险类型</th>
+            <th>等级</th>
+            <th>涉及资产</th>
+            <th>合规判断</th>
+            <th>答复说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for group in result.person_groups %}
+          <tr>
+            <td>{{ group.owner_name or group.owner_user_id or '-' }}<br><span class="muted">{{ group.owner_user_id or '' }}</span></td>
+            <td>{{ group.type }}</td>
+            <td class="{{ group.severity }}">{{ group.severity }}</td>
+            <td>
+              {{ group.asset_count }} 台 / ￥{{ "%.0f"|format(group.total_price or 0) }}
+              <ul class="asset-list">
+                {% for asset in group.assets %}
+                <li>{{ asset.asset_id }} - {{ asset.asset_name }}（￥{{ "%.0f"|format(asset.price or 0) }}）</li>
+                {% endfor %}
+              </ul>
+            </td>
+            <td><span class="tag {{ group.decision }}">{{ group.decision }}</span></td>
+            <td>
+              {{ group.response_reason or '待填写' }}
+              {% if group.responder %}<br><span class="muted">答复人：{{ group.responder }}</span>{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6">暂无人员审计命中数据</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <h2>资产审计与单项答复</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>资产</th>
+            <th>风险类型</th>
+            <th>等级</th>
+            <th>责任人/部门</th>
+            <th>金额</th>
+            <th>合规判断</th>
+            <th>答复说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in result.asset_violations %}
+          <tr>
+            <td>{{ item.asset_id }}<br>{{ item.asset_name }}</td>
+            <td>{{ item.type or item.rule }}</td>
+            <td class="{{ item.severity }}">{{ item.severity }}</td>
+            <td>{{ item.owner_name or '-' }}<br><span class="muted">{{ item.dept or '' }}</span></td>
+            <td>￥{{ "%.0f"|format(item.price or 0) }}</td>
+            <td><span class="tag {{ item.decision }}">{{ item.decision }}</span></td>
+            <td>
+              {{ item.response_reason or '待填写' }}
+              {% if item.responder %}<br><span class="muted">答复人：{{ item.responder }}</span>{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7">暂无资产审计命中数据</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <h2>处置建议</h2>
+      <ul>
+        {% for suggestion in result.suggestions %}
+        <li>{{ suggestion }}</li>
+        {% else %}
+        <li>暂无处置建议。</li>
+        {% endfor %}
+      </ul>
+    </main>
+  </body>
+</html>

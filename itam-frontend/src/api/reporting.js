@@ -17,3 +17,8 @@ export function downloadAssetCsv() {
 export function downloadAssetPdf() {
   return downloadBlob('/reports/assets.pdf', 'assets.pdf')
 }
+
+export function downloadAuditReport() {
+  const timestamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')
+  return downloadBlob('/audit/report', `audit-report-${timestamp}.html`)
+}
