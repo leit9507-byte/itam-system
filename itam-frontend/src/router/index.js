@@ -4,6 +4,7 @@ import Layout from '../layout/Layout.vue'
 
 const routes = [
   { path: '/login', name: 'Login', component: () => import('../views/login/index.vue'), meta: { public: true, title: '登录' } },
+  { path: '/mobile', name: 'MobileWork', component: () => import('../views/mobile/index.vue'), meta: { title: '移动扫码作业' } },
   {
     path: '/',
     component: Layout,
