@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">审计中心</h2>
-        <p class="page-subtitle">基于正式资产、采购和规则配置生成风险评分、命中明细与处置建议</p>
+        <p class="page-subtitle">按人员和资产两个维度审计正式资产数据，输出风险评分、规则命中和处置建议</p>
       </div>
       <el-space>
         <el-button :icon="Setting" @click="openRules">规则设置</el-button>
@@ -19,7 +19,7 @@
           <div>
             <span class="meta-label">风险评分</span>
             <strong>{{ result?.risk_score || 0 }}</strong>
-            <p>评分来自当前启用规则的命中结果，最高 100 分。</p>
+            <p>评分由启用规则的命中结果生成，最高 100 分。</p>
           </div>
         </div>
       </el-card>
@@ -31,43 +31,49 @@
       </el-card>
     </section>
 
-    <section class="risk-section">
-      <el-card shadow="never" class="risk-panel">
-        <template #header>
-          <div class="card-header">
-            <span>风险分类</span>
-            <el-tag type="info">正式数据</el-tag>
-          </div>
-        </template>
-        <div class="risk-list">
+    <el-tabs v-model="activeScope" class="audit-tabs">
+      <el-tab-pane label="人员审计" name="person">
+        <section class="risk-grid">
           <button
-            v-for="risk in result?.ai_risks || []"
+            v-for="risk in result?.person_risks || []"
             :key="risk.rule"
-            class="risk-item"
-            :class="{ active: activeRule === risk.rule }"
             type="button"
+            class="risk-card"
+            :class="{ active: activeRule === risk.rule }"
             @click="focusRule(risk.rule)"
           >
-            <span class="risk-title">{{ risk.type }}</span>
-            <el-tag :type="severityType(risk.severity)" size="small">{{ risk.level }}风险</el-tag>
+            <div class="risk-card-head">
+              <span>{{ risk.type }}</span>
+              <el-tag :type="severityType(risk.severity)" size="small">{{ risk.level }}风险</el-tag>
+            </div>
             <strong>{{ risk.count }}</strong>
-            <span class="risk-amount">涉及金额 ¥{{ formatValue(Math.round(risk.amount || 0)) }}</span>
+            <span>涉及金额 ￥{{ formatValue(Math.round(risk.amount || 0)) }}</span>
             <small>{{ risk.action }}</small>
           </button>
-        </div>
-      </el-card>
+        </section>
+      </el-tab-pane>
 
-      <div class="chart-stack">
-        <el-card shadow="never">
-          <template #header>本次风险评分</template>
-          <div ref="scoreRef" class="chart compact-chart" />
-        </el-card>
-        <el-card shadow="never">
-          <template #header>库存与闲置结构</template>
-          <div ref="idleRef" class="chart compact-chart" />
-        </el-card>
-      </div>
-    </section>
+      <el-tab-pane label="资产审计" name="asset">
+        <section class="risk-grid asset-risk-grid">
+          <button
+            v-for="risk in result?.asset_risks || []"
+            :key="risk.rule"
+            type="button"
+            class="risk-card"
+            :class="{ active: activeRule === risk.rule }"
+            @click="focusRule(risk.rule)"
+          >
+            <div class="risk-card-head">
+              <span>{{ risk.type }}</span>
+              <el-tag :type="severityType(risk.severity)" size="small">{{ risk.level }}风险</el-tag>
+            </div>
+            <strong>{{ risk.count }}</strong>
+            <span>涉及金额 ￥{{ formatValue(Math.round(risk.amount || 0)) }}</span>
+            <small>{{ risk.action }}</small>
+          </button>
+        </section>
+      </el-tab-pane>
+    </el-tabs>
 
     <section class="detail-grid">
       <el-card shadow="never">
@@ -77,12 +83,15 @@
             <el-button text type="primary" @click="openRules">调整规则</el-button>
           </div>
         </template>
-        <el-table :data="result?.rules || []" border>
+        <el-table :data="scopedRules" border>
           <el-table-column prop="name" label="规则名称" min-width="170" />
+          <el-table-column prop="audit_scope" label="审计对象" width="100">
+            <template #default="{ row }">{{ scopeLabel(row.audit_scope) }}</template>
+          </el-table-column>
           <el-table-column prop="scope_category" label="设备类型" width="130">
             <template #default="{ row }">{{ row.scope_category || '全部' }}</template>
           </el-table-column>
-          <el-table-column label="阈值" width="130">
+          <el-table-column label="阈值" width="140">
             <template #default="{ row }">{{ ruleThreshold(row) }}</template>
           </el-table-column>
           <el-table-column prop="severity_label" label="等级" width="90">
@@ -91,45 +100,46 @@
             </template>
           </el-table-column>
           <el-table-column prop="hits" label="命中数" width="90" />
-          <el-table-column prop="enabled" label="启用" width="80">
-            <template #default="{ row }"><el-switch v-model="row.enabled" disabled /></template>
-          </el-table-column>
         </el-table>
       </el-card>
 
-      <el-card shadow="never">
-        <template #header>处置建议</template>
-        <el-space direction="vertical" alignment="stretch" class="suggestions">
-          <el-alert v-for="item in result?.suggestions || []" :key="item" :title="item" type="info" show-icon :closable="false" />
-        </el-space>
-      </el-card>
+      <div class="chart-stack">
+        <el-card shadow="never">
+          <template #header>风险评分</template>
+          <div ref="scoreRef" class="chart compact-chart" />
+        </el-card>
+        <el-card shadow="never">
+          <template #header>库存、闲置与借出结构</template>
+          <div ref="idleRef" class="chart compact-chart" />
+        </el-card>
+      </div>
     </section>
 
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span>违规资产明细</span>
+          <span>{{ scopeLabel(activeScope) }}明细</span>
           <div class="table-tools">
             <el-segmented v-model="severityFilter" :options="severityOptions" />
             <el-button text @click="clearRule">全部规则</el-button>
           </div>
         </div>
       </template>
-      <el-table :data="filteredViolations" border stripe empty-text="当前正式数据暂无规则违规记录">
+      <el-table :data="filteredViolations" border stripe empty-text="当前正式数据暂无规则命中记录">
         <el-table-column prop="asset_id" label="资产ID" width="130" />
         <el-table-column prop="asset_name" label="资产名称" min-width="160" />
-        <el-table-column prop="type" label="风险类型" min-width="160" />
-        <el-table-column prop="severity" label="等级" width="100">
+        <el-table-column prop="type" label="风险类型" min-width="150" />
+        <el-table-column prop="severity" label="等级" width="90">
           <template #default="{ row }">
             <el-tag :type="severityType(row.severity)">{{ severityLabel(row.severity) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="dept" label="部门" width="120" />
-        <el-table-column prop="owner" label="责任人" width="120" />
+        <el-table-column prop="owner" label="责任人" width="140" />
+        <el-table-column prop="dept" label="部门" width="140" />
         <el-table-column prop="price" label="金额" width="130">
-          <template #default="{ row }">¥{{ formatValue(row.price) }}</template>
+          <template #default="{ row }">￥{{ formatValue(row.price) }}</template>
         </el-table-column>
-        <el-table-column prop="message" label="说明" min-width="260" />
+        <el-table-column prop="message" label="说明" min-width="280" />
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="router.push(`/asset/detail/${row.asset_id}`)">资产详情</el-button>
@@ -138,14 +148,24 @@
       </el-table>
     </el-card>
 
-    <el-drawer v-model="rulesDrawer.visible" title="审计规则设置" size="780px">
+    <el-card shadow="never">
+      <template #header>处置建议</template>
+      <el-space direction="vertical" alignment="stretch" class="suggestions">
+        <el-alert v-for="item in result?.suggestions || []" :key="item" :title="item" type="info" show-icon :closable="false" />
+      </el-space>
+    </el-card>
+
+    <el-drawer v-model="rulesDrawer.visible" title="审计规则设置" size="900px">
       <div class="rule-help">
-        <strong>用户资产超限示例：</strong>
-        选择“笔记本电脑”，数量阈值填 2，表示同一用户名下笔记本电脑超过 2 台即命中规则。
+        <strong>规则说明：</strong>
+        人员审计用于检查人员配置标准、离职回收和借用回收；资产审计用于检查采购价值和闲置复用。
       </div>
       <el-table :data="rulesDrawer.rules" border>
-        <el-table-column prop="name" label="规则" min-width="160" />
-        <el-table-column label="启用" width="72">
+        <el-table-column prop="name" label="规则" min-width="170" />
+        <el-table-column prop="audit_scope" label="对象" width="90">
+          <template #default="{ row }">{{ scopeLabel(row.audit_scope) }}</template>
+        </el-table-column>
+        <el-table-column label="启用" width="76">
           <template #default="{ row }"><el-switch v-model="row.enabled" /></template>
         </el-table-column>
         <el-table-column label="等级" width="110">
@@ -179,10 +199,10 @@
             <span v-else class="muted">不适用</span>
           </template>
         </el-table-column>
-        <el-table-column label="闲置天数" width="130">
+        <el-table-column label="天数阈值" width="130">
           <template #default="{ row }">
             <el-input-number
-              v-if="row.rule_code === 'ASSET_IDLE_OVER_90_DAYS'"
+              v-if="usesDayThreshold(row.rule_code)"
               v-model="row.threshold_days"
               :min="1"
               :precision="0"
@@ -216,6 +236,7 @@ import { getDeviceTypes } from '../../api/product'
 const router = useRouter()
 const loading = ref(false)
 const result = ref(null)
+const activeScope = ref('person')
 const severityFilter = ref('全部')
 const activeRule = ref('')
 const severityOptions = ['全部', '高', '中', '低']
@@ -227,12 +248,15 @@ const rulesDrawer = reactive({ visible: false, saving: false, rules: [] })
 
 const summaryCards = computed(() => [
   { label: '资产健康分', value: result.value?.health_score || 0, hint: '100 - 风险评分' },
-  { label: '规则命中数', value: result.value?.violations?.length || 0, hint: `共审计 ${result.value?.total_assets || 0} 项资产` },
-  { label: '涉及金额', value: `¥${formatValue(Math.round(result.value?.involved_amount || 0))}`, hint: '按当前风险资产原值汇总' }
+  { label: '人员审计命中', value: result.value?.violations?.filter(item => item.audit_scope === 'person').length || 0, hint: '超配、离职、借用回收' },
+  { label: '资产审计命中', value: result.value?.violations?.filter(item => item.audit_scope === 'asset').length || 0, hint: '超价值采购、长期闲置' },
+  { label: '涉及金额', value: `￥${formatValue(Math.round(result.value?.involved_amount || 0))}`, hint: '按命中资产原值汇总' }
 ])
 
+const scopedRules = computed(() => (result.value?.rules || []).filter(item => (item.audit_scope || 'asset') === activeScope.value))
+
 const filteredViolations = computed(() => {
-  let rows = result.value?.violations || []
+  let rows = (result.value?.violations || []).filter(item => (item.audit_scope || 'asset') === activeScope.value)
   if (activeRule.value) rows = rows.filter(item => item.rule === activeRule.value)
   if (severityFilter.value === '全部') return rows
   const target = { 高: 'high', 中: 'medium', 低: 'low' }[severityFilter.value]
@@ -305,13 +329,17 @@ function renderCharts() {
 }
 
 function usesValueThreshold(ruleCode) {
-  return ['USER_ASSET_COUNT_LIMIT', 'HIGH_VALUE_WITHOUT_DEPT', 'SINGLE_OWNER_VALUE_LIMIT'].includes(ruleCode)
+  return ['USER_ASSET_COUNT_LIMIT', 'HIGH_VALUE_PURCHASE', 'SINGLE_OWNER_VALUE_LIMIT'].includes(ruleCode)
+}
+
+function usesDayThreshold(ruleCode) {
+  return ['ASSET_IDLE_OVER_90_DAYS', 'BORROWED_ASSET_NOT_RETURNED'].includes(ruleCode)
 }
 
 function ruleThreshold(row) {
-  if (row.rule_code === 'ASSET_IDLE_OVER_90_DAYS') return `${row.threshold_days || 0} 天`
+  if (usesDayThreshold(row.rule_code)) return `${row.threshold_days || 0} 天`
   if (row.rule_code === 'USER_ASSET_COUNT_LIMIT') return `${row.threshold_value || 0} 台`
-  if (row.threshold_value) return `¥${formatValue(row.threshold_value)}`
+  if (row.threshold_value) return `￥${formatValue(row.threshold_value)}`
   return '-'
 }
 
@@ -334,6 +362,10 @@ function severityType(severity) {
 function severityLabel(severity) {
   return ({ high: '高', medium: '中', low: '低' })[severity] || severity
 }
+
+function scopeLabel(scope) {
+  return scope === 'person' ? '人员审计' : '资产审计'
+}
 </script>
 
 <style scoped>
@@ -344,7 +376,7 @@ function severityLabel(severity) {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: 1.35fr repeat(3, minmax(180px, 1fr));
+  grid-template-columns: 1.35fr repeat(4, minmax(150px, 1fr));
   gap: 12px;
 }
 
@@ -365,14 +397,14 @@ function severityLabel(severity) {
 .score-body strong,
 .summary-card strong {
   display: block;
-  font-size: 34px;
+  font-size: 32px;
   line-height: 1.1;
 }
 
 .score-body p,
 .summary-card p,
-.risk-item small,
-.risk-amount,
+.risk-card small,
+.risk-card span,
 .meta-label,
 .muted {
   color: var(--muted);
@@ -384,25 +416,25 @@ function severityLabel(severity) {
   line-height: 1.6;
 }
 
-.risk-section {
-  display: grid;
-  grid-template-columns: minmax(460px, 1.2fr) minmax(360px, 0.8fr);
-  gap: 16px;
+.audit-tabs :deep(.el-tabs__content) {
+  overflow: visible;
 }
 
-.risk-list {
+.risk-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
   gap: 12px;
 }
 
-.risk-item {
+.asset-risk-grid {
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+}
+
+.risk-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 12px;
-  align-items: center;
+  gap: 10px;
   width: 100%;
-  padding: 14px;
+  padding: 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #fff;
@@ -411,53 +443,50 @@ function severityLabel(severity) {
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
-.risk-item:hover,
-.risk-item.active {
+.risk-card:hover,
+.risk-card.active {
   border-color: var(--primary);
   box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
   transform: translateY(-1px);
 }
 
-.risk-title {
-  font-weight: 700;
-}
-
-.risk-item strong {
-  grid-column: 1 / 2;
-  font-size: 30px;
-  line-height: 1;
-}
-
-.risk-amount,
-.risk-item small {
-  grid-column: 1 / -1;
-}
-
-.chart-stack,
-.detail-grid {
-  display: grid;
-  gap: 16px;
-}
-
-.detail-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.chart {
-  width: 100%;
-  height: 280px;
-}
-
-.compact-chart {
-  height: 218px;
-}
-
+.risk-card-head,
 .card-header,
 .table-tools {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.risk-card-head span {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.risk-card strong {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.8fr);
+  gap: 16px;
+}
+
+.chart-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.chart {
+  width: 100%;
+  height: 260px;
+}
+
+.compact-chart {
+  height: 210px;
 }
 
 .table-tools {
@@ -484,14 +513,14 @@ function severityLabel(severity) {
 
 @media (max-width: 1280px) {
   .summary-grid,
-  .risk-section,
+  .risk-grid,
+  .asset-risk-grid,
   .detail-grid {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 760px) {
-  .risk-list,
   .score-body,
   .card-header,
   .table-tools {

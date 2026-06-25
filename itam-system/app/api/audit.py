@@ -3,8 +3,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
 from app.core.config import get_settings
+from app.core.database import get_db
 from app.models.audit_rule import AuditRule
 from app.reports.generator import AuditReportGenerator
 from app.services.audit_engine import AuditEngine
@@ -35,43 +35,69 @@ def default_rules() -> list[dict]:
     return [
         {
             "rule_code": "USER_ASSET_COUNT_LIMIT",
-            "name": "用户资产数量超限",
+            "name": "人员资产数量超配",
             "severity": "medium",
             "enabled": True,
             "scope_category": "",
             "threshold_value": float(settings.max_assets_per_user),
             "threshold_days": None,
-            "description": "按使用人统计名下资产数量，可限定某一设备类型。",
+            "audit_scope": "person",
+            "description": "按责任人统计名下资产数量，可限定某一设备类型。",
         },
         {
-            "rule_code": "ASSET_IDLE_OVER_90_DAYS",
-            "name": "资产闲置超期",
-            "severity": "low",
-            "enabled": True,
-            "scope_category": "",
-            "threshold_value": None,
-            "threshold_days": settings.idle_days_threshold,
-            "description": "库存中或闲置资产超过指定天数后命中。",
-        },
-        {
-            "rule_code": "HIGH_VALUE_WITHOUT_DEPT",
-            "name": "高价值资产未绑定部门",
+            "rule_code": "OFFBOARDING_ASSET_NOT_RETURNED",
+            "name": "离职人员资产未回收",
             "severity": "high",
             "enabled": True,
             "scope_category": "",
-            "threshold_value": float(settings.high_value_threshold),
+            "threshold_value": None,
             "threshold_days": None,
-            "description": "资产原值超过阈值但没有部门归属时命中。",
+            "audit_scope": "person",
+            "description": "责任人已离职、停用或禁用，但资产仍在用、借出或出库时命中。",
+        },
+        {
+            "rule_code": "BORROWED_ASSET_NOT_RETURNED",
+            "name": "借用资产超期未回收",
+            "severity": "medium",
+            "enabled": True,
+            "scope_category": "",
+            "threshold_value": None,
+            "threshold_days": 30,
+            "audit_scope": "person",
+            "description": "资产处于借出状态超过指定天数仍未回收时命中。",
         },
         {
             "rule_code": "SINGLE_OWNER_VALUE_LIMIT",
-            "name": "单人资产价值超标",
+            "name": "人员名下资产价值超标",
             "severity": "high",
             "enabled": True,
             "scope_category": "",
             "threshold_value": float(settings.high_value_threshold * 2),
             "threshold_days": None,
-            "description": "按使用人统计名下资产总价值，超过阈值时命中。",
+            "audit_scope": "person",
+            "description": "按责任人统计名下资产总价值，超过阈值时命中。",
+        },
+        {
+            "rule_code": "HIGH_VALUE_PURCHASE",
+            "name": "超价值采购",
+            "severity": "high",
+            "enabled": True,
+            "scope_category": "",
+            "threshold_value": float(settings.high_value_threshold),
+            "threshold_days": None,
+            "audit_scope": "asset",
+            "description": "资产采购原值超过规则阈值时命中，用于复核审批和采购合理性。",
+        },
+        {
+            "rule_code": "ASSET_IDLE_OVER_90_DAYS",
+            "name": "长期闲置",
+            "severity": "medium",
+            "enabled": True,
+            "scope_category": "",
+            "threshold_value": None,
+            "threshold_days": settings.idle_days_threshold,
+            "audit_scope": "asset",
+            "description": "库存中或闲置资产超过指定天数后命中。",
         },
     ]
 
@@ -87,6 +113,7 @@ def serialize_rule(rule: AuditRule, fallback: dict | None = None) -> dict:
         "scope_category": rule.scope_category or "",
         "threshold_value": rule.threshold_value,
         "threshold_days": rule.threshold_days,
+        "audit_scope": fallback.get("audit_scope", "asset"),
         "description": fallback.get("description", ""),
     }
 
@@ -113,7 +140,6 @@ def list_audit_rules(db: Session = Depends(get_db)):
 @router.post("/rules")
 def save_audit_rules(payload: list[AuditRulePayload], db: Session = Depends(get_db)):
     defaults = {item["rule_code"]: item for item in default_rules()}
-    saved_rows = []
     for item in payload:
         rule = db.query(AuditRule).filter(AuditRule.rule_code == item.rule_code).first()
         if not rule:
@@ -125,7 +151,6 @@ def save_audit_rules(payload: list[AuditRulePayload], db: Session = Depends(get_
         rule.scope_category = item.scope_category or ""
         rule.threshold_value = item.threshold_value
         rule.threshold_days = item.threshold_days
-        saved_rows.append(rule)
     db.commit()
     return list_audit_rules(db)
 
