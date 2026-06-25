@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">审计中心</h2>
-        <p class="page-subtitle">按人员和资产两个维度审计正式资产数据，输出风险评分、规则命中和处置建议</p>
+        <p class="page-subtitle">人员审计按责任人聚合答复，资产审计按单台资产逐项处理</p>
       </div>
       <el-space>
         <el-button :icon="Setting" @click="openRules">规则设置</el-button>
@@ -19,11 +19,10 @@
           <div>
             <span class="meta-label">风险评分</span>
             <strong>{{ result?.risk_score || 0 }}</strong>
-            <p>评分由启用规则的命中结果生成，最高 100 分。</p>
+            <p>由当前启用规则的命中结果生成，最高 100 分。</p>
           </div>
         </div>
       </el-card>
-
       <el-card v-for="item in summaryCards" :key="item.label" shadow="never" class="summary-card">
         <span class="meta-label">{{ item.label }}</span>
         <strong>{{ item.value }}</strong>
@@ -31,17 +30,10 @@
       </el-card>
     </section>
 
-    <el-tabs v-model="activeScope" class="audit-tabs">
+    <el-tabs v-model="activeScope" class="audit-tabs" @tab-change="clearRule">
       <el-tab-pane label="人员审计" name="person">
         <section class="risk-grid">
-          <button
-            v-for="risk in result?.person_risks || []"
-            :key="risk.rule"
-            type="button"
-            class="risk-card"
-            :class="{ active: activeRule === risk.rule }"
-            @click="focusRule(risk.rule)"
-          >
+          <button v-for="risk in result?.person_risks || []" :key="risk.rule" type="button" class="risk-card" :class="{ active: activeRule === risk.rule }" @click="focusRule(risk.rule)">
             <div class="risk-card-head">
               <span>{{ risk.type }}</span>
               <el-tag :type="severityType(risk.severity)" size="small">{{ risk.level }}风险</el-tag>
@@ -55,14 +47,7 @@
 
       <el-tab-pane label="资产审计" name="asset">
         <section class="risk-grid asset-risk-grid">
-          <button
-            v-for="risk in result?.asset_risks || []"
-            :key="risk.rule"
-            type="button"
-            class="risk-card"
-            :class="{ active: activeRule === risk.rule }"
-            @click="focusRule(risk.rule)"
-          >
+          <button v-for="risk in result?.asset_risks || []" :key="risk.rule" type="button" class="risk-card" :class="{ active: activeRule === risk.rule }" @click="focusRule(risk.rule)">
             <div class="risk-card-head">
               <span>{{ risk.type }}</span>
               <el-tag :type="severityType(risk.severity)" size="small">{{ risk.level }}风险</el-tag>
@@ -125,14 +110,58 @@
           </div>
         </div>
       </template>
-      <el-table :data="filteredViolations" border stripe empty-text="当前正式数据暂无规则命中记录">
+
+      <el-table v-if="activeScope === 'person'" :data="filteredPersonRows" border stripe row-key="person_group_key" empty-text="当前无人员审计命中记录">
+        <el-table-column type="expand">
+          <template #default="{ row }">
+            <div class="asset-expand">
+              <div class="asset-expand-title">涉及资产 {{ row.assets.length }} 台</div>
+              <el-table :data="row.assets" size="small" border>
+                <el-table-column prop="asset_id" label="资产ID" width="130" />
+                <el-table-column prop="asset_name" label="资产名称" min-width="150" />
+                <el-table-column prop="dept" label="部门" width="120" />
+                <el-table-column prop="price" label="金额" width="120">
+                  <template #default="{ row: asset }">￥{{ formatValue(asset.price) }}</template>
+                </el-table-column>
+                <el-table-column prop="message" label="命中说明" min-width="260" />
+                <el-table-column label="操作" width="90">
+                  <template #default="{ row: asset }">
+                    <el-button type="primary" link @click="router.push(`/asset/detail/${asset.asset_id}`)">详情</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="owner" label="责任人" min-width="150" />
+        <el-table-column prop="owner_user_id" label="账号/ID" min-width="210" />
+        <el-table-column prop="type" label="风险类型" min-width="150" />
+        <el-table-column prop="asset_count" label="涉及资产" width="100" />
+        <el-table-column prop="total_price" label="涉及金额" width="130">
+          <template #default="{ row }">￥{{ formatValue(row.total_price) }}</template>
+        </el-table-column>
+        <el-table-column prop="severity" label="等级" width="90">
+          <template #default="{ row }"><el-tag :type="severityType(row.severity)">{{ severityLabel(row.severity) }}</el-tag></template>
+        </el-table-column>
+        <el-table-column prop="decision" label="合规判断" width="130">
+          <template #default="{ row }"><el-tag :type="decisionType(row.decision)">{{ decisionLabel(row.decision) }}</el-tag></template>
+        </el-table-column>
+        <el-table-column prop="response_reason" label="统一答复说明" min-width="240">
+          <template #default="{ row }"><span class="reason-text">{{ row.response_reason || '待填写' }}</span></template>
+        </el-table-column>
+        <el-table-column label="操作" width="130" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" link @click="openResponse(row)">统一答复</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-table v-else :data="filteredAssetRows" border stripe empty-text="当前无资产审计命中记录">
         <el-table-column prop="asset_id" label="资产ID" width="130" />
         <el-table-column prop="asset_name" label="资产名称" min-width="160" />
         <el-table-column prop="type" label="风险类型" min-width="150" />
         <el-table-column prop="severity" label="等级" width="90">
-          <template #default="{ row }">
-            <el-tag :type="severityType(row.severity)">{{ severityLabel(row.severity) }}</el-tag>
-          </template>
+          <template #default="{ row }"><el-tag :type="severityType(row.severity)">{{ severityLabel(row.severity) }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="owner" label="责任人" width="140" />
         <el-table-column prop="dept" label="部门" width="140" />
@@ -140,14 +169,10 @@
           <template #default="{ row }">￥{{ formatValue(row.price) }}</template>
         </el-table-column>
         <el-table-column prop="decision" label="合规判断" width="130">
-          <template #default="{ row }">
-            <el-tag :type="decisionType(row.decision)">{{ decisionLabel(row.decision) }}</el-tag>
-          </template>
+          <template #default="{ row }"><el-tag :type="decisionType(row.decision)">{{ decisionLabel(row.decision) }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="response_reason" label="正常理由/处理说明" min-width="220">
-          <template #default="{ row }">
-            <span class="reason-text">{{ row.response_reason || '待填写' }}</span>
-          </template>
+          <template #default="{ row }"><span class="reason-text">{{ row.response_reason || '待填写' }}</span></template>
         </el-table-column>
         <el-table-column prop="message" label="说明" min-width="280" />
         <el-table-column label="操作" width="170" fixed="right">
@@ -198,29 +223,13 @@
         </el-table-column>
         <el-table-column label="数量/金额阈值" width="150">
           <template #default="{ row }">
-            <el-input-number
-              v-if="usesValueThreshold(row.rule_code)"
-              v-model="row.threshold_value"
-              :min="1"
-              :precision="0"
-              size="small"
-              controls-position="right"
-              class="rule-number"
-            />
+            <el-input-number v-if="usesValueThreshold(row.rule_code)" v-model="row.threshold_value" :min="1" :precision="0" size="small" controls-position="right" class="rule-number" />
             <span v-else class="muted">不适用</span>
           </template>
         </el-table-column>
         <el-table-column label="天数阈值" width="130">
           <template #default="{ row }">
-            <el-input-number
-              v-if="usesDayThreshold(row.rule_code)"
-              v-model="row.threshold_days"
-              :min="1"
-              :precision="0"
-              size="small"
-              controls-position="right"
-              class="rule-number"
-            />
+            <el-input-number v-if="usesDayThreshold(row.rule_code)" v-model="row.threshold_days" :min="1" :precision="0" size="small" controls-position="right" class="rule-number" />
             <span v-else class="muted">不适用</span>
           </template>
         </el-table-column>
@@ -233,13 +242,25 @@
       </template>
     </el-drawer>
 
-    <el-drawer v-model="responseDrawer.visible" title="审计答复与合规判断" size="560px">
+    <el-drawer v-model="responseDrawer.visible" title="审计答复与合规判断" size="620px">
       <el-descriptions :column="1" border class="response-meta">
+        <el-descriptions-item label="答复对象">{{ responseDrawer.row?.is_person_group ? '责任人统一答复' : '单项资产答复' }}</el-descriptions-item>
         <el-descriptions-item label="风险类型">{{ responseDrawer.row?.type }}</el-descriptions-item>
-        <el-descriptions-item label="资产">{{ responseDrawer.row?.asset_id }} / {{ responseDrawer.row?.asset_name }}</el-descriptions-item>
         <el-descriptions-item label="责任人">{{ responseDrawer.row?.owner }}</el-descriptions-item>
-        <el-descriptions-item label="命中说明">{{ responseDrawer.row?.message }}</el-descriptions-item>
+        <el-descriptions-item v-if="responseDrawer.row?.is_person_group" label="涉及资产">{{ responseDrawer.row?.asset_count }} 台 / ￥{{ formatValue(responseDrawer.row?.total_price) }}</el-descriptions-item>
+        <el-descriptions-item v-else label="资产">{{ responseDrawer.row?.asset_id }} / {{ responseDrawer.row?.asset_name }}</el-descriptions-item>
       </el-descriptions>
+
+      <div v-if="responseDrawer.row?.is_person_group" class="drawer-assets">
+        <div class="asset-expand-title">本次统一答复覆盖以下资产</div>
+        <el-table :data="responseDrawer.row.assets" size="small" border>
+          <el-table-column prop="asset_id" label="资产ID" width="130" />
+          <el-table-column prop="asset_name" label="资产名称" min-width="150" />
+          <el-table-column prop="price" label="金额" width="110">
+            <template #default="{ row }">￥{{ formatValue(row.price) }}</template>
+          </el-table-column>
+        </el-table>
+      </div>
 
       <el-form label-position="top" class="response-form">
         <el-form-item label="合规判断">
@@ -250,14 +271,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="正常理由 / 处理说明">
-          <el-input
-            v-model="responseDrawer.form.reason"
-            type="textarea"
-            :rows="6"
-            maxlength="500"
-            show-word-limit
-            placeholder="例如：该人员因项目需要临时借用高配设备，已有审批单 OA-xxx；或该采购为服务器批量采购，金额符合预算。"
-          />
+          <el-input v-model="responseDrawer.form.reason" type="textarea" :rows="6" maxlength="500" show-word-limit placeholder="说明该人员这些资产是否有正常业务理由，或填写后续回收/整改处理说明。" />
         </el-form-item>
         <el-form-item label="答复人">
           <el-input v-model="responseDrawer.form.responder" placeholder="默认 ITAM Admin" />
@@ -304,19 +318,33 @@ const responseDrawer = reactive({
 
 const summaryCards = computed(() => [
   { label: '资产健康分', value: result.value?.health_score || 0, hint: '100 - 风险评分' },
-  { label: '人员审计命中', value: result.value?.violations?.filter(item => item.audit_scope === 'person').length || 0, hint: '超配、离职、借用回收' },
-  { label: '资产审计命中', value: result.value?.violations?.filter(item => item.audit_scope === 'asset').length || 0, hint: '超价值采购、长期闲置' },
+  { label: '人员审计对象', value: personRows.value.length, hint: '按责任人聚合' },
+  { label: '资产审计命中', value: assetRows.value.length, hint: '逐资产处理' },
   { label: '涉及金额', value: `￥${formatValue(Math.round(result.value?.involved_amount || 0))}`, hint: '按命中资产原值汇总' }
 ])
 
 const scopedRules = computed(() => (result.value?.rules || []).filter(item => (item.audit_scope || 'asset') === activeScope.value))
+const personRows = computed(() => groupPersonViolations(result.value?.violations || [], result.value?.responses || []))
+const assetRows = computed(() => (result.value?.violations || []).filter(item => item.audit_scope === 'asset'))
 
-const filteredViolations = computed(() => {
-  let rows = (result.value?.violations || []).filter(item => (item.audit_scope || 'asset') === activeScope.value)
+const filteredPersonRows = computed(() => {
+  let rows = personRows.value
   if (activeRule.value) rows = rows.filter(item => item.rule === activeRule.value)
-  if (severityFilter.value === '全部') return rows
-  const target = { 高: 'high', 中: 'medium', 低: 'low' }[severityFilter.value]
-  return rows.filter(item => item.severity === target)
+  if (severityFilter.value !== '全部') {
+    const target = { 高: 'high', 中: 'medium', 低: 'low' }[severityFilter.value]
+    rows = rows.filter(item => item.severity === target)
+  }
+  return rows
+})
+
+const filteredAssetRows = computed(() => {
+  let rows = assetRows.value
+  if (activeRule.value) rows = rows.filter(item => item.rule === activeRule.value)
+  if (severityFilter.value !== '全部') {
+    const target = { 高: 'high', 中: 'medium', 低: 'low' }[severityFilter.value]
+    rows = rows.filter(item => item.severity === target)
+  }
+  return rows
 })
 
 onMounted(async () => {
@@ -358,13 +386,44 @@ async function saveRules() {
   }
 }
 
+function groupPersonViolations(violations, responses) {
+  const responseMap = Object.fromEntries((responses || []).map(item => [item.violation_key, item]))
+  const map = {}
+  violations
+    .filter(item => item.audit_scope === 'person')
+    .forEach(item => {
+      const key = item.person_group_key
+      if (!map[key]) {
+        const response = responseMap[key] || {}
+        map[key] = {
+          ...item,
+          is_person_group: true,
+          violation_key: key,
+          person_group_key: key,
+          asset_id: '',
+          asset_name: '',
+          asset_count: 0,
+          total_price: 0,
+          assets: [],
+          decision: response.decision || item.decision || 'pending',
+          response_reason: response.reason || item.response_reason || '',
+          responder: response.responder || item.responder || ''
+        }
+      }
+      map[key].asset_count += 1
+      map[key].total_price += Number(item.price || 0)
+      map[key].assets.push(item)
+      if (severityRank(item.severity) > severityRank(map[key].severity)) map[key].severity = item.severity
+    })
+  return Object.values(map)
+}
+
 function renderCharts() {
   charts.forEach(chart => chart.dispose())
   charts.length = 0
   if (!result.value || !scoreRef.value || !idleRef.value) return
 
   const riskTrend = result.value.riskTrend?.length ? result.value.riskTrend : [{ name: '本次审计', value: result.value.risk_score || 0 }]
-
   const score = echarts.init(scoreRef.value)
   score.setOption({
     tooltip: { trigger: 'axis' },
@@ -380,8 +439,43 @@ function renderCharts() {
     legend: { bottom: 0 },
     series: [{ type: 'pie', radius: ['45%', '70%'], center: ['50%', '44%'], data: result.value.idleStats }]
   })
-
   charts.push(score, idle)
+}
+
+function openResponse(row) {
+  responseDrawer.row = row
+  responseDrawer.form = {
+    decision: row.decision || 'pending',
+    reason: row.response_reason || '',
+    responder: row.responder || 'ITAM Admin'
+  }
+  responseDrawer.visible = true
+}
+
+async function submitResponse() {
+  const row = responseDrawer.row
+  if (!row) return
+  if (responseDrawer.form.decision !== 'pending' && !responseDrawer.form.reason.trim()) {
+    ElMessage.warning('请填写判断依据或处理说明')
+    return
+  }
+  responseDrawer.saving = true
+  try {
+    await saveAuditResponse({
+      violation_key: row.violation_key,
+      asset_id: row.is_person_group ? null : row.asset_id,
+      rule_code: row.rule,
+      audit_scope: row.audit_scope,
+      decision: responseDrawer.form.decision,
+      reason: responseDrawer.form.reason,
+      responder: responseDrawer.form.responder || 'ITAM Admin'
+    })
+    responseDrawer.visible = false
+    ElMessage.success('审计答复已保存')
+    await handleRun()
+  } finally {
+    responseDrawer.saving = false
+  }
 }
 
 function usesValueThreshold(ruleCode) {
@@ -407,42 +501,6 @@ function clearRule() {
   activeRule.value = ''
 }
 
-function openResponse(row) {
-  responseDrawer.row = row
-  responseDrawer.form = {
-    decision: row.decision || 'pending',
-    reason: row.response_reason || '',
-    responder: row.responder || 'ITAM Admin'
-  }
-  responseDrawer.visible = true
-}
-
-async function submitResponse() {
-  const row = responseDrawer.row
-  if (!row) return
-  if (responseDrawer.form.decision !== 'pending' && !responseDrawer.form.reason.trim()) {
-    ElMessage.warning('请填写判断依据或处理说明')
-    return
-  }
-  responseDrawer.saving = true
-  try {
-    await saveAuditResponse({
-      violation_key: row.violation_key,
-      asset_id: row.asset_id,
-      rule_code: row.rule,
-      audit_scope: row.audit_scope,
-      decision: responseDrawer.form.decision,
-      reason: responseDrawer.form.reason,
-      responder: responseDrawer.form.responder || 'ITAM Admin'
-    })
-    responseDrawer.visible = false
-    ElMessage.success('审计答复已保存')
-    await handleRun()
-  } finally {
-    responseDrawer.saving = false
-  }
-}
-
 function formatValue(value) {
   return Number(value || 0).toLocaleString()
 }
@@ -453,6 +511,10 @@ function severityType(severity) {
 
 function severityLabel(severity) {
   return ({ high: '高', medium: '中', low: '低' })[severity] || severity
+}
+
+function severityRank(severity) {
+  return ({ high: 3, medium: 2, low: 1 })[severity] || 0
 }
 
 function scopeLabel(scope) {
@@ -506,7 +568,8 @@ function decisionType(value) {
 .risk-card small,
 .risk-card span,
 .meta-label,
-.muted {
+.muted,
+.reason-text {
   color: var(--muted);
 }
 
@@ -598,8 +661,18 @@ function decisionType(value) {
 }
 
 .reason-text {
-  color: var(--muted);
   line-height: 1.5;
+}
+
+.asset-expand,
+.drawer-assets {
+  padding: 12px;
+}
+
+.asset-expand-title {
+  margin-bottom: 10px;
+  color: var(--text);
+  font-weight: 700;
 }
 
 .response-meta {

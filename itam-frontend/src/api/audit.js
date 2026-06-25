@@ -57,6 +57,7 @@ export async function runAudit() {
     health_score: Math.max(0, 100 - riskScore),
     involved_amount: involvedAmount,
     violations,
+    responses: responses || [],
     person_risks: personRisks,
     asset_risks: assetRisks,
     ai_risks: allRisks,
@@ -108,10 +109,14 @@ function normalizeViolations(rows, assets, users, rules, responses) {
     const user = userMap[row.owner_user_id || asset?.owner_user_id || '']
     const rule = row.rule || row.type || 'UNKNOWN_RULE'
     const savedRule = ruleMap[rule]
-    const violationKey = buildViolationKey({ ...row, rule, asset })
+    const auditScope = row.audit_scope || savedRule?.audit_scope || inferScope(rule)
+    const violationKey = buildViolationKey({ ...row, rule, audit_scope: auditScope, asset })
+    const groupKey = buildPersonGroupKey({ ...row, rule, audit_scope: auditScope, asset })
     const response = responseMap[violationKey] || {}
+    const groupResponse = responseMap[groupKey] || {}
     return {
       violation_key: violationKey,
+      person_group_key: groupKey,
       asset_id: row.asset_id,
       asset_name: asset?.name || '-',
       dept: asset?.dept_name || asset?.dept || '未绑定',
@@ -121,15 +126,15 @@ function normalizeViolations(rows, assets, users, rules, responses) {
       price: Number(asset?.price || 0),
       rule,
       type: ruleLabels[rule] || savedRule?.name || row.type || rule,
-      audit_scope: row.audit_scope || savedRule?.audit_scope || inferScope(rule),
+      audit_scope: auditScope,
       target_type: row.target_type || inferScope(rule),
       severity: row.severity || savedRule?.severity || 'medium',
       severity_label: severityLabels[row.severity] || row.severity || '中',
       message: row.message || '发现资产合规风险',
-      decision: response.decision || 'pending',
-      response_reason: response.reason || '',
-      responder: response.responder || '',
-      response_updated_at: response.updated_at || ''
+      decision: response.decision || groupResponse.decision || 'pending',
+      response_reason: response.reason || groupResponse.reason || '',
+      responder: response.responder || groupResponse.responder || '',
+      response_updated_at: response.updated_at || groupResponse.updated_at || ''
     }
   })
 }
@@ -138,9 +143,17 @@ export function buildViolationKey(row) {
   return [row.rule || '', row.asset_id || '', row.owner_user_id || row.asset?.owner_user_id || '', row.audit_scope || inferScope(row.rule)].join('|')
 }
 
+export function buildPersonGroupKey(row) {
+  return [row.rule || '', row.owner_user_id || row.asset?.owner_user_id || '', 'person_group'].join('|')
+}
+
 function buildPersonRisks(assets, users, violations, rules) {
   const offboardedUsers = users.filter(user => isInactiveUser(user.status))
-  const offboardedAssetIds = new Set(assets.filter(asset => offboardedUsers.some(user => user.user_id === asset.owner_user_id) && ['in_use', 'borrowed', 'out_stock'].includes(asset.status)).map(item => item.asset_id))
+  const offboardedAssetIds = new Set(
+    assets
+      .filter(asset => offboardedUsers.some(user => user.user_id === asset.owner_user_id) && ['in_use', 'borrowed', 'out_stock'].includes(asset.status))
+      .map(item => item.asset_id)
+  )
   return [
     riskCard('USER_ASSET_COUNT_LIMIT', '人员资产超数量配置', 'person', violations, assets, rules, '按设备类型和数量阈值核对个人配置标准'),
     riskCard('OFFBOARDING_ASSET_NOT_RETURNED', '离职没有回收', 'person', violations, assets.filter(asset => offboardedAssetIds.has(asset.asset_id)), rules, '联动离职状态，发起资产回收入库'),
