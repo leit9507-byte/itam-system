@@ -1,17 +1,18 @@
-import { getAssets, statusMap } from './asset'
+import request from '../utils/request'
 
-const tasks = []
+const RESULT_UNCHECKED = '未盘'
+const ABNORMAL_RESULTS = ['盘盈', '盘亏', '位置不符', '状态不符']
 
-export function getStocktakeTasks(filters = {}) {
-  refreshTaskStats()
-  return Promise.resolve(filterTasks(tasks, filters.dateRange).map(task => cloneTask(task)))
+export async function getStocktakeTasks(filters = {}) {
+  const tasks = await request.get('/stocktake/tasks')
+  return filterTasks(tasks, filters.dateRange).map(task => cloneTask(task))
 }
 
 export async function getStocktakeDashboard(filters = {}) {
   const visibleTasks = await getStocktakeTasks(filters)
   const allItems = visibleTasks.flatMap(task => task.items)
   const total = allItems.length
-  const checked = allItems.filter(item => item.result !== '未盘').length
+  const checked = allItems.filter(item => item.result !== RESULT_UNCHECKED).length
   const surplus = allItems.filter(item => item.result === '盘盈').length
   const loss = allItems.filter(item => item.result === '盘亏').length
   const mismatch = allItems.filter(item => ['位置不符', '状态不符'].includes(item.result)).length
@@ -29,7 +30,7 @@ export async function getStocktakeDashboard(filters = {}) {
     completionRate: total ? Math.round((checked / total) * 100) : 0,
     resultDistribution: [
       { name: '正常', value: allItems.filter(item => item.result === '正常').length },
-      { name: '未盘', value: allItems.filter(item => item.result === '未盘').length },
+      { name: '未盘', value: allItems.filter(item => item.result === RESULT_UNCHECKED).length },
       { name: '盘盈', value: surplus },
       { name: '盘亏', value: loss },
       { name: '位置不符', value: allItems.filter(item => item.result === '位置不符').length },
@@ -37,89 +38,24 @@ export async function getStocktakeDashboard(filters = {}) {
     ],
     taskTrend: buildTaskTrend(visibleTasks),
     scopeDistribution: groupTasks(visibleTasks, 'scope'),
-    abnormalItems: allItems.filter(item => ['盘盈', '盘亏', '位置不符', '状态不符'].includes(item.result))
+    abnormalItems: allItems.filter(item => ABNORMAL_RESULTS.includes(item.result))
   }
 }
 
-export async function createStocktakeTask(payload) {
-  const { list } = await getAssets({})
-  const scopedAssets = list.filter(asset => {
-    if (payload.scope === '部门') return !payload.target || asset.dept === payload.target || asset.dept_name === payload.target
-    if (payload.scope === '仓库') return !payload.target || asset.warehouse === payload.target
-    if (payload.scope === '状态') return !payload.target || asset.status === payload.target
-    return true
-  })
-
-  const task = {
-    id: `ST-${new Date().getFullYear()}-${String(tasks.length + 1).padStart(3, '0')}`,
-    name: payload.name,
-    scope: payload.scope,
-    target: payload.target,
-    owner: payload.owner || '资产管理员',
-    status: '待开始',
-    created_at: new Date().toISOString().slice(0, 10),
-    total: scopedAssets.length,
-    checked: 0,
-    abnormal: 0,
-    items: scopedAssets.map(asset => ({
-      asset_id: asset.asset_id,
-      name: asset.name,
-      sn: asset.sn,
-      book_location: asset.location || asset.warehouse || '',
-      book_status: statusMap[asset.status]?.label || asset.status,
-      actual_location: '',
-      result: '未盘',
-      checker: '',
-      checked_at: '',
-      remark: ''
-    }))
-  }
-  tasks.unshift(task)
-  return Promise.resolve(cloneTask(task))
+export function createStocktakeTask(payload) {
+  return request.post('/stocktake/tasks', payload)
 }
 
 export function startStocktakeTask(taskId) {
-  const task = findTask(taskId)
-  if (!task) return Promise.reject(new Error('盘点任务不存在'))
-  task.status = '进行中'
-  return Promise.resolve(cloneTask(task))
+  return request.post(`/stocktake/tasks/${taskId}/start`)
 }
 
 export function submitStocktakeItem(taskId, assetId, payload) {
-  const task = findTask(taskId)
-  if (!task) return Promise.reject(new Error('盘点任务不存在'))
-  const item = task.items.find(row => row.asset_id === assetId)
-  if (!item) return Promise.reject(new Error('盘点明细不存在'))
-  item.actual_location = payload.actual_location
-  item.result = payload.result
-  item.checker = payload.checker || task.owner
-  item.checked_at = new Date().toLocaleString('zh-CN', { hour12: false })
-  item.remark = payload.remark || ''
-  refreshTaskStats()
-  return Promise.resolve({ ...item })
+  return request.post(`/stocktake/tasks/${taskId}/items/${assetId}`, payload)
 }
 
 export function finishStocktakeTask(taskId) {
-  const task = findTask(taskId)
-  if (!task) return Promise.reject(new Error('盘点任务不存在'))
-  task.status = '已完成'
-  refreshTaskStats()
-  return Promise.resolve(cloneTask(task))
-}
-
-function findTask(taskId) {
-  return tasks.find(task => task.id === taskId)
-}
-
-function refreshTaskStats() {
-  tasks.forEach(task => {
-    task.total = task.items.length
-    task.checked = task.items.filter(item => item.result !== '未盘').length
-    task.abnormal = task.items.filter(item => ['盘亏', '盘盈', '位置不符', '状态不符'].includes(item.result)).length
-    if (task.status !== '已完成' && task.total > 0 && task.checked === task.total) {
-      task.status = '待确认'
-    }
-  })
+  return request.post(`/stocktake/tasks/${taskId}/finish`)
 }
 
 function filterTasks(rows, dateRange) {
@@ -163,5 +99,5 @@ function groupTasks(rows, key) {
 }
 
 function cloneTask(task) {
-  return { ...task, items: task.items.map(item => ({ ...item })) }
+  return { ...task, items: (task.items || []).map(item => ({ ...item })) }
 }

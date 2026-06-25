@@ -16,6 +16,19 @@
       </button>
     </section>
 
+    <el-card v-if="mode === 'stocktake'" shadow="never">
+      <template #header>
+        <div class="card-header">
+          <span>盘点任务</span>
+          <el-button text type="primary" @click="loadStocktakeTasks">刷新</el-button>
+        </div>
+      </template>
+      <el-select v-model="form.task_id" placeholder="请选择后台创建的盘点任务" style="width: 100%" @change="selectTask">
+        <el-option v-for="task in stocktakeTasks" :key="task.id" :label="`${task.name} / ${task.status} / ${task.checked || 0}/${task.total || 0}`" :value="task.id" />
+      </el-select>
+      <p class="tip">盘点必须先在后台「资产盘点」创建任务，移动端只负责扫码执行任务明细。</p>
+    </el-card>
+
     <el-card shadow="never" class="scan-card">
       <template #header>
         <div class="card-header">
@@ -61,9 +74,11 @@
 
     <el-card v-if="asset" shadow="never" class="form-card">
       <template #header>{{ currentMode.formTitle }}</template>
-
       <el-form label-position="top">
         <template v-if="mode === 'stocktake'">
+          <el-form-item label="盘点任务">
+            <el-input :model-value="selectedTask ? `${selectedTask.name} (${selectedTask.id})` : '未选择任务'" disabled />
+          </el-form-item>
           <el-form-item label="盘点结果">
             <el-segmented v-model="form.stocktake_result" :options="['正常', '盘盈', '盘亏', '位置不符', '状态不符']" />
           </el-form-item>
@@ -108,7 +123,6 @@
           <el-input v-model="form.remark" type="textarea" :rows="3" placeholder="补充说明" />
         </el-form-item>
       </el-form>
-
       <el-button type="primary" size="large" class="submit-btn" :loading="submitting" @click="submitWork">{{ currentMode.submitText }}</el-button>
     </el-card>
 
@@ -138,9 +152,10 @@ import { Box, Camera, CircleCheck, Search, Setting } from '@element-plus/icons-v
 import { createRepairRecord } from '../../api/repair'
 import { getAssets, inboundAsset, outboundAsset } from '../../api/asset'
 import { getUsers } from '../../api/user'
+import { getStocktakeTasks, startStocktakeTask, submitStocktakeItem } from '../../api/stocktake'
 
 const modes = [
-  { value: 'stocktake', label: '扫码盘点', hint: '确认位置和状态', icon: Search, formTitle: '盘点确认', submitText: '确认盘点' },
+  { value: 'stocktake', label: '扫码盘点', hint: '执行后台任务', icon: Search, formTitle: '盘点确认', submitText: '提交盘点' },
   { value: 'inbound', label: '扫码入库', hint: '归还/验收入库', icon: Box, formTitle: '入库信息', submitText: '确认入库' },
   { value: 'outbound', label: '扫码出库', hint: '关联领用人', icon: CircleCheck, formTitle: '出库信息', submitText: '确认出库' },
   { value: 'repair', label: '扫码维修', hint: '创建今日维修', icon: Setting, formTitle: '维修信息', submitText: '创建维修' }
@@ -153,18 +168,22 @@ const submitting = ref(false)
 const users = ref([])
 const filteredUsers = ref([])
 const logs = ref([])
+const stocktakeTasks = ref([])
 const form = reactive(defaultForm())
 
 const currentMode = computed(() => modes.find(item => item.value === mode.value) || modes[0])
+const selectedTask = computed(() => stocktakeTasks.value.find(task => task.id === form.task_id))
 
 onMounted(async () => {
   logs.value = JSON.parse(localStorage.getItem('itam_mobile_logs') || '[]')
   users.value = await getUsers().catch(() => [])
   filteredUsers.value = users.value.slice(0, 20)
+  await loadStocktakeTasks()
 })
 
 function defaultForm() {
   return {
+    task_id: '',
     stocktake_result: '正常',
     location: '',
     owner_user_id: '',
@@ -179,9 +198,22 @@ function defaultForm() {
   }
 }
 
+async function loadStocktakeTasks() {
+  stocktakeTasks.value = await getStocktakeTasks()
+  if (!form.task_id && stocktakeTasks.value.length) {
+    const activeTask = stocktakeTasks.value.find(task => ['进行中', '待开始', '待确认'].includes(task.status))
+    form.task_id = activeTask?.id || stocktakeTasks.value[0].id
+  }
+}
+
+function selectTask() {
+  resetAsset()
+}
+
 function selectMode(value) {
   mode.value = value
-  Object.assign(form, defaultForm())
+  const taskId = form.task_id
+  Object.assign(form, defaultForm(), { task_id: taskId })
 }
 
 function fillExample() {
@@ -201,10 +233,7 @@ function scanByFeishu() {
   return new Promise(resolve => {
     const tt = window.tt || window.lark || null
     if (!tt?.scanCode) return resolve('')
-    tt.scanCode({
-      success: res => resolve(res?.result || res?.text || ''),
-      fail: () => resolve('')
-    })
+    tt.scanCode({ success: res => resolve(res?.result || res?.text || ''), fail: () => resolve('') })
   })
 }
 
@@ -224,7 +253,7 @@ async function scanByBrowser() {
       if (codes.length) return codes[0].rawValue
       await new Promise(resolve => setTimeout(resolve, 300))
     }
-  } catch (error) {
+  } catch {
     return ''
   } finally {
     stream?.getTracks().forEach(track => track.stop())
@@ -252,6 +281,14 @@ function parseAssetCode(value) {
 async function loadAsset() {
   const code = parseAssetCode(assetCode.value)
   if (!code) return ElMessage.warning('请先扫码或输入资产编号')
+  if (mode.value === 'stocktake') {
+    if (!selectedTask.value) return ElMessage.warning('请先选择后台创建的盘点任务')
+    const taskItem = selectedTask.value.items.find(item => item.asset_id === code || item.sn === code)
+    if (!taskItem) {
+      asset.value = null
+      return ElMessage.error('该资产不在当前盘点任务范围内')
+    }
+  }
   const { list } = await getAssets({ keyword: code })
   const found = list.find(item => item.asset_id === code || item.sn === code) || list[0]
   if (!found) {
@@ -266,7 +303,6 @@ async function loadAsset() {
 function resetAsset() {
   asset.value = null
   assetCode.value = ''
-  Object.assign(form, defaultForm())
 }
 
 function searchUsers(query = '') {
@@ -298,16 +334,21 @@ async function submitWork() {
 }
 
 async function submitStocktake() {
-  addLog('扫码盘点', `${form.stocktake_result} / ${form.location || '-'}`)
-  ElMessage.success('盘点记录已保存到今日操作')
+  if (!selectedTask.value) return ElMessage.warning('请先选择盘点任务')
+  if (selectedTask.value.status === '待开始') await startStocktakeTask(selectedTask.value.id)
+  await submitStocktakeItem(selectedTask.value.id, asset.value.asset_id, {
+    actual_location: form.location,
+    result: form.stocktake_result,
+    checker: '移动端扫码',
+    remark: form.remark
+  })
+  addLog('扫码盘点', `${selectedTask.value.id} / ${form.stocktake_result}`)
+  await loadStocktakeTasks()
+  ElMessage.success('盘点结果已提交到任务明细')
 }
 
 async function submitInbound() {
-  const updated = await inboundAsset(asset.value.asset_id, {
-    warehouse: form.location,
-    location: form.location,
-    remark: form.remark || '移动端扫码入库'
-  })
+  const updated = await inboundAsset(asset.value.asset_id, { warehouse: form.location, location: form.location, remark: form.remark || '移动端扫码入库' })
   addLog('扫码入库', updated.location || form.location || '入库成功')
   ElMessage.success('入库成功')
 }
@@ -328,26 +369,13 @@ async function submitOutbound() {
 
 async function submitRepair() {
   if (!form.fault_reason) return ElMessage.warning('请填写故障原因')
-  await createRepairRecord(asset.value, {
-    repair_time: form.repair_time,
-    fault_reason: form.fault_reason,
-    repair_cost: form.repair_cost,
-    vendor: form.vendor,
-    remark: form.remark || '移动端扫码报修'
-  })
+  await createRepairRecord(asset.value, { repair_time: form.repair_time, fault_reason: form.fault_reason, repair_cost: form.repair_cost, vendor: form.vendor, remark: form.remark || '移动端扫码报修' })
   addLog('扫码维修', form.fault_reason)
   ElMessage.success('维修单已创建')
 }
 
 function addLog(action, remark) {
-  logs.value.unshift({
-    id: `${Date.now()}-${Math.random()}`,
-    action,
-    asset_id: asset.value.asset_id,
-    asset_name: asset.value.name,
-    remark,
-    time: new Date().toLocaleString('zh-CN', { hour12: false })
-  })
+  logs.value.unshift({ id: `${Date.now()}-${Math.random()}`, action, asset_id: asset.value.asset_id, asset_name: asset.value.name, remark, time: new Date().toLocaleString('zh-CN', { hour12: false }) })
   logs.value = logs.value.slice(0, 30)
   localStorage.setItem('itam_mobile_logs', JSON.stringify(logs.value))
 }
@@ -369,116 +397,21 @@ function statusType(value) {
 </script>
 
 <style scoped>
-.mobile-page {
-  min-height: 100vh;
-  padding: 14px;
-  display: grid;
-  gap: 12px;
-  background: #f4f7f6;
-}
-
-.mobile-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 2px;
-}
-
-.mobile-header h1 {
-  margin: 4px 0 0;
-  font-size: 24px;
-}
-
-.eyebrow,
-.tip,
-.asset-main span,
-.asset-meta,
-.log-item small {
-  color: #64748b;
-}
-
-.mode-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.mode-card {
-  min-height: 104px;
-  padding: 14px;
-  border: 1px solid #d9e2df;
-  border-radius: 8px;
-  background: #fff;
-  text-align: left;
-  display: grid;
-  gap: 6px;
-}
-
-.mode-card.active {
-  border-color: #0f766e;
-  box-shadow: 0 8px 24px rgba(15, 118, 110, 0.14);
-}
-
-.mode-card .el-icon {
-  font-size: 22px;
-  color: #0f766e;
-}
-
-.mode-card span {
-  font-weight: 700;
-}
-
-.card-header,
-.scan-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-}
-
-.scan-box {
-  display: grid;
-  gap: 10px;
-}
-
-.asset-main {
-  display: grid;
-  gap: 4px;
-  margin-bottom: 10px;
-}
-
-.asset-main strong {
-  font-size: 20px;
-}
-
-.asset-meta {
-  display: grid;
-  gap: 6px;
-  font-size: 13px;
-}
-
-.submit-btn {
-  width: 100%;
-}
-
-.log-list {
-  display: grid;
-  gap: 10px;
-}
-
-.log-item {
-  display: grid;
-  gap: 3px;
-  padding: 10px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: #fff;
-}
-
-@media (min-width: 760px) {
-  .mobile-page {
-    max-width: 560px;
-    margin: 0 auto;
-  }
-}
+.mobile-page { min-height: 100vh; padding: 14px; display: grid; gap: 12px; background: #f4f7f6; }
+.mobile-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 2px; }
+.mobile-header h1 { margin: 4px 0 0; font-size: 24px; }
+.eyebrow, .tip, .asset-main span, .asset-meta, .log-item small { color: #64748b; }
+.mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.mode-card { min-height: 104px; padding: 14px; border: 1px solid #d9e2df; border-radius: 8px; background: #fff; text-align: left; display: grid; gap: 6px; }
+.mode-card.active { border-color: #0f766e; box-shadow: 0 8px 24px rgba(15, 118, 110, 0.14); }
+.mode-card .el-icon { font-size: 22px; color: #0f766e; }
+.mode-card span { font-weight: 700; }
+.card-header, .scan-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.scan-box, .asset-main, .asset-meta, .log-list, .log-item { display: grid; gap: 10px; }
+.asset-main { gap: 4px; margin-bottom: 10px; }
+.asset-main strong { font-size: 20px; }
+.asset-meta { gap: 6px; font-size: 13px; }
+.submit-btn { width: 100%; }
+.log-item { gap: 3px; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; }
+@media (min-width: 760px) { .mobile-page { max-width: 560px; margin: 0 auto; } }
 </style>

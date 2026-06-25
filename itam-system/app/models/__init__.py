@@ -7,6 +7,7 @@ from app.models.purchase import Purchase, PurchaseItem
 from app.models.repair import RepairRecord
 from app.models.product import DeviceType, ProductCatalog
 from app.models.supplier import Supplier
+from app.models.stocktake import StocktakeItem, StocktakeTask
 from app.models.user import IdentityProviderConfig, RolePermission, UserDirectory
 
 __all__ = [
@@ -21,6 +22,8 @@ __all__ = [
     "DeviceType",
     "ProductCatalog",
     "Supplier",
+    "StocktakeItem",
+    "StocktakeTask",
     "IdentityProviderConfig",
     "RolePermission",
     "UserDirectory",
