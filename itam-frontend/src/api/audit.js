@@ -26,16 +26,25 @@ export function saveAuditRules(rules) {
   return request.post('/audit/rules', rules)
 }
 
+export function getAuditResponses() {
+  return request.get('/audit/responses')
+}
+
+export function saveAuditResponse(payload) {
+  return request.post('/audit/responses', payload)
+}
+
 export async function runAudit() {
-  const [{ list: assets }, purchases, users, backend, rules] = await Promise.all([
+  const [{ list: assets }, purchases, users, backend, rules, responses] = await Promise.all([
     getAssets({}),
     getPurchases().catch(() => []),
     getUsers().catch(() => []),
     request.post('/audit/run', { users: [] }).catch(() => null),
-    getAuditRules().catch(() => [])
+    getAuditRules().catch(() => []),
+    getAuditResponses().catch(() => [])
   ])
 
-  const violations = normalizeViolations(backend?.violations || [], assets, users, rules)
+  const violations = normalizeViolations(backend?.violations || [], assets, users, rules, responses)
   const personRisks = buildPersonRisks(assets, users, violations, rules)
   const assetRisks = buildAssetRisks(assets, purchases, violations, rules)
   const allRisks = [...personRisks, ...assetRisks]
@@ -90,15 +99,19 @@ export function generateReport() {
   }))
 }
 
-function normalizeViolations(rows, assets, users, rules) {
+function normalizeViolations(rows, assets, users, rules, responses) {
   const ruleMap = Object.fromEntries((rules || []).map(rule => [rule.rule_code, rule]))
   const userMap = Object.fromEntries((users || []).map(user => [user.user_id, user]))
+  const responseMap = Object.fromEntries((responses || []).map(item => [item.violation_key, item]))
   return rows.map(row => {
     const asset = assets.find(item => item.asset_id === row.asset_id)
     const user = userMap[row.owner_user_id || asset?.owner_user_id || '']
     const rule = row.rule || row.type || 'UNKNOWN_RULE'
     const savedRule = ruleMap[rule]
+    const violationKey = buildViolationKey({ ...row, rule, asset })
+    const response = responseMap[violationKey] || {}
     return {
+      violation_key: violationKey,
       asset_id: row.asset_id,
       asset_name: asset?.name || '-',
       dept: asset?.dept_name || asset?.dept || '未绑定',
@@ -112,9 +125,17 @@ function normalizeViolations(rows, assets, users, rules) {
       target_type: row.target_type || inferScope(rule),
       severity: row.severity || savedRule?.severity || 'medium',
       severity_label: severityLabels[row.severity] || row.severity || '中',
-      message: row.message || '发现资产合规风险'
+      message: row.message || '发现资产合规风险',
+      decision: response.decision || 'pending',
+      response_reason: response.reason || '',
+      responder: response.responder || '',
+      response_updated_at: response.updated_at || ''
     }
   })
+}
+
+export function buildViolationKey(row) {
+  return [row.rule || '', row.asset_id || '', row.owner_user_id || row.asset?.owner_user_id || '', row.audit_scope || inferScope(row.rule)].join('|')
 }
 
 function buildPersonRisks(assets, users, violations, rules) {

@@ -139,10 +139,21 @@
         <el-table-column prop="price" label="金额" width="130">
           <template #default="{ row }">￥{{ formatValue(row.price) }}</template>
         </el-table-column>
-        <el-table-column prop="message" label="说明" min-width="280" />
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column prop="decision" label="合规判断" width="130">
           <template #default="{ row }">
-            <el-button type="primary" link @click="router.push(`/asset/detail/${row.asset_id}`)">资产详情</el-button>
+            <el-tag :type="decisionType(row.decision)">{{ decisionLabel(row.decision) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="response_reason" label="正常理由/处理说明" min-width="220">
+          <template #default="{ row }">
+            <span class="reason-text">{{ row.response_reason || '待填写' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="message" label="说明" min-width="280" />
+        <el-table-column label="操作" width="170" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" link @click="openResponse(row)">答复</el-button>
+            <el-button type="primary" link @click="router.push(`/asset/detail/${row.asset_id}`)">详情</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -221,6 +232,45 @@
         </el-space>
       </template>
     </el-drawer>
+
+    <el-drawer v-model="responseDrawer.visible" title="审计答复与合规判断" size="560px">
+      <el-descriptions :column="1" border class="response-meta">
+        <el-descriptions-item label="风险类型">{{ responseDrawer.row?.type }}</el-descriptions-item>
+        <el-descriptions-item label="资产">{{ responseDrawer.row?.asset_id }} / {{ responseDrawer.row?.asset_name }}</el-descriptions-item>
+        <el-descriptions-item label="责任人">{{ responseDrawer.row?.owner }}</el-descriptions-item>
+        <el-descriptions-item label="命中说明">{{ responseDrawer.row?.message }}</el-descriptions-item>
+      </el-descriptions>
+
+      <el-form label-position="top" class="response-form">
+        <el-form-item label="合规判断">
+          <el-radio-group v-model="responseDrawer.form.decision">
+            <el-radio-button label="accepted">合规，有正常理由</el-radio-button>
+            <el-radio-button label="non_compliant">不合规，需要处理</el-radio-button>
+            <el-radio-button label="pending">待确认</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="正常理由 / 处理说明">
+          <el-input
+            v-model="responseDrawer.form.reason"
+            type="textarea"
+            :rows="6"
+            maxlength="500"
+            show-word-limit
+            placeholder="例如：该人员因项目需要临时借用高配设备，已有审批单 OA-xxx；或该采购为服务器批量采购，金额符合预算。"
+          />
+        </el-form-item>
+        <el-form-item label="答复人">
+          <el-input v-model="responseDrawer.form.responder" placeholder="默认 ITAM Admin" />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-space>
+          <el-button @click="responseDrawer.visible = false">取消</el-button>
+          <el-button type="primary" :loading="responseDrawer.saving" @click="submitResponse">保存答复</el-button>
+        </el-space>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -230,7 +280,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Document, Refresh, Setting } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
-import { getAuditRules, runAudit, saveAuditRules } from '../../api/audit'
+import { getAuditRules, runAudit, saveAuditResponse, saveAuditRules } from '../../api/audit'
 import { getDeviceTypes } from '../../api/product'
 
 const router = useRouter()
@@ -245,6 +295,12 @@ const scoreRef = ref(null)
 const idleRef = ref(null)
 const charts = []
 const rulesDrawer = reactive({ visible: false, saving: false, rules: [] })
+const responseDrawer = reactive({
+  visible: false,
+  saving: false,
+  row: null,
+  form: { decision: 'pending', reason: '', responder: 'ITAM Admin' }
+})
 
 const summaryCards = computed(() => [
   { label: '资产健康分', value: result.value?.health_score || 0, hint: '100 - 风险评分' },
@@ -351,6 +407,42 @@ function clearRule() {
   activeRule.value = ''
 }
 
+function openResponse(row) {
+  responseDrawer.row = row
+  responseDrawer.form = {
+    decision: row.decision || 'pending',
+    reason: row.response_reason || '',
+    responder: row.responder || 'ITAM Admin'
+  }
+  responseDrawer.visible = true
+}
+
+async function submitResponse() {
+  const row = responseDrawer.row
+  if (!row) return
+  if (responseDrawer.form.decision !== 'pending' && !responseDrawer.form.reason.trim()) {
+    ElMessage.warning('请填写判断依据或处理说明')
+    return
+  }
+  responseDrawer.saving = true
+  try {
+    await saveAuditResponse({
+      violation_key: row.violation_key,
+      asset_id: row.asset_id,
+      rule_code: row.rule,
+      audit_scope: row.audit_scope,
+      decision: responseDrawer.form.decision,
+      reason: responseDrawer.form.reason,
+      responder: responseDrawer.form.responder || 'ITAM Admin'
+    })
+    responseDrawer.visible = false
+    ElMessage.success('审计答复已保存')
+    await handleRun()
+  } finally {
+    responseDrawer.saving = false
+  }
+}
+
 function formatValue(value) {
   return Number(value || 0).toLocaleString()
 }
@@ -365,6 +457,14 @@ function severityLabel(severity) {
 
 function scopeLabel(scope) {
   return scope === 'person' ? '人员审计' : '资产审计'
+}
+
+function decisionLabel(value) {
+  return ({ accepted: '合规有理由', non_compliant: '不合规', pending: '待确认' })[value] || '待确认'
+}
+
+function decisionType(value) {
+  return value === 'accepted' ? 'success' : value === 'non_compliant' ? 'danger' : 'info'
 }
 </script>
 
@@ -495,6 +595,19 @@ function scopeLabel(scope) {
 
 .suggestions {
   width: 100%;
+}
+
+.reason-text {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.response-meta {
+  margin-bottom: 16px;
+}
+
+.response-form {
+  padding-top: 4px;
 }
 
 .rule-help {

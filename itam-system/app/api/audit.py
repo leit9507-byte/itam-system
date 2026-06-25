@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.models.audit_response import AuditResponse
 from app.models.audit_rule import AuditRule
 from app.reports.generator import AuditReportGenerator
 from app.services.audit_engine import AuditEngine
@@ -25,6 +26,16 @@ class AuditRulePayload(BaseModel):
     scope_category: str | None = None
     threshold_value: float | None = None
     threshold_days: int | None = None
+
+
+class AuditResponsePayload(BaseModel):
+    violation_key: str
+    asset_id: str | None = None
+    rule_code: str
+    audit_scope: str = "asset"
+    decision: str = "pending"
+    reason: str | None = None
+    responder: str | None = None
 
 
 last_report_path: str | None = None
@@ -118,6 +129,21 @@ def serialize_rule(rule: AuditRule, fallback: dict | None = None) -> dict:
     }
 
 
+def serialize_response(row: AuditResponse) -> dict:
+    return {
+        "id": row.id,
+        "violation_key": row.violation_key,
+        "asset_id": row.asset_id,
+        "rule_code": row.rule_code,
+        "audit_scope": row.audit_scope,
+        "decision": row.decision,
+        "reason": row.reason or "",
+        "responder": row.responder or "",
+        "updated_at": row.updated_at,
+        "created_at": row.created_at,
+    }
+
+
 @router.get("/rules")
 def list_audit_rules(db: Session = Depends(get_db)):
     persisted = {item.rule_code: item for item in db.query(AuditRule).all()}
@@ -153,6 +179,29 @@ def save_audit_rules(payload: list[AuditRulePayload], db: Session = Depends(get_
         rule.threshold_days = item.threshold_days
     db.commit()
     return list_audit_rules(db)
+
+
+@router.get("/responses")
+def list_audit_responses(db: Session = Depends(get_db)):
+    rows = db.query(AuditResponse).order_by(AuditResponse.updated_at.desc()).all()
+    return [serialize_response(row) for row in rows]
+
+
+@router.post("/responses")
+def save_audit_response(payload: AuditResponsePayload, db: Session = Depends(get_db)):
+    row = db.query(AuditResponse).filter(AuditResponse.violation_key == payload.violation_key).first()
+    if not row:
+        row = AuditResponse(violation_key=payload.violation_key)
+        db.add(row)
+    row.asset_id = payload.asset_id
+    row.rule_code = payload.rule_code
+    row.audit_scope = payload.audit_scope
+    row.decision = payload.decision
+    row.reason = payload.reason or ""
+    row.responder = payload.responder or ""
+    db.commit()
+    db.refresh(row)
+    return serialize_response(row)
 
 
 @router.post("/run")

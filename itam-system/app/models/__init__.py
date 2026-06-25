@@ -1,4 +1,5 @@
 from app.models.asset import Asset
+from app.models.audit_response import AuditResponse
 from app.models.audit_rule import AuditRule
 from app.models.lifecycle import Lifecycle
 from app.models.file import AssetAttachment
@@ -10,6 +11,7 @@ from app.models.user import IdentityProviderConfig, RolePermission, UserDirector
 
 __all__ = [
     "Asset",
+    "AuditResponse",
     "AuditRule",
     "Lifecycle",
     "AssetAttachment",
