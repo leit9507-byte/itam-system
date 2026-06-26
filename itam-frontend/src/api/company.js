@@ -23,3 +23,7 @@ export function createCompany(payload) {
 export function updateCompany(id, payload) {
   return request.put(`/company/${id}`, payload)
 }
+
+export function deleteCompany(id) {
+  return request.delete(`/company/${id}`)
+}

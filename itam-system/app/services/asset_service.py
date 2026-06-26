@@ -15,6 +15,13 @@ from app.services.supplier_service import SupplierService
 
 
 class AssetService:
+    DEFAULT_COMPANY = "未设置公司"
+
+    @staticmethod
+    def normalize_company(value: str | None) -> str | None:
+        clean = (value or "").strip()
+        return None if not clean or clean == AssetService.DEFAULT_COMPANY else clean
+
     @staticmethod
     def apply_warranty_expire(asset: Asset) -> None:
         if not asset.purchase_date or not asset.warranty_months:
@@ -47,7 +54,7 @@ class AssetService:
         user = AssetService.find_user(db, payload.owner_user_id)
         asset = Asset(
             asset_id=getattr(payload, "asset_id", None) or AssetService.generate_asset_id(db),
-            company=payload.company or "未设置公司",
+            company=AssetService.normalize_company(payload.company),
             name=payload.name,
             category=payload.category,
             brand=payload.brand,
@@ -94,7 +101,7 @@ class AssetService:
 
                 asset = Asset(
                     asset_id=normalized.asset_id or AssetService.generate_asset_id(db),
-                    company=normalized.company or "未设置公司",
+                    company=AssetService.normalize_company(normalized.company),
                     name=normalized.name,
                     category=normalized.category,
                     brand=normalized.brand,
@@ -261,6 +268,8 @@ class AssetService:
         data = payload.model_dump(exclude_unset=True)
         old_status = asset.status
         for key, value in data.items():
+            if key == "company":
+                value = AssetService.normalize_company(value)
             setattr(asset, key, value)
         AssetService.apply_warranty_expire(asset)
         AssetService.sync_owner_department(db, asset)
@@ -349,7 +358,7 @@ class AssetService:
         user = user or None
         return {
             "asset_id": asset.asset_id,
-            "company": asset.company or "未设置公司",
+            "company": asset.company or AssetService.DEFAULT_COMPANY,
             "name": asset.name,
             "category": asset.category,
             "brand": asset.brand,

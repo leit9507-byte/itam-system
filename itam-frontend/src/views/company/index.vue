@@ -30,7 +30,11 @@
         <el-table-column prop="name" label="公司" min-width="180" />
         <el-table-column prop="code" label="编码" width="120" />
         <el-table-column prop="contact" label="联系人" width="120" />
-        <el-table-column prop="status" label="状态" width="90" />
+        <el-table-column prop="status" label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.virtual ? 'info' : row.status === '启用' ? 'success' : 'warning'">{{ row.status }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="asset_count" label="资产数" width="100" />
         <el-table-column prop="total_original_value" label="资产原值" width="150">
           <template #default="{ row }">¥{{ formatValue(row.total_original_value) }}</template>
@@ -41,9 +45,10 @@
         <el-table-column prop="repair_count" label="维修中" width="90" />
         <el-table-column prop="pending_scrap_count" label="待报废" width="90" />
         <el-table-column prop="scrapped_count" label="已报废" width="90" />
-        <el-table-column label="操作" width="90" fixed="right">
+        <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click.stop="openEdit(row)">编辑</el-button>
+            <el-button type="primary" link :disabled="row.virtual" @click.stop="openEdit(row)">编辑</el-button>
+            <el-button type="danger" link :disabled="row.virtual" @click.stop="removeCompany(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -64,7 +69,11 @@
           <template #default="{ row }">{{ row.brand || '-' }} / {{ row.model || '-' }}</template>
         </el-table-column>
         <el-table-column prop="sn" label="序列号" width="140" />
-        <el-table-column prop="status" label="状态" width="100" />
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="statusMap[row.status]?.type || 'info'">{{ row.status_label || statusMap[row.status]?.label || row.status }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="dept_id" label="部门" width="150" show-overflow-tooltip />
         <el-table-column prop="purchase_supplier_name" label="供应商" width="140" show-overflow-tooltip />
         <el-table-column prop="purchase_price" label="原值" width="120">
@@ -100,9 +109,10 @@
 </template>
 
 <script setup>
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { createCompany, getCompanies, updateCompany } from '../../api/company'
+import { statusMap } from '../../api/asset'
+import { createCompany, deleteCompany, getCompanies, updateCompany } from '../../api/company'
 
 const companies = ref([])
 const currentCompany = ref(null)
@@ -144,6 +154,7 @@ function openCreate() {
 }
 
 function openEdit(row) {
+  if (row.virtual) return
   dialog.form = { id: row.id, name: row.name, code: row.code || '', contact: row.contact || '', status: row.status || '启用' }
   dialog.visible = true
 }
@@ -157,6 +168,23 @@ async function submitCompany() {
   else await createCompany(dialog.form)
   dialog.visible = false
   ElMessage.success('公司信息已保存')
+  await load()
+}
+
+async function removeCompany(row) {
+  if (row.virtual) return
+  try {
+    await ElMessageBox.confirm(`确定删除公司“${row.name}”吗？该公司下的资产会调整为“未设置公司”。`, '删除公司', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消'
+    })
+  } catch {
+    return
+  }
+  await deleteCompany(row.id)
+  if (currentCompany.value?.id === row.id) currentCompany.value = null
+  ElMessage.success('公司已删除，相关资产已调整为未设置公司')
   await load()
 }
 

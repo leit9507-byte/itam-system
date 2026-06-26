@@ -17,6 +17,10 @@
         <el-select v-model="filters.category" clearable filterable placeholder="设备类型" style="width: 160px" @change="loadAssets">
           <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
         </el-select>
+        <el-select v-model="filters.company" clearable filterable placeholder="公司" style="width: 180px" @change="loadAssets">
+          <el-option label="未设置公司" value="未设置公司" />
+          <el-option v-for="item in realCompanies" :key="item.id || item.name" :label="item.name" :value="item.name" />
+        </el-select>
         <el-select v-model="filters.supplier" clearable filterable placeholder="供应商" style="width: 180px" @change="loadAssets">
           <el-option v-for="item in suppliers" :key="item.id || item.name" :label="item.name" :value="item.name" />
         </el-select>
@@ -88,7 +92,7 @@
         <AssetEditFields
           :form="editDialog.form"
           :categories="categories"
-          :companies="companies"
+          :companies="realCompanies"
           :suppliers="suppliers"
           :users="filteredUsers"
           @search-users="searchUsers"
@@ -110,7 +114,7 @@
 
           <el-checkbox v-model="batchEdit.fields.company">所属公司</el-checkbox>
           <el-select v-model="batchEdit.form.company" filterable clearable :disabled="!batchEdit.fields.company">
-            <el-option v-for="item in companies" :key="item.id || item.name" :label="item.name" :value="item.name" />
+            <el-option v-for="item in realCompanies" :key="item.id || item.name" :label="item.name" :value="item.name" />
           </el-select>
 
           <el-checkbox v-model="batchEdit.fields.sn">序列号</el-checkbox>
@@ -285,7 +289,7 @@ const companies = ref([])
 const users = ref([])
 const filteredUsers = ref([])
 const suppliers = ref([])
-const filters = reactive({ keyword: '', status: '', category: '', supplier: '' })
+const filters = reactive({ keyword: '', status: '', category: '', company: '', supplier: '' })
 const batch = reactive({ visible: false, type: 'inbound', assets: [], form: defaultBatchForm() })
 const batchEdit = reactive({ visible: false, form: defaultBatchEditForm(), fields: defaultBatchEditFields() })
 const importDialog = reactive({ visible: false, loading: false, content: '', result: null })
@@ -293,6 +297,7 @@ const editDialog = reactive({ visible: false, form: {} })
 const repairDialog = reactive({ visible: false, asset: null, assets: [], form: defaultRepairForm() })
 
 const batchTitle = computed(() => ({ inbound: '批量入库', outbound: '批量出库', scrap: '批量申请报废' }[batch.type]))
+const realCompanies = computed(() => companies.value.filter(item => !item.virtual && item.name !== '未设置公司'))
 
 onMounted(async () => {
   await Promise.all([loadAssets(), loadUsers(), loadTypes(), loadSuppliers(), loadCompanies()])
