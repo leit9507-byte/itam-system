@@ -9,7 +9,8 @@ export const assetStatuses = [
   { label: '借出', value: 'borrowed', type: 'warning' },
   { label: '维修中', value: 'repair', type: 'danger' },
   { label: '已出库', value: 'out_stock', type: 'info' },
-  { label: '待报废', value: 'pending_scrap', type: 'warning' },
+  { label: '待报废', value: 'ready_scrap', type: 'warning' },
+  { label: '已提交报废审批', value: 'pending_scrap', type: 'danger' },
   { label: '已报废', value: 'scrapped', type: 'info' }
 ]
 
@@ -219,7 +220,7 @@ export async function getDashboardStats() {
   const { list } = await getAssets({})
   const inUse = list.filter(item => item.status === 'in_use').length
   const idle = list.filter(item => item.status === 'idle').length
-  const risk = list.filter(item => !item.owner || !item.dept || ['idle', 'repair', 'pending_scrap', 'scrapped'].includes(item.status)).length
+  const risk = list.filter(item => !item.owner || !item.dept || ['idle', 'repair', 'ready_scrap', 'pending_scrap', 'scrapped'].includes(item.status)).length
   return {
     total: list.length,
     inUse,
@@ -342,7 +343,8 @@ function buildAssetRisks(asset) {
   if (!asset.dept && asset.price >= 50000) risks.push({ level: 'high', message: '高价值资产未绑定部门' })
   if (asset.status === 'idle') risks.push({ level: 'medium', message: '资产处于闲置状态，建议调拨复用' })
   if (asset.status === 'repair') risks.push({ level: 'medium', message: '资产维修中，请关注维修周期' })
-  if (asset.status === 'pending_scrap') risks.push({ level: 'medium', message: '资产处于待报废审批流程' })
+  if (asset.status === 'ready_scrap') risks.push({ level: 'medium', message: '资产已标记待报废，可提交报废审批' })
+  if (asset.status === 'pending_scrap') risks.push({ level: 'medium', message: '资产已提交报废审批，请关注审批结果' })
   if (asset.status === 'scrapped') risks.push({ level: 'low', message: '资产已报废，等待处置归档' })
   if (asset.warranty_expire_date && new Date(asset.warranty_expire_date) < new Date()) risks.push({ level: 'medium', message: '资产质保已过期' })
   return risks.length ? risks : [{ level: 'low', message: '暂无显著风险' }]

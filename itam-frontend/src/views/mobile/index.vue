@@ -388,11 +388,11 @@ async function clearLogs() {
 }
 
 function statusLabel(value) {
-  return ({ pending_purchase: '待采购', pending_acceptance: '待验收', in_stock: '在库', in_use: '在用', idle: '闲置', borrowed: '借出', repair: '维修中', out_stock: '已出库', pending_scrap: '待报废', scrapped: '已报废' })[value] || value
+  return ({ pending_purchase: '待采购', pending_acceptance: '待验收', in_stock: '在库', in_use: '在用', idle: '闲置', borrowed: '借出', repair: '维修中', out_stock: '已出库', ready_scrap: '待报废', pending_scrap: '已提交报废审批', scrapped: '已报废' })[value] || value
 }
 
 function statusType(value) {
-  return ({ in_stock: 'primary', in_use: 'success', idle: 'warning', borrowed: 'warning', repair: 'danger', pending_scrap: 'warning', scrapped: 'info' })[value] || 'info'
+  return ({ in_stock: 'primary', in_use: 'success', idle: 'warning', borrowed: 'warning', repair: 'danger', ready_scrap: 'warning', pending_scrap: 'danger', scrapped: 'info' })[value] || 'info'
 }
 </script>
 

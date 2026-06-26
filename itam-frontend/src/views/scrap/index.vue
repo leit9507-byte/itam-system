@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">报废审批</h2>
-        <p class="page-subtitle">审核待报废资产，并保留报废申请时的资产历史快照</p>
+        <p class="page-subtitle">审核已提交报废审批的资产，并保留报废申请时的资产历史快照</p>
       </div>
       <el-button @click="load">刷新</el-button>
     </div>

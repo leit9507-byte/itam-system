@@ -11,6 +11,8 @@ const lifecycleNames = {
   in_use: '已领用',
   repair: '维修中',
   idle: '闲置',
+  ready_scrap: '待报废',
+  pending_scrap: '已提交报废审批',
   scrapped: '已报废'
 }
 
@@ -244,6 +246,8 @@ function buildLifecycleDistribution(assets, purchases) {
     { name: lifecycleNames.in_use, value: countStatus(assets, 'in_use') },
     { name: lifecycleNames.repair, value: countStatus(assets, 'repair') },
     { name: lifecycleNames.idle, value: countStatus(assets, 'idle') },
+    { name: lifecycleNames.ready_scrap, value: countStatus(assets, 'ready_scrap') },
+    { name: lifecycleNames.pending_scrap, value: countStatus(assets, 'pending_scrap') },
     { name: lifecycleNames.scrapped, value: countStatus(assets, 'scrapped') }
   ]
 }

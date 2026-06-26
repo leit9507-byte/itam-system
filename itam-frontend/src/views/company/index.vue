@@ -43,7 +43,8 @@
         <el-table-column prop="in_stock_count" label="在库" width="80" />
         <el-table-column prop="idle_count" label="闲置" width="80" />
         <el-table-column prop="repair_count" label="维修中" width="90" />
-        <el-table-column prop="pending_scrap_count" label="待报废" width="90" />
+        <el-table-column prop="ready_scrap_count" label="待报废" width="90" />
+        <el-table-column prop="pending_scrap_count" label="已提审" width="90" />
         <el-table-column prop="scrapped_count" label="已报废" width="90" />
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">

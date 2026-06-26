@@ -40,7 +40,8 @@ ASSET_STATUS_LABELS = {
     "borrowed": "借出",
     "repair": "维修中",
     "out_stock": "已出库",
-    "pending_scrap": "待报废",
+    "ready_scrap": "待报废",
+    "pending_scrap": "已提交报废审批",
     "scrapped": "已报废",
 }
 
@@ -73,6 +74,7 @@ def list_companies(db: Session = Depends(get_db)):
                 "in_stock_count": status_counter.get("in_stock", 0),
                 "idle_count": status_counter.get("idle", 0),
                 "repair_count": status_counter.get("repair", 0),
+                "ready_scrap_count": status_counter.get("ready_scrap", 0),
                 "scrapped_count": status_counter.get("scrapped", 0),
                 "pending_scrap_count": status_counter.get("pending_scrap", 0),
                 "status_distribution": [{"name": status_label(key), "value": value} for key, value in status_counter.items()],
@@ -98,6 +100,7 @@ def list_companies(db: Session = Depends(get_db)):
                 "in_stock_count": status_counter.get("in_stock", 0),
                 "idle_count": status_counter.get("idle", 0),
                 "repair_count": status_counter.get("repair", 0),
+                "ready_scrap_count": status_counter.get("ready_scrap", 0),
                 "scrapped_count": status_counter.get("scrapped", 0),
                 "pending_scrap_count": status_counter.get("pending_scrap", 0),
                 "status_distribution": [{"name": status_label(key), "value": value} for key, value in status_counter.items()],

@@ -10,6 +10,7 @@ export async function getCompanies() {
     in_stock_count: Number(row.in_stock_count || 0),
     idle_count: Number(row.idle_count || 0),
     repair_count: Number(row.repair_count || 0),
+    ready_scrap_count: Number(row.ready_scrap_count || 0),
     scrapped_count: Number(row.scrapped_count || 0),
     pending_scrap_count: Number(row.pending_scrap_count || 0),
     assets: row.assets || []
