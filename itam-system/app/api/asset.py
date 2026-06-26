@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.asset import AssetBatchImport, AssetCreate, AssetImportResult, AssetOut, AssetStatusChange, AssetTextImport, AssetUpdate
-from app.services.asset_service import AssetService
+from app.services.asset_service import AssetService, AssetValidationError
 
 
 router = APIRouter(prefix="/asset", tags=["Asset"])
@@ -23,6 +23,8 @@ def list_assets(db: Session = Depends(get_db)):
 def update_asset(asset_id: str, payload: AssetUpdate, db: Session = Depends(get_db)):
     try:
         return AssetService.update_asset(db, asset_id, payload, "asset-manager")
+    except AssetValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -61,5 +63,7 @@ def change_asset_status(asset_id: str, payload: AssetStatusChange, db: Session =
             payload.location,
             payload.remark,
         )
+    except AssetValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -14,13 +14,35 @@ from app.services.lifecycle_service import LifecycleService
 from app.services.supplier_service import SupplierService
 
 
+class AssetValidationError(ValueError):
+    pass
+
+
 class AssetService:
     DEFAULT_COMPANY = "未设置公司"
+    ASSIGNED_STATUSES = {"in_use", "borrowed", "out_stock"}
+    UNASSIGNED_STATUSES = {"pending_purchase", "pending_acceptance", "in_stock", "idle", "ready_scrap"}
+    WORKFLOW_STATUSES = {"pending_scrap", "scrapped"}
 
     @staticmethod
     def normalize_company(value: str | None) -> str | None:
         clean = (value or "").strip()
         return None if not clean or clean == AssetService.DEFAULT_COMPANY else clean
+
+    @staticmethod
+    def normalize_blank(value: str | None) -> str:
+        return (value or "").strip()
+
+    @staticmethod
+    def validate_status_owner(asset: Asset, *, status_changed: bool = True) -> None:
+        status = asset.status
+        has_owner = bool(AssetService.normalize_blank(asset.owner_user_id))
+        if status_changed and status in AssetService.WORKFLOW_STATUSES:
+            raise AssetValidationError("pending scrap and scrapped statuses are controlled by the scrap workflow")
+        if status in AssetService.UNASSIGNED_STATUSES and has_owner:
+            raise AssetValidationError("pending purchase, pending acceptance, in-stock, idle, and ready-to-scrap assets cannot keep an owner")
+        if status in AssetService.ASSIGNED_STATUSES and not has_owner:
+            raise AssetValidationError("in-use, borrowed, and out-stock assets require an owner")
 
     @staticmethod
     def apply_warranty_expire(asset: Asset) -> None:
@@ -267,12 +289,17 @@ class AssetService:
 
         data = payload.model_dump(exclude_unset=True)
         old_status = asset.status
+        should_validate_status_owner = bool({"status", "owner_user_id"} & data.keys())
         for key, value in data.items():
             if key == "company":
                 value = AssetService.normalize_company(value)
+            if key == "owner_user_id":
+                value = AssetService.normalize_blank(value)
             setattr(asset, key, value)
         AssetService.apply_warranty_expire(asset)
         AssetService.sync_owner_department(db, asset)
+        if should_validate_status_owner:
+            AssetService.validate_status_owner(asset, status_changed=asset.status != old_status)
         SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
 
         LifecycleService.record(db, asset.asset_id, "ASSET_UPDATE", old_status, asset.status, operator)
@@ -296,14 +323,15 @@ class AssetService:
             raise ValueError("asset not found")
 
         from_status = asset.status
-        asset.status = to_status
         if owner_user_id is not None:
-            asset.owner_user_id = owner_user_id
+            asset.owner_user_id = AssetService.normalize_blank(owner_user_id)
         user = AssetService.sync_owner_department(db, asset)
         if dept_id is not None and not user:
             asset.dept_id = dept_id
         if location is not None:
             asset.location = location
+        asset.status = to_status
+        AssetService.validate_status_owner(asset, status_changed=to_status != from_status)
         LifecycleService.record(db, asset.asset_id, "STATUS_CHANGE", from_status, to_status, operator, remark)
         db.commit()
         db.refresh(asset)

@@ -295,6 +295,8 @@ const batchEdit = reactive({ visible: false, form: defaultBatchEditForm(), field
 const importDialog = reactive({ visible: false, loading: false, content: '', result: null })
 const editDialog = reactive({ visible: false, form: {} })
 const repairDialog = reactive({ visible: false, asset: null, assets: [], form: defaultRepairForm() })
+const assignedStatuses = ['in_use', 'borrowed', 'out_stock']
+const unassignedStatuses = ['pending_purchase', 'pending_acceptance', 'in_stock', 'idle', 'ready_scrap']
 
 const batchTitle = computed(() => ({ inbound: '批量入库', outbound: '批量出库', scrap: '批量申请报废' }[batch.type]))
 const realCompanies = computed(() => companies.value.filter(item => !item.virtual && item.name !== '未设置公司'))
@@ -477,6 +479,22 @@ function canScrap(row) {
   return !['scrapped', 'pending_scrap'].includes(row.status)
 }
 
+function hasAssetOwner(row) {
+  return Boolean(row.owner_user_id || row.owner)
+}
+
+function validateStatusOwner(row) {
+  if (assignedStatuses.includes(row.status) && !hasAssetOwner(row)) {
+    ElMessage.warning('在用、借出或已出库状态必须先选择使用人')
+    return false
+  }
+  if (unassignedStatuses.includes(row.status) && hasAssetOwner(row)) {
+    ElMessage.warning('有使用人的资产不能直接调整为待采购、待验收、在库、闲置或待报废；请先执行入库回收并清空使用人')
+    return false
+  }
+  return true
+}
+
 function goDetail(row) {
   router.push(`/asset/detail/${row.asset_id}`)
 }
@@ -488,6 +506,7 @@ function openEdit(row) {
 }
 
 async function submitEdit() {
+  if (!validateStatusOwner(editDialog.form)) return
   await updateAsset(editDialog.form.asset_id, editDialog.form)
   editDialog.visible = false
   ElMessage.success('资产信息已更新')
@@ -514,6 +533,7 @@ async function submitBatchEdit() {
     ElMessage.warning('请至少勾选一个要更新的字段')
     return
   }
+  if ((batchEdit.fields.status || batchEdit.fields.owner_user_id) && selected.value.some(row => !validateStatusOwner({ ...row, ...payload }))) return
   await batchUpdateAssets(selected.value, payload)
   batchEdit.visible = false
   selected.value = []
