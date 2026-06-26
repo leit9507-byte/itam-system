@@ -127,7 +127,7 @@
 
           <el-checkbox v-model="batchEdit.fields.status">状态</el-checkbox>
           <el-select v-model="batchEdit.form.status" :disabled="!batchEdit.fields.status">
-            <el-option v-for="item in assetStatuses" :key="item.value" :label="item.label" :value="item.value" />
+            <el-option v-for="item in editableAssetStatuses" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
 
           <el-checkbox v-model="batchEdit.fields.brand">品牌</el-checkbox>
@@ -274,7 +274,7 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import { computed, defineComponent, h, onMounted, reactive, ref, resolveComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { assetStatuses, batchUpdateAssets, createScrapRequest, getAssets, importAssetsFromExcel, importAssetsFromText, inboundAsset, outboundAsset, statusMap, updateAsset } from '../../api/asset'
+import { assetStatuses, batchUpdateAssets, createScrapRequest, editableAssetStatuses, getAssets, importAssetsFromExcel, importAssetsFromText, inboundAsset, outboundAsset, statusMap, updateAsset } from '../../api/asset'
 import { getCompanies } from '../../api/company'
 import { getDeviceTypes } from '../../api/product'
 import { createRepairRecords } from '../../api/repair'
@@ -657,6 +657,18 @@ async function submitBatch() {
   await loadAssets()
 }
 
+function isWorkflowLockedStatus(status) {
+  return ['pending_scrap', 'scrapped'].includes(status)
+}
+
+function manualStatusOptions(currentStatus) {
+  const options = [...editableAssetStatuses]
+  if (isWorkflowLockedStatus(currentStatus) && statusMap[currentStatus]) {
+    options.push({ ...statusMap[currentStatus], disabled: true })
+  }
+  return options
+}
+
 const AssetEditFields = defineComponent({
   props: {
     form: { type: Object, required: true },
@@ -673,7 +685,7 @@ const AssetEditFields = defineComponent({
         field('所属公司', h(resolveSelect(), { modelValue: props.form.company, 'onUpdate:modelValue': value => (props.form.company = value), filterable: true, clearable: true, style: 'width:100%' }, () => props.companies.map(item => h(resolveOption(), { key: item.id || item.name, label: item.name, value: item.name })))),
         field('序列号', h(resolveInput(), { modelValue: props.form.sn, 'onUpdate:modelValue': value => (props.form.sn = value) })),
         field('设备类型', h(resolveSelect(), { modelValue: props.form.category, 'onUpdate:modelValue': value => (props.form.category = value), filterable: true, allowCreate: true, defaultFirstOption: true, style: 'width:100%' }, () => props.categories.map(item => h(resolveOption(), { key: item, label: item, value: item })))),
-        field('状态', h(resolveSelect(), { modelValue: props.form.status, 'onUpdate:modelValue': value => (props.form.status = value), style: 'width:100%' }, () => assetStatuses.map(item => h(resolveOption(), { key: item.value, label: item.label, value: item.value })))),
+        field('状态', h(resolveSelect(), { modelValue: props.form.status, 'onUpdate:modelValue': value => (props.form.status = value), disabled: isWorkflowLockedStatus(props.form.status), style: 'width:100%' }, () => manualStatusOptions(props.form.status).map(item => h(resolveOption(), { key: item.value, label: item.label, value: item.value, disabled: item.disabled })))),
         field('品牌', h(resolveInput(), { modelValue: props.form.brand, 'onUpdate:modelValue': value => (props.form.brand = value) })),
         field('型号', h(resolveInput(), { modelValue: props.form.model, 'onUpdate:modelValue': value => (props.form.model = value) })),
         field('规格', h(resolveInput(), { modelValue: props.form.spec, 'onUpdate:modelValue': value => (props.form.spec = value) })),
