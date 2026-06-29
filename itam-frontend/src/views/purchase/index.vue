@@ -174,7 +174,7 @@
             <el-input v-model="typeForm.description" placeholder="说明" />
             <el-button type="primary" @click="saveType">保存</el-button>
           </div>
-          <el-table :data="deviceTypes" border>
+          <el-table :data="pagedDeviceTypes" border>
             <el-table-column prop="name" label="类型" />
             <el-table-column prop="description" label="说明" />
             <el-table-column label="操作" width="130">
@@ -184,6 +184,15 @@
               </template>
             </el-table-column>
           </el-table>
+          <div class="pagination-bar">
+            <el-pagination
+              v-model:current-page="catalogPagination.typesPage"
+              v-model:page-size="catalogPagination.typesPageSize"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="deviceTypes.length"
+              layout="total, sizes, prev, pager, next"
+            />
+          </div>
         </el-card>
 
         <el-card shadow="never">
@@ -201,7 +210,7 @@
             <el-input-number v-model="productForm.retirement_years" :min="0" :step="1" :precision="0" placeholder="退役年限" style="width: 100%" />
             <el-button type="primary" @click="saveProduct">保存产品</el-button>
           </div>
-          <el-table :data="products" border>
+          <el-table :data="pagedProducts" border>
             <el-table-column prop="product_name" label="产品名称" />
             <el-table-column prop="device_type" label="类型" width="100" />
             <el-table-column prop="brand" label="品牌" width="100" />
@@ -214,6 +223,15 @@
               </template>
             </el-table-column>
           </el-table>
+          <div class="pagination-bar">
+            <el-pagination
+              v-model:current-page="catalogPagination.productsPage"
+              v-model:page-size="catalogPagination.productsPageSize"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="products.length"
+              layout="total, sizes, prev, pager, next"
+            />
+          </div>
         </el-card>
       </div>
     </el-dialog>
@@ -241,11 +259,14 @@ const form = reactive(defaultForm())
 const receiveForm = reactive({ items: [] })
 const filters = reactive({ createdRange: [] })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const catalogPagination = reactive({ typesPage: 1, typesPageSize: 10, productsPage: 1, productsPageSize: 10 })
 const typeForm = reactive({ id: null, name: '', description: '' })
 const productForm = reactive(defaultProductForm())
 
 const totalAmount = computed(() => form.items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0), 0))
 const realCompanies = computed(() => companies.value.filter(item => !item.virtual && item.name !== '未设置公司'))
+const pagedDeviceTypes = computed(() => paginate(deviceTypes.value, catalogPagination.typesPage, catalogPagination.typesPageSize))
+const pagedProducts = computed(() => paginate(products.value, catalogPagination.productsPage, catalogPagination.productsPageSize))
 
 onMounted(load)
 
@@ -299,6 +320,11 @@ function defaultProductForm() {
 function supplierLabel(item) {
   const meta = [item.contact, item.phone].filter(Boolean).join(' / ')
   return meta ? `${item.name} (${meta})` : item.name
+}
+
+function paginate(rows, page, pageSize) {
+  const start = (page - 1) * pageSize
+  return rows.slice(start, start + pageSize)
 }
 
 function openCreate() {

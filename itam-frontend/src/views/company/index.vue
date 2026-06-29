@@ -6,7 +6,7 @@
         <p class="page-subtitle">维护公司主数据，并按公司查看资产数量、资产原值和状态分布</p>
       </div>
       <div class="toolbar">
-        <el-input v-model="keyword" clearable placeholder="搜索公司/资产/部门" style="width: 260px" />
+        <el-input v-model="keyword" clearable placeholder="搜索公司/资产/部门" style="width: 260px" @input="resetCompanyPage" />
         <el-button @click="load">刷新</el-button>
         <el-button type="primary" @click="openCreate">新增公司</el-button>
       </div>
@@ -26,7 +26,7 @@
           <el-tag type="info">{{ filteredCompanies.length }} 家公司</el-tag>
         </div>
       </template>
-      <el-table :data="filteredCompanies" border stripe highlight-current-row @row-click="selectCompany">
+      <el-table :data="pagedCompanies" border stripe highlight-current-row @row-click="selectCompany">
         <el-table-column prop="name" label="公司" min-width="180" />
         <el-table-column prop="code" label="编码" width="120" />
         <el-table-column prop="contact" label="联系人" width="120" />
@@ -53,6 +53,15 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination
+          v-model:current-page="companyPagination.page"
+          v-model:page-size="companyPagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="filteredCompanies.length"
+          layout="total, sizes, prev, pager, next, jumper"
+        />
+      </div>
     </el-card>
 
     <el-card shadow="never">
@@ -62,7 +71,7 @@
           <el-tag v-if="currentCompany" type="success">{{ currentCompany.asset_count }} 台资产</el-tag>
         </div>
       </template>
-      <el-table :data="currentAssets" border stripe empty-text="请选择一个公司查看资产明细">
+      <el-table :data="pagedCurrentAssets" border stripe empty-text="请选择一个公司查看资产明细">
         <el-table-column prop="asset_id" label="资产ID" width="130" />
         <el-table-column prop="name" label="资产名称" min-width="170" />
         <el-table-column prop="category" label="类型" width="110" />
@@ -81,6 +90,15 @@
           <template #default="{ row }">¥{{ formatValue(row.purchase_price) }}</template>
         </el-table-column>
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination
+          v-model:current-page="assetPagination.page"
+          v-model:page-size="assetPagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="currentAssets.length"
+          layout="total, sizes, prev, pager, next, jumper"
+        />
+      </div>
     </el-card>
 
     <el-dialog v-model="dialog.visible" :title="dialog.form.id ? '编辑公司' : '新增公司'" width="520px">
@@ -119,6 +137,8 @@ const companies = ref([])
 const currentCompany = ref(null)
 const keyword = ref('')
 const dialog = reactive({ visible: false, form: defaultForm() })
+const companyPagination = reactive({ page: 1, pageSize: 20 })
+const assetPagination = reactive({ page: 1, pageSize: 20 })
 
 const filteredCompanies = computed(() => {
   const text = keyword.value.trim().toLowerCase()
@@ -136,6 +156,8 @@ const summary = computed(() => ({
 }))
 
 const currentAssets = computed(() => currentCompany.value?.assets || [])
+const pagedCompanies = computed(() => paginate(filteredCompanies.value, companyPagination))
+const pagedCurrentAssets = computed(() => paginate(currentAssets.value, assetPagination))
 
 onMounted(load)
 
@@ -191,10 +213,20 @@ async function removeCompany(row) {
 
 function selectCompany(row) {
   currentCompany.value = row
+  assetPagination.page = 1
 }
 
 function formatValue(value) {
   return Number(value || 0).toLocaleString()
+}
+
+function resetCompanyPage() {
+  companyPagination.page = 1
+}
+
+function paginate(rows, pagination) {
+  const start = (pagination.page - 1) * pagination.pageSize
+  return rows.slice(start, start + pagination.pageSize)
 }
 </script>
 
@@ -211,5 +243,11 @@ function formatValue(value) {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 </style>

@@ -13,10 +13,10 @@
         <template #header>
           <div class="card-header">
             <span>供应商列表</span>
-            <el-input v-model="keyword" clearable placeholder="搜索供应商" style="width: 220px" @input="load" />
+            <el-input v-model="keyword" clearable placeholder="搜索供应商" style="width: 220px" @input="refreshSuppliers" />
           </div>
         </template>
-        <el-table :data="suppliers" border stripe highlight-current-row @current-change="selectSupplier">
+        <el-table :data="pagedSuppliers" border stripe highlight-current-row @current-change="selectSupplier">
           <el-table-column prop="name" label="供应商" min-width="170" />
           <el-table-column prop="level" label="等级" width="90" />
           <el-table-column prop="purchase_count" label="采购单" width="90" />
@@ -25,6 +25,15 @@
             <template #default="{ row }">¥{{ Number(row.total_amount || 0).toLocaleString() }}</template>
           </el-table-column>
         </el-table>
+        <div class="pagination-bar">
+          <el-pagination
+            v-model:current-page="supplierPagination.page"
+            v-model:page-size="supplierPagination.pageSize"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="suppliers.length"
+            layout="total, sizes, prev, pager, next"
+          />
+        </div>
       </el-card>
 
       <el-card shadow="never">
@@ -39,7 +48,7 @@
           <el-statistic title="采购设备数" :value="currentSupplier.device_count" />
           <el-statistic title="采购金额" :value="currentSupplier.total_amount" prefix="¥" />
         </div>
-        <el-table :data="devices" border stripe empty-text="请选择供应商或当前供应商暂无采购设备">
+        <el-table :data="pagedDevices" border stripe empty-text="请选择供应商或当前供应商暂无采购设备">
           <el-table-column prop="purchase_no" label="采购单号" width="150" />
           <el-table-column prop="product_name" label="设备名称" min-width="170" />
           <el-table-column prop="category" label="类型" width="110" />
@@ -55,6 +64,15 @@
           <el-table-column prop="warehouse" label="入库仓库" width="130" />
           <el-table-column prop="status" label="采购状态" width="110" />
         </el-table>
+        <div class="pagination-bar">
+          <el-pagination
+            v-model:current-page="devicePagination.page"
+            v-model:page-size="devicePagination.pageSize"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="devices.length"
+            layout="total, sizes, prev, pager, next"
+          />
+        </div>
       </el-card>
     </section>
 
@@ -81,7 +99,7 @@
 
 <script setup>
 import { ElMessage } from 'element-plus'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { getSupplierPurchaseDevices, getSuppliers, saveSupplier } from '../../api/supplier'
 
 const suppliers = ref([])
@@ -89,6 +107,10 @@ const devices = ref([])
 const currentSupplier = ref(null)
 const keyword = ref('')
 const dialog = reactive({ visible: false, form: defaultForm() })
+const supplierPagination = reactive({ page: 1, pageSize: 20 })
+const devicePagination = reactive({ page: 1, pageSize: 20 })
+const pagedSuppliers = computed(() => paginate(suppliers.value, supplierPagination))
+const pagedDevices = computed(() => paginate(devices.value, devicePagination))
 
 onMounted(load)
 
@@ -97,10 +119,18 @@ async function load() {
   if (!currentSupplier.value && suppliers.value.length) await selectSupplier(suppliers.value[0])
 }
 
+async function refreshSuppliers() {
+  supplierPagination.page = 1
+  currentSupplier.value = null
+  devices.value = []
+  await load()
+}
+
 async function selectSupplier(row) {
   if (!row) return
   currentSupplier.value = row
   devices.value = await getSupplierPurchaseDevices(row.name)
+  devicePagination.page = 1
 }
 
 function openCreate() {
@@ -122,6 +152,11 @@ async function save() {
 
 function defaultForm() {
   return { id: '', name: '', contact: '', phone: '', level: '普通', status: '启用' }
+}
+
+function paginate(rows, pagination) {
+  const start = (pagination.page - 1) * pagination.pageSize
+  return rows.slice(start, start + pagination.pageSize)
 }
 </script>
 
@@ -155,6 +190,12 @@ function defaultForm() {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 
 @media (max-width: 1280px) {

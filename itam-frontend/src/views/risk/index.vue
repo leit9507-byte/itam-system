@@ -18,7 +18,7 @@
     </div>
     <el-card shadow="never">
       <template #header>部门风险排行</template>
-      <el-table :data="analytics.deptRank" border>
+      <el-table :data="pagedDeptRank" border>
         <el-table-column prop="dept" label="部门" />
         <el-table-column prop="score" label="风险分" />
         <el-table-column label="风险等级">
@@ -29,18 +29,32 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination
+          v-model:current-page="pagination.page"
+          v-model:page-size="pagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="analytics.deptRank.length"
+          layout="total, sizes, prev, pager, next"
+        />
+      </div>
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import * as echarts from 'echarts'
 import { getRiskAnalytics } from '../../api/audit'
 
 const trendRef = ref(null)
 const idleRef = ref(null)
 const analytics = reactive({ trend: [], deptRank: [], idleStats: [] })
+const pagination = reactive({ page: 1, pageSize: 20 })
+const pagedDeptRank = computed(() => {
+  const start = (pagination.page - 1) * pagination.pageSize
+  return analytics.deptRank.slice(start, start + pagination.pageSize)
+})
 
 onMounted(async () => {
   Object.assign(analytics, await getRiskAnalytics())
@@ -57,3 +71,11 @@ onMounted(async () => {
   })
 })
 </script>
+
+<style scoped>
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+</style>

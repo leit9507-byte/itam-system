@@ -43,7 +43,7 @@
     <section class="dashboard-section">
       <el-card shadow="never">
         <template #header>即将退役资产</template>
-        <el-table :data="data.retirementSoonAssets" border stripe empty-text="未来 180 天暂无到退役时间资产">
+        <el-table :data="pagedRetirementSoonAssets" border stripe empty-text="未来 180 天暂无到退役时间资产">
           <el-table-column prop="asset_id" label="资产ID" width="130" />
           <el-table-column prop="name" label="资产名称" min-width="180" />
           <el-table-column prop="brand" label="品牌" width="110" />
@@ -60,6 +60,15 @@
             </template>
           </el-table-column>
         </el-table>
+        <div class="pagination-bar">
+          <el-pagination
+            v-model:current-page="retirementPagination.page"
+            v-model:page-size="retirementPagination.pageSize"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="data.retirementSoonAssets.length"
+            layout="total, sizes, prev, pager, next"
+          />
+        </div>
       </el-card>
     </section>
 
@@ -100,7 +109,7 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import * as echarts from 'echarts'
 import { getEnterpriseDashboard } from '../../api/dashboard'
 
@@ -110,6 +119,7 @@ const lifecycleRef = ref(null)
 const repairRef = ref(null)
 const dateRange = ref(defaultDateRange())
 const charts = []
+const retirementPagination = reactive({ page: 1, pageSize: 20 })
 const data = reactive({
   metrics: [],
   categoryDistribution: [],
@@ -117,6 +127,10 @@ const data = reactive({
   lifecycleDistribution: [],
   retirementSoonAssets: [],
   maintenance: { top10: [], mttr: '0小时', monthCost: 0, yearCost: 0 }
+})
+const pagedRetirementSoonAssets = computed(() => {
+  const start = (retirementPagination.page - 1) * retirementPagination.pageSize
+  return data.retirementSoonAssets.slice(start, start + retirementPagination.pageSize)
 })
 
 onMounted(() => {
@@ -131,6 +145,7 @@ onUnmounted(() => {
 
 async function load() {
   Object.assign(data, await getEnterpriseDashboard({ dateRange: dateRange.value }))
+  retirementPagination.page = 1
   await nextTick()
   renderCharts()
 }
@@ -282,6 +297,12 @@ function sparkHeight(point, trend) {
 .chart {
   width: 100%;
   height: 320px;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 
 .repair-layout {

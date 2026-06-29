@@ -10,9 +10,9 @@
 
     <el-card shadow="never">
       <div class="toolbar">
-        <el-input v-model="keyword" clearable placeholder="搜索位置名称" style="width: 280px" @input="load" />
+        <el-input v-model="keyword" clearable placeholder="搜索位置名称" style="width: 280px" @input="refresh" />
       </div>
-      <el-table :data="locations" border stripe>
+      <el-table :data="pagedLocations" border stripe>
         <el-table-column prop="name" label="位置名称" min-width="180" />
         <el-table-column prop="code" label="位置编码" width="130" />
         <el-table-column prop="type" label="类型" width="120" />
@@ -29,6 +29,15 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination
+          v-model:current-page="pagination.page"
+          v-model:page-size="pagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="locations.length"
+          layout="total, sizes, prev, pager, next, jumper"
+        />
+      </div>
     </el-card>
 
     <el-dialog v-model="dialog.visible" :title="dialog.form.id ? '编辑位置' : '新增位置'" width="560px">
@@ -61,18 +70,28 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createLocation, deleteLocation, getLocations, updateLocation } from '../../api/location'
 
 const locations = ref([])
 const keyword = ref('')
 const dialog = reactive({ visible: false, form: defaultForm() })
+const pagination = reactive({ page: 1, pageSize: 20 })
+const pagedLocations = computed(() => {
+  const start = (pagination.page - 1) * pagination.pageSize
+  return locations.value.slice(start, start + pagination.pageSize)
+})
 
 onMounted(load)
 
 async function load() {
   locations.value = await getLocations(keyword.value)
+}
+
+async function refresh() {
+  pagination.page = 1
+  await load()
 }
 
 function defaultForm() {
@@ -108,3 +127,11 @@ async function remove(row) {
   await load()
 }
 </script>
+
+<style scoped>
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+</style>

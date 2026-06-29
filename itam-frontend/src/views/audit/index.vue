@@ -30,7 +30,7 @@
       </el-card>
     </section>
 
-    <el-tabs v-model="activeScope" class="audit-tabs" @tab-change="clearRule">
+    <el-tabs v-model="activeScope" class="audit-tabs" @tab-change="handleScopeChange">
       <el-tab-pane label="人员审计" name="person">
         <section class="risk-grid">
           <button v-for="risk in result?.person_risks || []" :key="risk.rule" type="button" class="risk-card" :class="{ active: activeRule === risk.rule }" @click="focusRule(risk.rule)">
@@ -68,7 +68,7 @@
             <el-button text type="primary" @click="openRules">调整规则</el-button>
           </div>
         </template>
-        <el-table :data="scopedRules" border>
+        <el-table :data="pagedScopedRules" border>
           <el-table-column prop="name" label="规则名称" min-width="170" />
           <el-table-column prop="audit_scope" label="审计对象" width="100">
             <template #default="{ row }">{{ scopeLabel(row.audit_scope) }}</template>
@@ -86,6 +86,15 @@
           </el-table-column>
           <el-table-column prop="hits" label="命中数" width="90" />
         </el-table>
+        <div class="pagination-bar">
+          <el-pagination
+            v-model:current-page="rulePagination.page"
+            v-model:page-size="rulePagination.pageSize"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="scopedRules.length"
+            layout="total, sizes, prev, pager, next"
+          />
+        </div>
       </el-card>
 
       <div class="chart-stack">
@@ -105,13 +114,13 @@
         <div class="card-header">
           <span>{{ scopeLabel(activeScope) }}明细</span>
           <div class="table-tools">
-            <el-segmented v-model="severityFilter" :options="severityOptions" />
+            <el-segmented v-model="severityFilter" :options="severityOptions" @change="resetResultPage" />
             <el-button text @click="clearRule">全部规则</el-button>
           </div>
         </div>
       </template>
 
-      <el-table v-if="activeScope === 'person'" :data="filteredPersonRows" border stripe row-key="person_group_key" empty-text="当前无人员审计命中记录">
+      <el-table v-if="activeScope === 'person'" :data="pagedPersonRows" border stripe row-key="person_group_key" empty-text="当前无人员审计命中记录">
         <el-table-column type="expand">
           <template #default="{ row }">
             <div class="asset-expand">
@@ -156,7 +165,7 @@
         </el-table-column>
       </el-table>
 
-      <el-table v-else :data="filteredAssetRows" border stripe empty-text="当前无资产审计命中记录">
+      <el-table v-else :data="pagedAssetRows" border stripe empty-text="当前无资产审计命中记录">
         <el-table-column prop="asset_id" label="资产ID" width="130" />
         <el-table-column prop="asset_name" label="资产名称" min-width="160" />
         <el-table-column prop="type" label="风险类型" min-width="150" />
@@ -182,6 +191,15 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination
+          v-model:current-page="resultPagination.page"
+          v-model:page-size="resultPagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="activeScope === 'person' ? filteredPersonRows.length : filteredAssetRows.length"
+          layout="total, sizes, prev, pager, next, jumper"
+        />
+      </div>
     </el-card>
 
     <el-card shadow="never">
@@ -196,7 +214,7 @@
         <strong>规则说明：</strong>
         人员审计用于检查人员配置标准、离职回收和借用回收；资产审计用于检查采购价值和闲置复用。
       </div>
-      <el-table :data="rulesDrawer.rules" border>
+      <el-table :data="pagedDrawerRules" border>
         <el-table-column prop="name" label="规则" min-width="170" />
         <el-table-column prop="audit_scope" label="对象" width="90">
           <template #default="{ row }">{{ scopeLabel(row.audit_scope) }}</template>
@@ -234,6 +252,15 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination
+          v-model:current-page="drawerRulePagination.page"
+          v-model:page-size="drawerRulePagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="rulesDrawer.rules.length"
+          layout="total, sizes, prev, pager, next"
+        />
+      </div>
       <template #footer>
         <el-space>
           <el-button @click="rulesDrawer.visible = false">取消</el-button>
@@ -253,13 +280,22 @@
 
       <div v-if="responseDrawer.row?.is_person_group" class="drawer-assets">
         <div class="asset-expand-title">本次统一答复覆盖以下资产</div>
-        <el-table :data="responseDrawer.row.assets" size="small" border>
+        <el-table :data="pagedResponseAssets" size="small" border>
           <el-table-column prop="asset_id" label="资产ID" width="130" />
           <el-table-column prop="asset_name" label="资产名称" min-width="150" />
           <el-table-column prop="price" label="金额" width="110">
             <template #default="{ row }">￥{{ formatValue(row.price) }}</template>
           </el-table-column>
         </el-table>
+        <div class="pagination-bar">
+          <el-pagination
+            v-model:current-page="responseAssetPagination.page"
+            v-model:page-size="responseAssetPagination.pageSize"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="responseDrawer.row.assets.length"
+            layout="total, sizes, prev, pager, next"
+          />
+        </div>
       </div>
 
       <el-form label-position="top" class="response-form">
@@ -309,6 +345,10 @@ const scoreRef = ref(null)
 const idleRef = ref(null)
 const charts = []
 const rulesDrawer = reactive({ visible: false, saving: false, rules: [] })
+const rulePagination = reactive({ page: 1, pageSize: 10 })
+const resultPagination = reactive({ page: 1, pageSize: 20 })
+const drawerRulePagination = reactive({ page: 1, pageSize: 20 })
+const responseAssetPagination = reactive({ page: 1, pageSize: 20 })
 const responseDrawer = reactive({
   visible: false,
   saving: false,
@@ -326,6 +366,9 @@ const summaryCards = computed(() => [
 const scopedRules = computed(() => (result.value?.rules || []).filter(item => (item.audit_scope || 'asset') === activeScope.value))
 const personRows = computed(() => groupPersonViolations(result.value?.violations || [], result.value?.responses || []))
 const assetRows = computed(() => (result.value?.violations || []).filter(item => item.audit_scope === 'asset'))
+const pagedScopedRules = computed(() => paginate(scopedRules.value, rulePagination))
+const pagedDrawerRules = computed(() => paginate(rulesDrawer.rules, drawerRulePagination))
+const pagedResponseAssets = computed(() => paginate(responseDrawer.row?.assets || [], responseAssetPagination))
 
 const filteredPersonRows = computed(() => {
   let rows = personRows.value
@@ -346,6 +389,8 @@ const filteredAssetRows = computed(() => {
   }
   return rows
 })
+const pagedPersonRows = computed(() => paginate(filteredPersonRows.value, resultPagination))
+const pagedAssetRows = computed(() => paginate(filteredAssetRows.value, resultPagination))
 
 onMounted(async () => {
   await Promise.all([loadCategories(), handleRun()])
@@ -361,6 +406,8 @@ async function handleRun() {
   loading.value = true
   try {
     result.value = await runAudit()
+    rulePagination.page = 1
+    resultPagination.page = 1
     await nextTick()
     renderCharts()
     ElMessage.success('资产审计已完成')
@@ -369,8 +416,15 @@ async function handleRun() {
   }
 }
 
+function handleScopeChange() {
+  clearRule()
+  rulePagination.page = 1
+  resultPagination.page = 1
+}
+
 async function openRules() {
   rulesDrawer.rules = (await getAuditRules()).map(item => ({ ...item }))
+  drawerRulePagination.page = 1
   rulesDrawer.visible = true
 }
 
@@ -444,6 +498,7 @@ function renderCharts() {
 
 function openResponse(row) {
   responseDrawer.row = row
+  responseAssetPagination.page = 1
   responseDrawer.form = {
     decision: row.decision || 'pending',
     reason: row.response_reason || '',
@@ -495,10 +550,16 @@ function ruleThreshold(row) {
 
 function focusRule(rule) {
   activeRule.value = activeRule.value === rule ? '' : rule
+  resetResultPage()
 }
 
 function clearRule() {
   activeRule.value = ''
+  resetResultPage()
+}
+
+function resetResultPage() {
+  resultPagination.page = 1
 }
 
 function formatValue(value) {
@@ -527,6 +588,11 @@ function decisionLabel(value) {
 
 function decisionType(value) {
   return value === 'accepted' ? 'success' : value === 'non_compliant' ? 'danger' : 'info'
+}
+
+function paginate(rows, pagination) {
+  const start = (pagination.page - 1) * pagination.pageSize
+  return rows.slice(start, start + pagination.pageSize)
 }
 </script>
 
@@ -695,6 +761,12 @@ function decisionType(value) {
 
 .rule-number {
   width: 112px;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 
 @media (max-width: 1280px) {

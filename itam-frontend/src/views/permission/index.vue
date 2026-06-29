@@ -11,7 +11,7 @@
     <el-tabs v-model="activeTab">
       <el-tab-pane label="用户目录" name="users">
         <el-card shadow="never">
-          <el-table :data="users" border stripe>
+          <el-table :data="pagedUsers" border stripe>
             <el-table-column prop="display_name" label="姓名" min-width="130" />
             <el-table-column prop="username" label="账号" min-width="120" />
             <el-table-column prop="email" label="邮箱" min-width="180" />
@@ -33,12 +33,21 @@
               <template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ row.status }}</el-tag></template>
             </el-table-column>
           </el-table>
+          <div class="pagination-bar">
+            <el-pagination
+              v-model:current-page="userPagination.page"
+              v-model:page-size="userPagination.pageSize"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="users.length"
+              layout="total, sizes, prev, pager, next, jumper"
+            />
+          </div>
         </el-card>
       </el-tab-pane>
 
       <el-tab-pane label="RBAC 权限" name="rbac">
         <el-card shadow="never">
-          <el-table :data="permissions" border stripe>
+          <el-table :data="pagedPermissions" border stripe>
             <el-table-column prop="role" label="角色" width="130" />
             <el-table-column prop="resource" label="资源" width="150" />
             <el-table-column prop="action" label="动作" width="120" />
@@ -46,6 +55,15 @@
               <template #default="{ row }"><el-tag :type="row.allowed ? 'success' : 'danger'">{{ row.allowed ? '允许' : '拒绝' }}</el-tag></template>
             </el-table-column>
           </el-table>
+          <div class="pagination-bar">
+            <el-pagination
+              v-model:current-page="permissionPagination.page"
+              v-model:page-size="permissionPagination.pageSize"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="permissions.length"
+              layout="total, sizes, prev, pager, next, jumper"
+            />
+          </div>
         </el-card>
       </el-tab-pane>
 
@@ -85,7 +103,7 @@
 
           <el-card shadow="never">
             <template #header>已配置身份源</template>
-            <el-table :data="providers" border>
+            <el-table :data="pagedProviders" border>
               <el-table-column prop="name" label="名称" />
               <el-table-column prop="provider_type" label="类型" width="110" />
               <el-table-column prop="enabled" label="启用" width="80">
@@ -106,6 +124,15 @@
                 </template>
               </el-table-column>
             </el-table>
+            <div class="pagination-bar">
+              <el-pagination
+                v-model:current-page="providerPagination.page"
+                v-model:page-size="providerPagination.pageSize"
+                :page-sizes="[10, 20, 50, 100]"
+                :total="providers.length"
+                layout="total, sizes, prev, pager, next"
+              />
+            </div>
           </el-card>
         </div>
       </el-tab-pane>
@@ -141,7 +168,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAppStore } from '../../store'
 import {
@@ -166,6 +193,12 @@ const loginResult = ref(null)
 const providerConfigText = ref('')
 const providerForm = reactive(defaultProviderForm())
 const loginForm = reactive({ provider: 'local', username: 'admin', password: 'admin' })
+const userPagination = reactive({ page: 1, pageSize: 20 })
+const permissionPagination = reactive({ page: 1, pageSize: 20 })
+const providerPagination = reactive({ page: 1, pageSize: 20 })
+const pagedUsers = computed(() => paginate(users.value, userPagination))
+const pagedPermissions = computed(() => paginate(permissions.value, permissionPagination))
+const pagedProviders = computed(() => paginate(providers.value, providerPagination))
 
 onMounted(async () => {
   await Promise.all([loadUsers(), loadProviders(), loadPermissions()])
@@ -321,6 +354,11 @@ async function submitSso() {
   const result = await startSso(loginForm.provider)
   ElMessage.success(result.message)
 }
+
+function paginate(rows, pagination) {
+  const start = (pagination.page - 1) * pagination.pageSize
+  return rows.slice(start, start + pagination.pageSize)
+}
 </script>
 
 <style scoped>
@@ -336,6 +374,12 @@ async function submitSso() {
 
 .login-card {
   max-width: 760px;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 
 @media (max-width: 1100px) {

@@ -56,7 +56,7 @@
           <el-tag type="info">{{ tasks.length }} 个任务</el-tag>
         </div>
       </template>
-      <el-table :data="tasks" border stripe empty-text="当前时间范围暂无盘点任务">
+      <el-table :data="pagedTasks" border stripe empty-text="当前时间范围暂无盘点任务">
         <el-table-column prop="id" label="任务编号" width="140" />
         <el-table-column prop="name" label="任务名称" min-width="220" />
         <el-table-column prop="scope" label="范围类型" width="100" />
@@ -82,11 +82,20 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination
+          v-model:current-page="taskPagination.page"
+          v-model:page-size="taskPagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="tasks.length"
+          layout="total, sizes, prev, pager, next, jumper"
+        />
+      </div>
     </el-card>
 
     <el-card shadow="never">
       <template #header>差异明细</template>
-      <el-table :data="dashboard.abnormalItems" border stripe empty-text="当前时间范围暂无盘点差异">
+      <el-table :data="pagedAbnormalItems" border stripe empty-text="当前时间范围暂无盘点差异">
         <el-table-column prop="asset_id" label="资产ID" width="120" />
         <el-table-column prop="name" label="资产名称" min-width="180" />
         <el-table-column prop="sn" label="序列号" width="150" />
@@ -95,6 +104,15 @@
         <el-table-column prop="result" label="结果" width="110" />
         <el-table-column prop="remark" label="备注" min-width="180" />
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination
+          v-model:current-page="abnormalPagination.page"
+          v-model:page-size="abnormalPagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="dashboard.abnormalItems.length"
+          layout="total, sizes, prev, pager, next, jumper"
+        />
+      </div>
     </el-card>
 
     <el-dialog v-model="createDialog" title="创建盘点任务" width="560px">
@@ -120,7 +138,7 @@
     </el-dialog>
 
     <el-dialog v-model="detailDialog" :title="currentTask ? `盘点明细：${currentTask.name}` : '盘点明细'" width="1100px">
-      <el-table :data="currentTask?.items || []" border stripe>
+      <el-table :data="pagedTaskItems" border stripe>
         <el-table-column prop="asset_id" label="资产ID" width="120" />
         <el-table-column prop="name" label="资产名称" min-width="160" />
         <el-table-column prop="sn" label="序列号" width="140" />
@@ -154,13 +172,22 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination
+          v-model:current-page="itemPagination.page"
+          v-model:page-size="itemPagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="currentTaskItems.length"
+          layout="total, sizes, prev, pager, next, jumper"
+        />
+      </div>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import * as echarts from 'echarts'
 import {
   createStocktakeTask,
@@ -180,6 +207,9 @@ const resultRef = ref(null)
 const trendRef = ref(null)
 const charts = []
 const form = reactive(defaultForm())
+const taskPagination = reactive({ page: 1, pageSize: 20 })
+const abnormalPagination = reactive({ page: 1, pageSize: 20 })
+const itemPagination = reactive({ page: 1, pageSize: 20 })
 const dashboard = reactive({
   metrics: [],
   completionRate: 0,
@@ -188,6 +218,10 @@ const dashboard = reactive({
   scopeDistribution: [],
   abnormalItems: []
 })
+const currentTaskItems = computed(() => currentTask.value?.items || [])
+const pagedTasks = computed(() => paginate(tasks.value, taskPagination))
+const pagedAbnormalItems = computed(() => paginate(dashboard.abnormalItems, abnormalPagination))
+const pagedTaskItems = computed(() => paginate(currentTaskItems.value, itemPagination))
 
 onMounted(load)
 onUnmounted(() => charts.forEach(chart => chart.dispose()))
@@ -195,6 +229,8 @@ onUnmounted(() => charts.forEach(chart => chart.dispose()))
 async function load() {
   tasks.value = await getStocktakeTasks({ dateRange: dateRange.value })
   Object.assign(dashboard, await getStocktakeDashboard({ dateRange: dateRange.value }))
+  taskPagination.page = Math.min(taskPagination.page, Math.max(1, Math.ceil(tasks.value.length / taskPagination.pageSize) || 1))
+  abnormalPagination.page = Math.min(abnormalPagination.page, Math.max(1, Math.ceil(dashboard.abnormalItems.length / abnormalPagination.pageSize) || 1))
   await nextTick()
   renderCharts()
 }
@@ -264,6 +300,7 @@ async function start(row) {
 
 function openDetail(row) {
   currentTask.value = row
+  itemPagination.page = 1
   detailDialog.value = true
 }
 
@@ -305,6 +342,11 @@ function formatValue(value) {
 
 function formatDate(date) {
   return date.toISOString().slice(0, 10)
+}
+
+function paginate(rows, pagination) {
+  const start = (pagination.page - 1) * pagination.pageSize
+  return rows.slice(start, start + pagination.pageSize)
 }
 </script>
 
@@ -374,6 +416,12 @@ function formatDate(date) {
 .chart {
   width: 100%;
   height: 320px;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 
 @media (max-width: 1280px) {

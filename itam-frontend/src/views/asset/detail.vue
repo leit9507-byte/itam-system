@@ -72,7 +72,7 @@
               </el-upload>
             </div>
           </template>
-          <el-table :data="attachments" border empty-text="暂无附件">
+          <el-table :data="pagedAttachments" border empty-text="暂无附件">
             <el-table-column prop="filename" label="文件名" min-width="160" />
             <el-table-column prop="size" label="大小" width="100">
               <template #default="{ row }">{{ formatSize(row.size) }}</template>
@@ -84,16 +84,34 @@
               </template>
             </el-table-column>
           </el-table>
+          <div class="pagination-bar">
+            <el-pagination
+              v-model:current-page="attachmentPagination.page"
+              v-model:page-size="attachmentPagination.pageSize"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="attachments.length"
+              layout="total, sizes, prev, pager, next"
+            />
+          </div>
         </el-card>
 
         <el-card shadow="never">
           <template #header>出入库记录</template>
-          <el-table :data="detail.inventoryRecords" border empty-text="暂无出入库记录">
+          <el-table :data="pagedInventoryRecords" border empty-text="暂无出入库记录">
             <el-table-column prop="type" label="类型" width="80" />
             <el-table-column prop="target" label="目标" />
             <el-table-column prop="operator" label="操作人" width="110" />
             <el-table-column prop="time" label="时间" width="170" />
           </el-table>
+          <div class="pagination-bar">
+            <el-pagination
+              v-model:current-page="inventoryPagination.page"
+              v-model:page-size="inventoryPagination.pageSize"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="detail.inventoryRecords.length"
+              layout="total, sizes, prev, pager, next"
+            />
+          </div>
         </el-card>
 
         <el-card shadow="never">
@@ -126,9 +144,13 @@ const route = useRoute()
 const detail = reactive({ asset: null, lifecycles: [], usageRecords: [], inventoryRecords: [], risks: [] })
 const attachments = ref([])
 const qrUrl = ref('')
+const attachmentPagination = reactive({ page: 1, pageSize: 10 })
+const inventoryPagination = reactive({ page: 1, pageSize: 10 })
 
 const ownerName = computed(() => detail.asset?.owner_name || detail.asset?.owner_username || detail.asset?.owner || '未分配')
 const deptName = computed(() => detail.asset?.dept_name || detail.asset?.dept || '未绑定')
+const pagedAttachments = computed(() => paginate(attachments.value, attachmentPagination))
+const pagedInventoryRecords = computed(() => paginate(detail.inventoryRecords, inventoryPagination))
 
 const warrantyTag = computed(() => {
   const value = detail.asset?.warranty_expire_date
@@ -163,6 +185,11 @@ function formatSize(size = 0) {
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
+
+function paginate(rows, pagination) {
+  const start = (pagination.page - 1) * pagination.pageSize
+  return rows.slice(start, start + pagination.pageSize)
+}
 </script>
 
 <style scoped>
@@ -192,6 +219,12 @@ function formatSize(size = 0) {
   height: 168px;
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 
 @media (max-width: 1180px) {

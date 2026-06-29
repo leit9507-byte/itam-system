@@ -16,7 +16,7 @@
     <div class="two-column">
       <el-card shadow="never">
         <template #header>报告列表</template>
-        <el-table :data="reports" border empty-text="暂无已生成报告，请点击生成审计报告">
+        <el-table :data="pagedReports" border empty-text="暂无已生成报告，请点击生成审计报告">
           <el-table-column prop="id" label="报告ID" width="170" />
           <el-table-column prop="name" label="名称" min-width="180" />
           <el-table-column prop="type" label="类型" width="120" />
@@ -29,6 +29,15 @@
             </template>
           </el-table-column>
         </el-table>
+        <div class="pagination-bar">
+          <el-pagination
+            v-model:current-page="pagination.page"
+            v-model:page-size="pagination.pageSize"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="reports.length"
+            layout="total, sizes, prev, pager, next"
+          />
+        </div>
       </el-card>
 
       <el-card shadow="never">
@@ -47,15 +56,20 @@
 
 <script setup>
 import { ElMessage } from 'element-plus'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { generateReport, getReports } from '../../api/audit'
 import { downloadAssetCsv, downloadAssetPdf, downloadAuditReport } from '../../api/reporting'
 
 const reports = ref([])
 const previewHtml = ref('')
 const generating = ref(false)
+const pagination = reactive({ page: 1, pageSize: 20 })
 
 const activeReport = computed(() => reports.value.find(item => item.html === previewHtml.value))
+const pagedReports = computed(() => {
+  const start = (pagination.page - 1) * pagination.pageSize
+  return reports.value.slice(start, start + pagination.pageSize)
+})
 
 onMounted(async () => {
   reports.value = await getReports()
@@ -101,5 +115,11 @@ async function handleDownloadAudit() {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 </style>
