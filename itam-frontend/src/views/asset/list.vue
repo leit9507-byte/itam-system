@@ -13,18 +13,18 @@
 
     <el-card shadow="never">
       <div class="toolbar">
-        <el-input v-model="filters.keyword" clearable placeholder="搜索资产ID/名称/部门/序列号/使用人/供应商" style="width: 340px" @input="loadAssets" />
-        <el-select v-model="filters.status" clearable placeholder="状态" style="width: 140px" @change="loadAssets">
+        <el-input v-model="filters.keyword" clearable placeholder="搜索资产ID/名称/部门/序列号/使用人/供应商" style="width: 340px" @input="refreshAssets" />
+        <el-select v-model="filters.status" clearable placeholder="状态" style="width: 140px" @change="refreshAssets">
           <el-option v-for="item in assetStatuses" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
-        <el-select v-model="filters.category" clearable filterable placeholder="设备类型" style="width: 160px" @change="loadAssets">
+        <el-select v-model="filters.category" clearable filterable placeholder="设备类型" style="width: 160px" @change="refreshAssets">
           <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
         </el-select>
-        <el-select v-model="filters.company" clearable filterable placeholder="公司" style="width: 180px" @change="loadAssets">
+        <el-select v-model="filters.company" clearable filterable placeholder="公司" style="width: 180px" @change="refreshAssets">
           <el-option label="未设置公司" value="未设置公司" />
           <el-option v-for="item in realCompanies" :key="item.id || item.name" :label="item.name" :value="item.name" />
         </el-select>
-        <el-select v-model="filters.supplier" clearable filterable placeholder="供应商" style="width: 180px" @change="loadAssets">
+        <el-select v-model="filters.supplier" clearable filterable placeholder="供应商" style="width: 180px" @change="refreshAssets">
           <el-option v-for="item in suppliers" :key="item.id || item.name" :label="item.name" :value="item.name" />
         </el-select>
         <el-divider direction="vertical" />
@@ -94,6 +94,17 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination
+          v-model:current-page="pagination.page"
+          v-model:page-size="pagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="pagination.total"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleAssetPageSizeChange"
+          @current-change="loadAssets"
+        />
+      </div>
     </el-card>
 
     <el-dialog v-model="editDialog.visible" title="调整资产信息" width="900px">
@@ -338,6 +349,7 @@ const filteredUsers = ref([])
 const suppliers = ref([])
 const locations = ref([])
 const filters = reactive({ keyword: '', status: '', category: '', company: '', supplier: '' })
+const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const batch = reactive({ visible: false, type: 'inbound', assets: [], form: defaultBatchForm() })
 const batchEdit = reactive({ visible: false, form: defaultBatchEditForm(), fields: defaultBatchEditFields() })
 const importDialog = reactive({ visible: false, loading: false, importing: false, content: '', preview: null, result: null })
@@ -356,8 +368,20 @@ onMounted(async () => {
 })
 
 async function loadAssets() {
-  const data = await getAssets(filters)
+  const data = await getAssets({ ...filters, page: pagination.page, page_size: pagination.pageSize })
   assets.value = data.list
+  pagination.total = data.total
+  selected.value = []
+}
+
+function refreshAssets() {
+  pagination.page = 1
+  loadAssets()
+}
+
+function handleAssetPageSizeChange() {
+  pagination.page = 1
+  loadAssets()
 }
 
 async function loadUsers() {
@@ -936,6 +960,12 @@ function resolveDatePicker() { return resolveComponent('ElDatePicker') }
 
 .upload-row {
   justify-content: flex-start;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 
 @media (max-width: 900px) {

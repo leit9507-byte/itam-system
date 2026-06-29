@@ -23,8 +23,18 @@ export async function createRepairRecords(assets, payload) {
 }
 
 export async function getRepairRecords(filters = {}) {
-  const rows = await request.get('/repair/list')
-  return rows.map(mapRepair).filter(item => filterRecord(item, filters))
+  const result = await request.get('/repair/list', {
+    params: {
+      keyword: filters.keyword || undefined,
+      status: filters.status || undefined,
+      start_date: filters.dateRange?.[0] || undefined,
+      end_date: filters.dateRange?.[1] || undefined,
+      page: filters.page || undefined,
+      page_size: filters.page_size ?? filters.pageSize ?? undefined
+    }
+  })
+  const { rows, total } = normalizePagedResult(result)
+  return { list: rows.map(mapRepair), total }
 }
 
 export async function finishRepairRecord(recordId, payload = {}) {
@@ -39,7 +49,7 @@ export async function finishRepairRecord(recordId, payload = {}) {
 }
 
 export async function getRepairDashboard(filters = {}) {
-  const rows = await getRepairRecords(filters)
+  const { list: rows } = await getRepairRecords({ ...filters, page_size: 0 })
   const inProgress = rows.filter(item => item.status === '维修中')
   const completed = rows.filter(item => item.status === '已完成')
   const totalCost = rows.reduce((sum, item) => sum + Number(item.repair_cost || 0), 0)
@@ -118,6 +128,12 @@ function inDateRange(value, dateRange) {
   const end = new Date(dateRange[1])
   end.setHours(23, 59, 59, 999)
   return date >= start && date <= end
+}
+
+function normalizePagedResult(result) {
+  if (Array.isArray(result)) return { rows: result, total: result.length }
+  const rows = result?.list || result?.items || []
+  return { rows, total: Number(result?.total ?? rows.length) }
 }
 
 function formatDate(value) {

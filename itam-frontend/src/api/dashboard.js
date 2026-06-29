@@ -17,12 +17,13 @@ const lifecycleNames = {
 }
 
 export async function getEnterpriseDashboard(filters = {}) {
-  const [{ list: allAssets }, purchases, products, repairDashboard] = await Promise.all([
+  const [{ list: allAssets }, purchaseResult, products, repairDashboard] = await Promise.all([
     getAssets({}),
-    getPurchases().catch(() => []),
+    getPurchases({ page_size: 0 }).catch(() => ({ list: [] })),
     getProducts().catch(() => []),
     getRepairDashboard(filters).catch(() => ({ total: 0, inProgress: 0, totalCost: 0, topFaults: [] }))
   ])
+  const purchases = purchaseResult.list || []
 
   const scopedAssets = filterByDateRange(allAssets, filters.dateRange, 'created_at')
   const assets = filters.dateRange?.length ? scopedAssets : allAssets

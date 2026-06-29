@@ -9,8 +9,15 @@ from app.services.lifecycle_service import LifecycleService
 
 class ScrapService:
     @staticmethod
-    def list_requests(db: Session) -> list[ScrapRequest]:
-        return db.query(ScrapRequest).order_by(ScrapRequest.id.desc()).all()
+    def list_requests(db: Session, page: int = 1, page_size: int = 0, status: str | None = None) -> dict:
+        query = db.query(ScrapRequest)
+        if status:
+            query = query.filter(ScrapRequest.status == status)
+        total = query.count()
+        query = query.order_by(ScrapRequest.id.desc())
+        if page_size and page_size > 0:
+            query = query.offset((max(page, 1) - 1) * page_size).limit(page_size)
+        return {"list": query.all(), "total": total, "page": max(page, 1), "page_size": page_size or total}
 
     @staticmethod
     def create_request(db: Session, asset_id: str, payload: dict, operator: str = "资产管理员") -> ScrapRequest:

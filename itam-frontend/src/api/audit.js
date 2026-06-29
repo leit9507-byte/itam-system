@@ -35,14 +35,15 @@ export function saveAuditResponse(payload) {
 }
 
 export async function runAudit() {
-  const [{ list: assets }, purchases, users, backend, rules, responses] = await Promise.all([
+  const [{ list: assets }, purchaseResult, users, backend, rules, responses] = await Promise.all([
     getAssets({}),
-    getPurchases().catch(() => []),
+    getPurchases({ page_size: 0 }).catch(() => ({ list: [] })),
     getUsers().catch(() => []),
     request.post('/audit/run', { users: [] }).catch(() => null),
     getAuditRules().catch(() => []),
     getAuditResponses().catch(() => [])
   ])
+  const purchases = purchaseResult.list || []
 
   const violations = normalizeViolations(backend?.violations || [], assets, users, rules, responses)
   const personRisks = buildPersonRisks(assets, users, violations, rules)

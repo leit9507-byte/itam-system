@@ -65,27 +65,51 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination
+          v-model:current-page="pagination.page"
+          v-model:page-size="pagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="pagination.total"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handlePageSizeChange"
+          @current-change="load"
+        />
+      </div>
     </el-card>
   </div>
 </template>
 
 <script setup>
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { approveScrapRequest, getScrapRequests, rejectScrapRequest } from '../../api/asset'
 
 const requests = ref([])
+const allRequests = ref([])
+const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
-const totalResidual = computed(() => requests.value.reduce((sum, item) => sum + Number(item.estimated_residual_value || 0), 0))
+const totalResidual = computed(() => allRequests.value.reduce((sum, item) => sum + Number(item.estimated_residual_value || 0), 0))
 
 onMounted(load)
 
 async function load() {
-  requests.value = await getScrapRequests()
+  const [paged, all] = await Promise.all([
+    getScrapRequests({ page: pagination.page, page_size: pagination.pageSize }),
+    getScrapRequests({ page_size: 0 })
+  ])
+  requests.value = paged.list
+  pagination.total = paged.total
+  allRequests.value = all.list
 }
 
 function countByStatus(status) {
-  return requests.value.filter(item => item.status === status).length
+  return allRequests.value.filter(item => item.status === status).length
+}
+
+function handlePageSizeChange() {
+  pagination.page = 1
+  load()
 }
 
 async function approve(row) {
@@ -118,5 +142,11 @@ function statusType(status) {
 .asset-info span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 </style>

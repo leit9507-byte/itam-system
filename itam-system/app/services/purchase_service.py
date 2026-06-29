@@ -12,13 +12,23 @@ from app.services.supplier_service import SupplierService
 
 class PurchaseService:
     @staticmethod
-    def list_purchases(db: Session, created_from: datetime | None = None, created_to: datetime | None = None) -> list[Purchase]:
+    def list_purchases(
+        db: Session,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+        page: int = 1,
+        page_size: int = 0,
+    ) -> dict:
         query = db.query(Purchase)
         if created_from:
             query = query.filter(Purchase.created_at >= created_from)
         if created_to:
             query = query.filter(Purchase.created_at <= created_to)
-        return query.order_by(Purchase.id.desc()).all()
+        total = query.count()
+        query = query.order_by(Purchase.id.desc())
+        if page_size and page_size > 0:
+            query = query.offset((max(page, 1) - 1) * page_size).limit(page_size)
+        return {"list": query.all(), "total": total, "page": max(page, 1), "page_size": page_size or total}
 
     @staticmethod
     def create_purchase(db: Session, payload: PurchaseCreate) -> Purchase:

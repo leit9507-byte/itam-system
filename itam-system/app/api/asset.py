@@ -17,9 +17,18 @@ def create_asset(payload: AssetCreate, db: Session = Depends(get_db)):
     return AssetService.create_asset(db, payload)
 
 
-@router.get("/list", response_model=list[AssetOut])
-def list_assets(db: Session = Depends(get_db)):
-    return AssetService.list_assets(db)
+@router.get("/list")
+def list_assets(
+    page: int = 1,
+    page_size: int = 0,
+    keyword: str | None = None,
+    status: str | None = None,
+    category: str | None = None,
+    company: str | None = None,
+    supplier: str | None = None,
+    db: Session = Depends(get_db),
+):
+    return AssetService.list_assets(db, page, page_size, keyword, status, category, company, supplier)
 
 
 @router.put("/{asset_id}", response_model=AssetOut)

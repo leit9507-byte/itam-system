@@ -12,15 +12,21 @@ from app.services.purchase_service import PurchaseService
 router = APIRouter(prefix="/purchase", tags=["Purchase"])
 
 
-@router.get("/list", response_model=list[PurchaseOut])
+@router.get("/list")
 def list_purchases(
     created_from: date | None = None,
     created_to: date | None = None,
+    page: int = 1,
+    page_size: int = 20,
     db: Session = Depends(get_db),
 ):
     start = datetime.combine(created_from, time.min) if created_from else None
     end = datetime.combine(created_to, time.max) if created_to else None
-    return PurchaseService.list_purchases(db, start, end)
+    result = PurchaseService.list_purchases(db, start, end, page, page_size)
+    return {
+        **result,
+        "list": [PurchaseOut.model_validate(row) for row in result["list"]],
+    }
 
 
 @router.post("/create", response_model=PurchaseOut)

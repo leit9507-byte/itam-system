@@ -6,12 +6,12 @@
         <p class="page-subtitle">展示采购、入库、出库、维修、报废等真实资产流转记录</p>
       </div>
       <div class="toolbar">
-        <el-radio-group v-model="operationType">
+        <el-radio-group v-model="operationType" @change="refresh">
           <el-radio-button label="all">全部</el-radio-button>
           <el-radio-button label="daily_inventory">日常出入库</el-radio-button>
           <el-radio-button label="other">其他操作</el-radio-button>
         </el-radio-group>
-        <el-input v-model="keyword" clearable placeholder="搜索资产ID/名称/公司/操作人" style="width: 280px" />
+        <el-input v-model="keyword" clearable placeholder="搜索资产ID/名称/公司/操作人" style="width: 280px" @input="refresh" />
         <el-date-picker
           v-model="dateRange"
           type="daterange"
@@ -27,7 +27,7 @@
     </div>
 
     <el-card shadow="never">
-      <el-table :data="filteredItems" border stripe empty-text="暂无生命周期记录">
+      <el-table :data="items" border stripe empty-text="暂无生命周期记录">
         <el-table-column prop="time" label="时间" width="170" />
         <el-table-column prop="company" label="公司" width="140" show-overflow-tooltip />
         <el-table-column prop="asset_id" label="资产ID" width="130" />
@@ -39,47 +39,55 @@
         <el-table-column prop="operator" label="操作人" width="130" />
         <el-table-column prop="description" label="说明" min-width="240" show-overflow-tooltip />
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination
+          v-model:current-page="pagination.page"
+          v-model:page-size="pagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="pagination.total"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handlePageSizeChange"
+          @current-change="load"
+        />
+      </div>
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { reactive, onMounted, ref } from 'vue'
 import { getLifecycleList } from '../../api/asset'
 
 const items = ref([])
 const keyword = ref('')
 const dateRange = ref([])
 const operationType = ref('all')
-
-const filteredItems = computed(() => {
-  const text = keyword.value.trim().toLowerCase()
-  return items.value.filter(item => {
-    const hitType = operationType.value === 'all' || item.category === operationType.value
-    if (!hitType) return false
-    if (!text) return true
-    return [
-      item.asset_id,
-      item.asset_name,
-      item.company,
-      item.operator,
-      item.type,
-      item.category_label,
-      item.type_label,
-      item.responsible_label,
-      item.from_status_label,
-      item.to_status_label,
-      item.status_change_label,
-      item.description
-    ].join(' ').toLowerCase().includes(text)
-  })
-})
+const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
 onMounted(load)
 
 async function load() {
   const [start_date, end_date] = dateRange.value || []
-  items.value = await getLifecycleList({ start_date, end_date })
+  const result = await getLifecycleList({
+    start_date,
+    end_date,
+    keyword: keyword.value,
+    operation_type: operationType.value === 'all' ? '' : operationType.value,
+    page: pagination.page,
+    page_size: pagination.pageSize
+  })
+  items.value = result.list
+  pagination.total = result.total
+}
+
+function refresh() {
+  pagination.page = 1
+  load()
+}
+
+function handlePageSizeChange() {
+  pagination.page = 1
+  load()
 }
 </script>
 
@@ -88,5 +96,11 @@ async function load() {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 </style>

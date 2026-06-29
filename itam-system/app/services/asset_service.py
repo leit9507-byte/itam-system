@@ -510,9 +510,49 @@ class AssetService:
         return AssetImportRow(**data)
 
     @staticmethod
-    def list_assets(db: Session) -> list[dict]:
+    def list_assets(
+        db: Session,
+        page: int = 1,
+        page_size: int = 0,
+        keyword: str | None = None,
+        status: str | None = None,
+        category: str | None = None,
+        company: str | None = None,
+        supplier: str | None = None,
+    ) -> dict:
         users = AssetService.users_by_identity(db)
-        assets = db.query(Asset).order_by(Asset.created_at.desc()).all()
+        query = db.query(Asset)
+        clean_keyword = (keyword or "").strip()
+        if clean_keyword:
+            pattern = f"%{clean_keyword}%"
+            query = query.filter(
+                or_(
+                    Asset.asset_id.like(pattern),
+                    Asset.name.like(pattern),
+                    Asset.dept_id.like(pattern),
+                    Asset.sn.like(pattern),
+                    Asset.brand.like(pattern),
+                    Asset.model.like(pattern),
+                    Asset.owner_user_id.like(pattern),
+                    Asset.purchase_approval_no.like(pattern),
+                    Asset.purchase_supplier_name.like(pattern),
+                )
+            )
+        if status:
+            query = query.filter(Asset.status == status)
+        if category:
+            query = query.filter(Asset.category == category)
+        if supplier:
+            query = query.filter(Asset.purchase_supplier_name == supplier)
+        if company:
+            stored = AssetService.normalize_company(company)
+            query = query.filter(Asset.company.is_(None) if stored is None else Asset.company == stored)
+
+        total = query.count()
+        query = query.order_by(Asset.created_at.desc())
+        if page_size and page_size > 0:
+            query = query.offset((max(page, 1) - 1) * page_size).limit(page_size)
+        assets = query.all()
         changed = False
         rows = []
         for asset in assets:
@@ -528,7 +568,7 @@ class AssetService:
             rows.append(AssetService.to_out(asset, user))
         if changed:
             db.commit()
-        return rows
+        return {"list": rows, "total": total, "page": max(page, 1), "page_size": page_size or total}
 
     @staticmethod
     def update_asset(db: Session, asset_id: str, payload: AssetUpdate, operator: str = "system") -> Asset:

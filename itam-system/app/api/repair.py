@@ -1,3 +1,5 @@
+from datetime import datetime, time
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -9,9 +11,19 @@ from app.services.repair_service import RepairService
 router = APIRouter(prefix="/repair", tags=["Repair"])
 
 
-@router.get("/list", response_model=list[RepairOut])
-def list_repairs(db: Session = Depends(get_db)):
-    return RepairService.list_records(db)
+@router.get("/list")
+def list_repairs(
+    page: int = 1,
+    page_size: int = 20,
+    keyword: str | None = None,
+    status: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    db: Session = Depends(get_db),
+):
+    start = datetime.combine(datetime.fromisoformat(start_date).date(), time.min) if start_date else None
+    end = datetime.combine(datetime.fromisoformat(end_date).date(), time.max) if end_date else None
+    return RepairService.list_records(db, page, page_size, keyword, status, start, end)
 
 
 @router.post("/create", response_model=RepairOut)

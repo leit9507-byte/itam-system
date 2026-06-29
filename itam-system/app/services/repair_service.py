@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.asset import Asset
@@ -10,10 +11,43 @@ from app.services.lifecycle_service import LifecycleService
 
 class RepairService:
     @staticmethod
-    def list_records(db: Session) -> list[dict]:
-        rows = db.query(RepairRecord).order_by(RepairRecord.id.desc()).all()
-        assets = {asset.asset_id: asset for asset in db.query(Asset).all()}
-        return [RepairService.to_dict(row, assets.get(row.asset_id)) for row in rows]
+    def list_records(
+        db: Session,
+        page: int = 1,
+        page_size: int = 0,
+        keyword: str | None = None,
+        status: str | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> dict:
+        query = db.query(RepairRecord)
+        if status:
+            query = query.filter(RepairRecord.status == status)
+        if start_date:
+            query = query.filter(RepairRecord.repair_time >= start_date)
+        if end_date:
+            query = query.filter(RepairRecord.repair_time <= end_date)
+        clean_keyword = (keyword or "").strip()
+        if clean_keyword:
+            pattern = f"%{clean_keyword}%"
+            query = query.outerjoin(Asset, Asset.asset_id == RepairRecord.asset_id).filter(
+                or_(
+                    RepairRecord.asset_id.like(pattern),
+                    RepairRecord.repair_no.like(pattern),
+                    RepairRecord.fault_reason.like(pattern),
+                    RepairRecord.vendor.like(pattern),
+                    Asset.name.like(pattern),
+                    Asset.sn.like(pattern),
+                )
+            )
+        total = query.count()
+        query = query.order_by(RepairRecord.id.desc())
+        if page_size and page_size > 0:
+            query = query.offset((max(page, 1) - 1) * page_size).limit(page_size)
+        rows = query.all()
+        asset_ids = [row.asset_id for row in rows]
+        assets = {asset.asset_id: asset for asset in db.query(Asset).filter(Asset.asset_id.in_(asset_ids)).all()} if asset_ids else {}
+        return {"list": [RepairService.to_dict(row, assets.get(row.asset_id)) for row in rows], "total": total, "page": max(page, 1), "page_size": page_size or total}
 
     @staticmethod
     def create_record(db: Session, payload: RepairCreate) -> dict:

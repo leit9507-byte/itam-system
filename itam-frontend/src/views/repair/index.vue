@@ -14,7 +14,7 @@
           end-placeholder="结束日期"
           value-format="YYYY-MM-DD"
           clearable
-          @change="load"
+          @change="refresh"
         />
         <el-button type="primary" @click="load">刷新</el-button>
       </div>
@@ -44,8 +44,8 @@
         <div class="card-header">
           <span>维修记录</span>
           <div class="table-tools">
-            <el-input v-model="filters.keyword" clearable placeholder="搜索资产/序列号/故障原因/维修商" style="width: 280px" @input="load" />
-            <el-select v-model="filters.status" clearable placeholder="维修状态" style="width: 140px" @change="load">
+            <el-input v-model="filters.keyword" clearable placeholder="搜索资产/序列号/故障原因/维修商" style="width: 280px" @input="refresh" />
+            <el-select v-model="filters.status" clearable placeholder="维修状态" style="width: 140px" @change="refresh">
               <el-option label="维修中" value="维修中" />
               <el-option label="已完成" value="已完成" />
             </el-select>
@@ -74,6 +74,17 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination
+          v-model:current-page="pagination.page"
+          v-model:page-size="pagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="pagination.total"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handlePageSizeChange"
+          @current-change="load"
+        />
+      </div>
     </el-card>
   </div>
 </template>
@@ -89,16 +100,29 @@ const trendRef = ref(null)
 const faultRef = ref(null)
 const charts = []
 const filters = reactive({ keyword: '', status: '', dateRange: defaultDateRange() })
+const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const dashboard = reactive({ total: 0, inProgress: 0, completed: 0, totalCost: 0, avgCost: 0, topFaults: [], costTrend: [] })
 
 onMounted(load)
 onUnmounted(() => charts.forEach(chart => chart.dispose()))
 
 async function load() {
-  records.value = await getRepairRecords(filters)
+  const result = await getRepairRecords({ ...filters, page: pagination.page, page_size: pagination.pageSize })
+  records.value = result.list
+  pagination.total = result.total
   Object.assign(dashboard, await getRepairDashboard(filters))
   await nextTick()
   renderCharts()
+}
+
+function handlePageSizeChange() {
+  pagination.page = 1
+  load()
+}
+
+function refresh() {
+  pagination.page = 1
+  load()
 }
 
 function renderCharts() {
@@ -176,6 +200,12 @@ function defaultDateRange() {
 .chart {
   width: 100%;
   height: 320px;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 
 @media (max-width: 1200px) {

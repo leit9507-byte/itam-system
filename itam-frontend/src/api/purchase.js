@@ -1,13 +1,16 @@
 import request from '../utils/request'
 
 export async function getPurchases(filters = {}) {
-  const rows = await request.get('/purchase/list', {
+  const result = await request.get('/purchase/list', {
     params: {
       created_from: filters.created_from || undefined,
-      created_to: filters.created_to || undefined
+      created_to: filters.created_to || undefined,
+      page: filters.page || undefined,
+      page_size: filters.page_size ?? filters.pageSize ?? undefined
     }
   })
-  return rows.map(mapBackendPurchase)
+  const { rows, total } = normalizePagedResult(result)
+  return { list: rows.map(mapBackendPurchase), total }
 }
 
 export async function createPurchase(payload) {
@@ -124,4 +127,10 @@ function formatDateTime(value) {
 
 function purchaseReasonSummary(items) {
   return [...new Set((items || []).map(item => item.purchase_reason).filter(Boolean))].join('；')
+}
+
+function normalizePagedResult(result) {
+  if (Array.isArray(result)) return { rows: result, total: result.length }
+  const rows = result?.list || result?.items || []
+  return { rows, total: Number(result?.total ?? rows.length) }
 }

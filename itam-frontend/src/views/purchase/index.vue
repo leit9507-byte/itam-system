@@ -20,7 +20,7 @@
           range-separator="至"
           start-placeholder="创建开始"
           end-placeholder="创建结束"
-          @change="load"
+          @change="refreshPurchases"
         />
         <el-button @click="resetFilters">重置</el-button>
       </div>
@@ -75,6 +75,17 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination
+          v-model:current-page="pagination.page"
+          v-model:page-size="pagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="pagination.total"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handlePageSizeChange"
+          @current-change="loadPurchases"
+        />
+      </div>
     </el-card>
 
     <el-dialog v-model="createDialog" title="创建采购单" width="1160px">
@@ -229,6 +240,7 @@ const currentPurchase = ref(null)
 const form = reactive(defaultForm())
 const receiveForm = reactive({ items: [] })
 const filters = reactive({ createdRange: [] })
+const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const typeForm = reactive({ id: null, name: '', description: '' })
 const productForm = reactive(defaultProductForm())
 
@@ -238,19 +250,38 @@ const realCompanies = computed(() => companies.value.filter(item => !item.virtua
 onMounted(load)
 
 async function load() {
-  purchases.value = await getPurchases({
-    created_from: filters.createdRange?.[0] || '',
-    created_to: filters.createdRange?.[1] || ''
-  })
+  await loadPurchases()
   products.value = await getProducts()
   deviceTypes.value = await getDeviceTypes()
   companies.value = await getCompanies()
   suppliers.value = await getSuppliers()
 }
 
+async function loadPurchases() {
+  const result = await getPurchases({
+    created_from: filters.createdRange?.[0] || '',
+    created_to: filters.createdRange?.[1] || '',
+    page: pagination.page,
+    page_size: pagination.pageSize
+  })
+  purchases.value = result.list
+  pagination.total = result.total
+}
+
 async function resetFilters() {
   filters.createdRange = []
-  await load()
+  pagination.page = 1
+  await loadPurchases()
+}
+
+function handlePageSizeChange() {
+  pagination.page = 1
+  loadPurchases()
+}
+
+function refreshPurchases() {
+  pagination.page = 1
+  loadPurchases()
 }
 
 function defaultForm() {
@@ -303,7 +334,8 @@ async function submit() {
   await createPurchase({ ...form, total_amount: totalAmount.value })
   createDialog.value = false
   ElMessage.success('采购单已创建')
-  await load()
+  pagination.page = 1
+  await loadPurchases()
 }
 
 async function approve(row) {
@@ -358,7 +390,7 @@ async function receive() {
   const result = await acceptPurchase(currentPurchase.value.purchase_no, acceptances)
   receiveDialog.value = false
   ElMessage.success(`验收完成，生成 ${result.generated_assets} 个资产`)
-  await load()
+  await loadPurchases()
 }
 
 function editType(row) {
@@ -472,6 +504,12 @@ async function removeProduct(row) {
 
 .product-form {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 
 @media (max-width: 980px) {

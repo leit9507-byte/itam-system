@@ -36,34 +36,20 @@ const localInventoryRecords = []
 const scrapRequests = []
 
 export async function getAssets(params = {}) {
-  const rows = await request.get('/asset/list')
-  const mapped = rows.map(mapBackendAsset)
-  const keyword = (params.keyword || '').toLowerCase()
-  const status = params.status || ''
-  const category = params.category || ''
-  const supplier = params.supplier || ''
-  const company = params.company || ''
-  const list = mapped.filter(item => {
-    const searchText = [
-      item.asset_id,
-      item.company,
-      item.name,
-      item.dept,
-      item.dept_name,
-      item.sn,
-      item.brand,
-      item.model,
-      item.owner,
-      item.owner_name,
-      item.owner_username,
-      item.purchase_approval_no,
-      item.purchase_supplier_name
-    ].join(' ').toLowerCase()
-    const hitSupplier = !supplier || item.purchase_supplier_name === supplier
-    const hitCompany = !company || item.company === company
-    return (!keyword || searchText.includes(keyword)) && (!status || item.status === status) && (!category || item.category === category) && hitSupplier && hitCompany
+  const result = await request.get('/asset/list', {
+    params: {
+      keyword: params.keyword || undefined,
+      status: params.status || undefined,
+      category: params.category || undefined,
+      company: params.company || undefined,
+      supplier: params.supplier || undefined,
+      page: params.page || undefined,
+      page_size: params.page_size ?? params.pageSize ?? undefined
+    }
   })
-  return { list, total: list.length }
+  const { rows, total } = normalizePagedResult(result)
+  const list = rows.map(mapBackendAsset)
+  return { list, total }
 }
 
 export async function importAssetsFromText(content, operator = 'asset-import') {
@@ -177,8 +163,9 @@ export async function getAssetDetail(assetId) {
 }
 
 export async function getLifecycleList(params = {}) {
-  const rows = await request.get('/lifecycle/list', { params })
-  return rows.map(mapLifecycle)
+  const result = await request.get('/lifecycle/list', { params })
+  const { rows, total } = normalizePagedResult(result)
+  return { list: rows.map(mapLifecycle), total }
 }
 
 export function getInventoryRecords() {
@@ -233,9 +220,16 @@ export async function createScrapRequest(assetId, payload = {}) {
   return mapScrapRequest(await request.post(`/scrap/${assetId}/create`, { ...payload, operator: payload.operator || '资产管理员' }))
 }
 
-export async function getScrapRequests() {
-  const rows = await request.get('/scrap/list')
-  return rows.map(mapScrapRequest)
+export async function getScrapRequests(params = {}) {
+  const result = await request.get('/scrap/list', {
+    params: {
+      status: params.status || undefined,
+      page: params.page || undefined,
+      page_size: params.page_size ?? params.pageSize ?? undefined
+    }
+  })
+  const { rows, total } = normalizePagedResult(result)
+  return { list: rows.map(mapScrapRequest), total }
 }
 
 export async function approveScrapRequest(requestId, approver = '资产负责人') {
@@ -505,4 +499,10 @@ function addYears(value, years) {
   if (Number.isNaN(date.getTime())) return ''
   date.setFullYear(date.getFullYear() + Number(years))
   return date.toISOString().slice(0, 10)
+}
+
+function normalizePagedResult(result) {
+  if (Array.isArray(result)) return { rows: result, total: result.length }
+  const rows = result?.list || result?.items || []
+  return { rows, total: Number(result?.total ?? rows.length) }
 }

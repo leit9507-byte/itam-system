@@ -22,8 +22,8 @@ class ScrapApprovePayload(BaseModel):
 
 
 @router.get("/list")
-def list_scrap_requests(db: Session = Depends(get_db)):
-    return ScrapService.list_requests(db)
+def list_scrap_requests(page: int = 1, page_size: int = 20, status: str | None = None, db: Session = Depends(get_db)):
+    return ScrapService.list_requests(db, page, page_size, status)
 
 
 @router.post("/{asset_id}/create")
