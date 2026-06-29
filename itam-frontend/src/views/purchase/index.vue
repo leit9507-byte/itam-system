@@ -31,7 +31,9 @@
         </el-table-column>
         <el-table-column prop="purchase_no" label="采购单号" width="160" />
         <el-table-column prop="approval_no" label="审批单号" width="160" />
+        <el-table-column prop="company" label="公司" width="150" show-overflow-tooltip />
         <el-table-column prop="supplier_name" label="供应商" width="170" />
+        <el-table-column prop="purchase_reason" label="采购原因" min-width="180" show-overflow-tooltip />
         <el-table-column label="采购内容" min-width="260">
           <template #default="{ row }">
             <div class="purchase-summary">
@@ -58,10 +60,18 @@
         <div class="header-form">
           <el-form-item label="采购单号"><el-input v-model="form.purchase_no" /></el-form-item>
           <el-form-item label="审批单号"><el-input v-model="form.approval_no" /></el-form-item>
+          <el-form-item label="公司">
+            <el-select v-model="form.company" filterable clearable placeholder="选择公司" style="width: 100%">
+              <el-option v-for="item in realCompanies" :key="item.id || item.name" :label="item.name" :value="item.name" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="供应商">
-            <el-input v-model="form.supplier_name" placeholder="填写或选择供应商名称" />
+            <el-select v-model="form.supplier_name" filterable clearable allow-create default-first-option placeholder="选择或填写供应商" style="width: 100%">
+              <el-option v-for="item in suppliers" :key="item.id || item.name" :label="supplierLabel(item)" :value="item.name" />
+            </el-select>
           </el-form-item>
           <el-form-item label="申请部门"><el-input v-model="form.dept" /></el-form-item>
+          <el-form-item label="采购原因" class="wide-field"><el-input v-model="form.purchase_reason" type="textarea" :rows="2" /></el-form-item>
         </div>
       </el-form>
 
@@ -180,12 +190,16 @@
 <script setup>
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
+import { getCompanies } from '../../api/company'
 import { acceptPurchase, approvePurchase, createPurchase, getPurchases } from '../../api/purchase'
 import { createDeviceType, createProduct, deleteDeviceType, deleteProduct, getDeviceTypes, getProducts, updateDeviceType, updateProduct } from '../../api/product'
+import { getSuppliers } from '../../api/supplier'
 
 const purchases = ref([])
 const products = ref([])
 const deviceTypes = ref([])
+const companies = ref([])
+const suppliers = ref([])
 const createDialog = ref(false)
 const receiveDialog = ref(false)
 const catalogDialog = ref(false)
@@ -196,6 +210,7 @@ const typeForm = reactive({ id: null, name: '', description: '' })
 const productForm = reactive(defaultProductForm())
 
 const totalAmount = computed(() => form.items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0), 0))
+const realCompanies = computed(() => companies.value.filter(item => !item.virtual && item.name !== '未设置公司'))
 
 onMounted(load)
 
@@ -203,10 +218,12 @@ async function load() {
   purchases.value = await getPurchases()
   products.value = await getProducts()
   deviceTypes.value = await getDeviceTypes()
+  companies.value = await getCompanies()
+  suppliers.value = await getSuppliers()
 }
 
 function defaultForm() {
-  return { purchase_no: `PO-${Date.now()}`, approval_no: '', supplier_name: '', dept: '', items: [defaultLine()] }
+  return { purchase_no: `PO-${Date.now()}`, approval_no: '', company: '', supplier_name: '', purchase_reason: '', dept: '', items: [defaultLine()] }
 }
 
 function defaultLine() {
@@ -215,6 +232,11 @@ function defaultLine() {
 
 function defaultProductForm() {
   return { id: null, product_name: '', device_type: '', brand: '', model: '', spec: '', unit_price: 0, default_warehouse: '', retirement_years: null }
+}
+
+function supplierLabel(item) {
+  const meta = [item.contact, item.phone].filter(Boolean).join(' / ')
+  return meta ? `${item.name} (${meta})` : item.name
 }
 
 function openCreate() {
@@ -288,6 +310,7 @@ function buildAcceptanceAssets(item) {
     location: item.warehouse,
     dept_id: item.dept,
     owner_user_id: '',
+    company: currentPurchase.value?.company || '',
     warranty_years: '',
     retirement_years: item.retirement_years,
     purchase_price: item.unit_price
@@ -368,6 +391,10 @@ async function removeProduct(row) {
   gap: 12px;
 }
 
+.wide-field {
+  grid-column: span 2;
+}
+
 .dialog-toolbar {
   display: flex;
   align-items: center;
@@ -409,6 +436,10 @@ async function removeProduct(row) {
   .catalog-grid,
   .product-form {
     grid-template-columns: 1fr;
+  }
+
+  .wide-field {
+    grid-column: auto;
   }
 }
 </style>

@@ -15,12 +15,15 @@ export async function createPurchase(payload) {
     unit_price: Number(item.unit_price || 0),
     retirement_years: item.retirement_years ? Number(item.retirement_years) : null,
     location: item.warehouse || item.location,
-    dept_id: item.dept || item.dept_id
+    dept_id: item.dept || item.dept_id || payload.dept || ''
   }))
   const totalAmount = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
   const row = await request.post('/purchase/create', {
     purchase_no: payload.purchase_no || payload.approval_no || `PO-${Date.now()}`,
+    company: payload.company || '',
+    approval_no: payload.approval_no || '',
     supplier_name: payload.supplier_name || '',
+    purchase_reason: payload.purchase_reason || '',
     total_amount: totalAmount,
     status: payload.status || 'created',
     items
@@ -73,8 +76,10 @@ function mapBackendPurchase(row) {
   return {
     id: row.purchase_no,
     purchase_no: row.purchase_no,
-    approval_no: row.purchase_no,
+    company: row.company || '',
+    approval_no: row.approval_no || '',
     supplier_name: row.supplier_name || '未指定供应商',
+    purchase_reason: row.purchase_reason || '',
     total_amount: Number(row.total_amount || 0),
     status: row.status || 'created',
     status_label: statusLabelMap[row.status] || row.status || '审批中',

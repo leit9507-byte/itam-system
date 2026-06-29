@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Float, ForeignKey, Integer, String
+from sqlalchemy import Column, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -9,7 +9,10 @@ class Purchase(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     purchase_no = Column(String(64), unique=True, nullable=False, index=True)
+    company = Column(String(128), nullable=True, index=True)
+    approval_no = Column(String(128), nullable=True, index=True)
     supplier_name = Column(String(128), nullable=True, index=True)
+    purchase_reason = Column(Text, nullable=True)
     total_amount = Column(Float, default=0)
     status = Column(String(32), default="created", index=True)
 

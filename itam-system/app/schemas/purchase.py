@@ -18,7 +18,10 @@ class PurchaseItemCreate(BaseModel):
 
 class PurchaseCreate(BaseModel):
     purchase_no: str
+    company: Optional[str] = None
+    approval_no: Optional[str] = None
     supplier_name: Optional[str] = None
+    purchase_reason: Optional[str] = None
     total_amount: float = Field(default=0, ge=0)
     status: str = "created"
     items: List[PurchaseItemCreate] = Field(default_factory=list)
@@ -38,6 +41,7 @@ class AcceptedAssetCreate(BaseModel):
     location: Optional[str] = None
     dept_id: Optional[str] = None
     owner_user_id: Optional[str] = None
+    company: Optional[str] = None
     purchase_price: Optional[float] = None
     purchase_date: Optional[datetime] = None
     purchase_approval_no: Optional[str] = None
@@ -75,7 +79,10 @@ class PurchaseOut(BaseModel):
 
     id: int
     purchase_no: str
+    company: Optional[str] = None
+    approval_no: Optional[str] = None
     supplier_name: Optional[str] = None
+    purchase_reason: Optional[str] = None
     total_amount: float
     status: str
     items: List[PurchaseItemOut] = Field(default_factory=list)

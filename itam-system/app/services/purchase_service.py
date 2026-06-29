@@ -7,6 +7,7 @@ from app.models.purchase import Purchase, PurchaseItem
 from app.schemas.purchase import PurchaseAcceptanceReceive, PurchaseCreate
 from app.services.asset_service import AssetService
 from app.services.lifecycle_service import LifecycleService
+from app.services.supplier_service import SupplierService
 
 
 class PurchaseService:
@@ -18,10 +19,14 @@ class PurchaseService:
     def create_purchase(db: Session, payload: PurchaseCreate) -> Purchase:
         purchase = Purchase(
             purchase_no=payload.purchase_no,
+            company=AssetService.normalize_company(payload.company),
+            approval_no=payload.approval_no,
             supplier_name=payload.supplier_name,
+            purchase_reason=payload.purchase_reason,
             total_amount=payload.total_amount,
             status=payload.status,
         )
+        SupplierService.ensure_supplier(db, payload.supplier_name)
         db.add(purchase)
         db.flush()
 
@@ -65,9 +70,10 @@ class PurchaseService:
                     model=item.model,
                     sn=None,
                     config={"retirement_years": item.retirement_years} if item.retirement_years else {},
+                    company=purchase.company,
                     purchase_price=item.unit_price,
                     purchase_date=purchase_date,
-                    purchase_approval_no=purchase.purchase_no,
+                    purchase_approval_no=purchase.approval_no or purchase.purchase_no,
                     purchase_supplier_name=purchase.supplier_name,
                     status="in_stock",
                     owner_user_id=None,
@@ -122,9 +128,10 @@ class PurchaseService:
                     model=accepted.model if accepted.model is not None else item.model,
                     sn=accepted.sn,
                     config=config,
+                    company=AssetService.normalize_company(accepted.company) or purchase.company,
                     purchase_price=accepted.purchase_price if accepted.purchase_price is not None else item.unit_price,
                     purchase_date=accepted.purchase_date or default_purchase_date,
-                    purchase_approval_no=accepted.purchase_approval_no or purchase.purchase_no,
+                    purchase_approval_no=accepted.purchase_approval_no or purchase.approval_no or purchase.purchase_no,
                     purchase_supplier_name=accepted.purchase_supplier_name or purchase.supplier_name,
                     warranty_expire_date=accepted.warranty_expire_date,
                     warranty_months=accepted.warranty_months,
