@@ -64,13 +64,13 @@ class AssetService:
         has_owner = bool(AssetService.normalize_blank(asset.owner_user_id))
         has_location = bool(AssetService.normalize_blank(asset.location))
         if status_changed and status in AssetService.WORKFLOW_STATUSES:
-            raise AssetValidationError("pending purchase, pending acceptance, pending scrap, and scrapped statuses are controlled by workflows")
+            raise AssetValidationError("待采购、待验收、已提交报废审批、已报废状态由流程控制，不能通过导入或手工状态变更直接设置")
         if status in AssetService.UNASSIGNED_STATUSES and has_owner:
-            raise AssetValidationError("pending purchase, pending acceptance, in-stock, idle, and ready-to-scrap assets cannot keep an owner")
+            raise AssetValidationError("待采购、待验收、在库、闲置、待报废状态不能填写使用人/责任人；请清空使用人，或把状态改为 in_use、borrowed、out_stock")
         if status in AssetService.ASSIGNED_STATUSES and not has_owner:
-            raise AssetValidationError("in-use and borrowed assets require an owner")
+            raise AssetValidationError("在用、借出状态必须填写使用人/责任人")
         if status == "out_stock" and not has_owner and not has_location:
-            raise AssetValidationError("out-stock assets require an owner or a location")
+            raise AssetValidationError("已出库状态必须填写使用人/责任人或位置；公用设备请填写位置")
 
     @staticmethod
     def apply_warranty_expire(asset: Asset) -> None:
