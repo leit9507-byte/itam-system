@@ -22,7 +22,7 @@ class AssetService:
     DEFAULT_COMPANY = "未设置公司"
     ASSIGNED_STATUSES = {"in_use", "borrowed", "out_stock"}
     UNASSIGNED_STATUSES = {"pending_purchase", "pending_acceptance", "in_stock", "idle", "ready_scrap"}
-    WORKFLOW_STATUSES = {"pending_scrap", "scrapped"}
+    WORKFLOW_STATUSES = {"pending_purchase", "pending_acceptance", "pending_scrap", "scrapped"}
 
     @staticmethod
     def normalize_company(value: str | None) -> str | None:
@@ -38,7 +38,7 @@ class AssetService:
         status = asset.status
         has_owner = bool(AssetService.normalize_blank(asset.owner_user_id))
         if status_changed and status in AssetService.WORKFLOW_STATUSES:
-            raise AssetValidationError("pending scrap and scrapped statuses are controlled by the scrap workflow")
+            raise AssetValidationError("pending purchase, pending acceptance, pending scrap, and scrapped statuses are controlled by workflows")
         if status in AssetService.UNASSIGNED_STATUSES and has_owner:
             raise AssetValidationError("pending purchase, pending acceptance, in-stock, idle, and ready-to-scrap assets cannot keep an owner")
         if status in AssetService.ASSIGNED_STATUSES and not has_owner:

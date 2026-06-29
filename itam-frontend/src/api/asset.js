@@ -15,7 +15,7 @@ export const assetStatuses = [
 ]
 
 export const statusMap = Object.fromEntries(assetStatuses.map(item => [item.value, item]))
-export const editableAssetStatuses = assetStatuses.filter(item => !['pending_scrap', 'scrapped'].includes(item.value))
+export const editableAssetStatuses = assetStatuses.filter(item => !['pending_purchase', 'pending_acceptance', 'pending_scrap', 'scrapped'].includes(item.value))
 
 const localLifecycles = {}
 const localInventoryRecords = []
