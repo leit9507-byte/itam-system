@@ -9,6 +9,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils.exceptions import InvalidFileException
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -139,46 +140,49 @@ class AssetService:
 
         for index, row in enumerate(payload.items, start=1):
             try:
-                normalized = AssetService.normalize_import_row(row)
-                if normalized.sn and db.query(Asset).filter(Asset.sn == normalized.sn).first():
-                    skipped += 1
-                    errors.append({"row": index, "message": f"duplicate sn: {normalized.sn}", "data": row.model_dump()})
-                    continue
-                if normalized.asset_id and db.get(Asset, normalized.asset_id):
-                    skipped += 1
-                    errors.append({"row": index, "message": f"duplicate asset_id: {normalized.asset_id}", "data": row.model_dump()})
-                    continue
-                AssetService.validate_status_owner(
-                    SimpleNamespace(status=normalized.status, owner_user_id=normalized.owner_user_id, location=normalized.location)
-                )
+                with db.begin_nested():
+                    normalized = AssetService.normalize_import_row(row)
+                    if normalized.sn and db.query(Asset).filter(Asset.sn == normalized.sn).first():
+                        skipped += 1
+                        errors.append({"row": index, "message": f"duplicate sn: {normalized.sn}", "data": row.model_dump()})
+                        continue
+                    if normalized.asset_id and db.get(Asset, normalized.asset_id):
+                        skipped += 1
+                        errors.append({"row": index, "message": f"duplicate asset_id: {normalized.asset_id}", "data": row.model_dump()})
+                        continue
+                    AssetService.validate_status_owner(
+                        SimpleNamespace(status=normalized.status, owner_user_id=normalized.owner_user_id, location=normalized.location)
+                    )
 
-                asset = Asset(
-                    asset_id=normalized.asset_id or AssetService.generate_asset_id(db),
-                    company=AssetService.normalize_company(normalized.company),
-                    name=normalized.name,
-                    category=normalized.category,
-                    brand=normalized.brand,
-                    model=normalized.model,
-                    sn=normalized.sn,
-                    config=normalized.config,
-                    purchase_price=normalized.purchase_price,
-                    purchase_date=normalized.purchase_date,
-                    purchase_approval_no=normalized.purchase_approval_no,
-                    purchase_supplier_name=normalized.purchase_supplier_name,
-                    warranty_expire_date=normalized.warranty_expire_date,
-                    warranty_months=normalized.warranty_months,
-                    status=normalized.status,
-                    owner_user_id=normalized.owner_user_id,
-                    dept_id=normalized.dept_id,
-                    location=normalized.location,
-                )
-                AssetService.apply_warranty_expire(asset)
-                AssetService.sync_owner_department(db, asset)
-                SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
-                db.add(asset)
-                db.flush()
-                LifecycleService.record(db, asset.asset_id, "BATCH_IMPORT", None, asset.status, payload.operator)
-                created_assets.append(asset)
+                    asset = Asset(
+                        asset_id=normalized.asset_id or AssetService.generate_asset_id(db),
+                        company=AssetService.normalize_company(normalized.company),
+                        name=normalized.name,
+                        category=normalized.category,
+                        brand=normalized.brand,
+                        model=normalized.model,
+                        sn=normalized.sn,
+                        config=normalized.config,
+                        purchase_price=normalized.purchase_price,
+                        purchase_date=normalized.purchase_date,
+                        purchase_approval_no=normalized.purchase_approval_no,
+                        purchase_supplier_name=normalized.purchase_supplier_name,
+                        warranty_expire_date=normalized.warranty_expire_date,
+                        warranty_months=normalized.warranty_months,
+                        status=normalized.status,
+                        owner_user_id=normalized.owner_user_id,
+                        dept_id=normalized.dept_id,
+                        location=normalized.location,
+                    )
+                    AssetService.apply_warranty_expire(asset)
+                    AssetService.sync_owner_department(db, asset)
+                    SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
+                    db.add(asset)
+                    db.flush()
+                    LifecycleService.record(db, asset.asset_id, "BATCH_IMPORT", None, asset.status, payload.operator)
+                    created_assets.append(asset)
+            except SQLAlchemyError as exc:
+                errors.append({"row": index, "message": f"数据库保存失败：{AssetService.db_error_message(exc)}", "data": row.model_dump()})
             except Exception as exc:
                 errors.append({"row": index, "message": str(exc), "data": row.model_dump()})
 
@@ -192,6 +196,17 @@ class AssetService:
             "errors": errors,
             "assets": [AssetService.to_out(asset) for asset in created_assets],
         }
+
+    @staticmethod
+    def db_error_message(exc: SQLAlchemyError) -> str:
+        detail = str(getattr(exc, "orig", exc)).strip()
+        if "Duplicate entry" in detail and "assets.sn" in detail:
+            return "资产序列号已存在，请检查 SN 是否重复"
+        if "Duplicate entry" in detail and "PRIMARY" in detail:
+            return "资产编号已存在，请检查 asset_id 是否重复"
+        if "Data too long" in detail:
+            return "字段内容过长，请检查该行文本长度"
+        return detail or "请检查导入数据是否符合要求"
 
     @staticmethod
     def import_assets_from_text(db: Session, payload: AssetTextImport) -> dict:
