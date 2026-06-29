@@ -12,6 +12,7 @@ class PurchaseItemCreate(BaseModel):
     quantity: int = Field(default=1, ge=1)
     unit_price: float = Field(default=0, ge=0)
     retirement_years: Optional[int] = None
+    purchase_reason: Optional[str] = None
     location: Optional[str] = None
     dept_id: Optional[str] = None
 
@@ -71,6 +72,7 @@ class PurchaseItemOut(BaseModel):
     quantity: int
     unit_price: float
     retirement_years: Optional[int]
+    purchase_reason: Optional[str] = None
     location: Optional[str]
     dept_id: Optional[str]
 

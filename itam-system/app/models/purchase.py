@@ -31,6 +31,7 @@ class PurchaseItem(Base):
     quantity = Column(Integer, default=1)
     unit_price = Column(Float, default=0)
     retirement_years = Column(Integer, nullable=True)
+    purchase_reason = Column(Text, nullable=True)
     location = Column(String(128), nullable=True)
     dept_id = Column(String(64), nullable=True)
 

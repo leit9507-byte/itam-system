@@ -20,6 +20,7 @@ def ensure_compatible_schema(engine) -> None:
     if "purchase_items" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("purchase_items")}
         add_column(engine, columns, "purchase_items", "retirement_years", "INTEGER NULL")
+        add_column(engine, columns, "purchase_items", "purchase_reason", "TEXT NULL")
 
     if "product_catalogs" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("product_catalogs")}

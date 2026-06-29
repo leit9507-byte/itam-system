@@ -41,6 +41,7 @@ class PurchaseService:
                     quantity=item.quantity,
                     unit_price=item.unit_price,
                     retirement_years=item.retirement_years,
+                    purchase_reason=item.purchase_reason or payload.purchase_reason,
                     location=item.location,
                     dept_id=item.dept_id,
                 )

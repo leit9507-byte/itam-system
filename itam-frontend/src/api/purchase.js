@@ -14,6 +14,7 @@ export async function createPurchase(payload) {
     quantity: Number(item.quantity || 1),
     unit_price: Number(item.unit_price || 0),
     retirement_years: item.retirement_years ? Number(item.retirement_years) : null,
+    purchase_reason: item.purchase_reason || payload.purchase_reason || '',
     location: item.warehouse || item.location,
     dept_id: item.dept || item.dept_id || payload.dept || ''
   }))
@@ -79,7 +80,7 @@ function mapBackendPurchase(row) {
     company: row.company || '',
     approval_no: row.approval_no || '',
     supplier_name: row.supplier_name || '未指定供应商',
-    purchase_reason: row.purchase_reason || '',
+    purchase_reason: row.purchase_reason || purchaseReasonSummary(items),
     total_amount: Number(row.total_amount || 0),
     status: row.status || 'created',
     status_label: statusLabelMap[row.status] || row.status || '审批中',
@@ -93,6 +94,7 @@ function mapBackendPurchase(row) {
       quantity: Number(item.quantity || 0),
       unit_price: Number(item.unit_price || 0),
       retirement_years: item.retirement_years ?? null,
+      purchase_reason: item.purchase_reason || row.purchase_reason || '',
       total_amount: Number(item.quantity || 0) * Number(item.unit_price || 0),
       warehouse: item.location || '',
       location: item.location || '',
@@ -105,4 +107,8 @@ function mapBackendPurchase(row) {
     })),
     quantity: items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
   }
+}
+
+function purchaseReasonSummary(items) {
+  return [...new Set((items || []).map(item => item.purchase_reason).filter(Boolean))].join('；')
 }

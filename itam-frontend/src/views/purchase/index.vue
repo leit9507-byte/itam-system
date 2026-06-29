@@ -20,10 +20,13 @@
               <el-table-column prop="category" label="类型" width="110" />
               <el-table-column prop="brand" label="品牌" width="110" />
               <el-table-column prop="model" label="型号" width="130" />
-              <el-table-column prop="quantity" label="数量" width="80" />
+              <el-table-column prop="quantity" label="采购数量" width="110" align="center">
+                <template #default="{ row: item }"><el-tag type="primary" effect="plain">{{ item.quantity }} 台</el-tag></template>
+              </el-table-column>
               <el-table-column prop="unit_price" label="单价" width="120">
                 <template #default="{ row: item }">¥{{ item.unit_price.toLocaleString() }}</template>
               </el-table-column>
+              <el-table-column prop="purchase_reason" label="采购原因" min-width="180" show-overflow-tooltip />
               <el-table-column prop="warehouse" label="入库仓库" width="140" />
               <el-table-column prop="dept" label="申请部门" width="120" />
             </el-table>
@@ -33,6 +36,9 @@
         <el-table-column prop="approval_no" label="审批单号" width="160" />
         <el-table-column prop="company" label="公司" width="150" show-overflow-tooltip />
         <el-table-column prop="supplier_name" label="供应商" width="170" />
+        <el-table-column label="采购数量" width="110" align="center">
+          <template #default="{ row }"><el-tag type="primary" effect="plain">{{ row.quantity }} 台</el-tag></template>
+        </el-table-column>
         <el-table-column prop="purchase_reason" label="采购原因" min-width="180" show-overflow-tooltip />
         <el-table-column label="采购内容" min-width="260">
           <template #default="{ row }">
@@ -71,7 +77,6 @@
             </el-select>
           </el-form-item>
           <el-form-item label="申请部门"><el-input v-model="form.dept" /></el-form-item>
-          <el-form-item label="采购原因" class="wide-field"><el-input v-model="form.purchase_reason" type="textarea" :rows="2" /></el-form-item>
         </div>
       </el-form>
 
@@ -99,6 +104,7 @@
         <el-table-column label="品牌" width="130"><template #default="{ row }"><el-input v-model="row.brand" /></template></el-table-column>
         <el-table-column label="数量" width="110"><template #default="{ row }"><el-input-number v-model="row.quantity" :min="1" style="width: 100%" /></template></el-table-column>
         <el-table-column label="单价" width="140"><template #default="{ row }"><el-input-number v-model="row.unit_price" :min="0" style="width: 100%" /></template></el-table-column>
+        <el-table-column label="采购原因" min-width="190"><template #default="{ row }"><el-input v-model="row.purchase_reason" /></template></el-table-column>
         <el-table-column label="仓库" width="150"><template #default="{ row }"><el-input v-model="row.warehouse" /></template></el-table-column>
         <el-table-column label="操作" width="80"><template #default="{ $index }"><el-button link type="danger" @click="removeLine($index)">删除</el-button></template></el-table-column>
       </el-table>
@@ -227,7 +233,7 @@ function defaultForm() {
 }
 
 function defaultLine() {
-  return { product_id: null, product_name: '', category: '', brand: '', model: '', spec: '', quantity: 1, unit_price: 0, warehouse: '', dept: '', retirement_years: null }
+  return { product_id: null, product_name: '', category: '', brand: '', model: '', spec: '', quantity: 1, unit_price: 0, purchase_reason: '', warehouse: '', dept: '', retirement_years: null }
 }
 
 function defaultProductForm() {
@@ -293,6 +299,7 @@ function openReceive(row) {
     unit_price: item.unit_price,
     warehouse: item.warehouse,
     dept: item.dept,
+    purchase_reason: item.purchase_reason,
     retirement_years: item.retirement_years,
     assets: buildAcceptanceAssets(item)
   }))
