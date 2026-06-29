@@ -227,7 +227,17 @@ function defaultConfig(type = 'ldap') {
       scopes: ''
     },
     saml: { sso_url: '', entity_id: '' },
-    feishu: { app_id: '', tenant_key: '' },
+    feishu: {
+      app_id: '',
+      app_secret: '',
+      root_department_id: '0',
+      department_id_type: 'open_department_id',
+      user_id_type: 'user_id',
+      default_role: 'user',
+      sync_limit: 200,
+      department_limit: 200,
+      page_size: 50
+    },
     wechat_work: { corp_id: '', agent_id: '' }
   }
   return samples[type] || {}
@@ -291,8 +301,8 @@ async function syncFromProvider(row = null) {
     ElMessage.warning('请先配置并启用一个身份源')
     return
   }
-  if (provider.provider_type !== 'ldap') {
-    ElMessage.warning('当前仅 LDAP 身份源支持从目录同步用户')
+  if (!['ldap', 'feishu'].includes(provider.provider_type)) {
+    ElMessage.warning('当前仅 LDAP 和飞书身份源支持从目录同步用户')
     return
   }
   const result = await syncUsers({ provider_id: provider?.id })

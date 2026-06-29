@@ -1,6 +1,10 @@
 import re
 import ssl
+import json
+import hashlib
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse, urlencode
+from urllib.request import Request, urlopen
 
 from sqlalchemy.orm import Session
 
@@ -359,3 +363,167 @@ class LdapClient:
         if bad_attr:
             return f"Invalid LDAP attribute '{bad_attr}'. Remove it from config or replace it with a real schema attribute such as ou/cn/mail."
         return str(exc)
+
+
+class FeishuClient:
+    API_BASE = "https://open.feishu.cn/open-apis"
+
+    @staticmethod
+    def test(config: dict) -> str:
+        token = FeishuClient.tenant_access_token(config)
+        departments = FeishuClient.department_children(config, token, FeishuClient.root_department_id(config), page_size=1, limit=1)
+        return f"Feishu connection success. Root department children: {len(departments)}"
+
+    @staticmethod
+    def sync_users(config: dict, limit: int = 200) -> list[UserUpsert]:
+        token = FeishuClient.tenant_access_token(config)
+        root_id = FeishuClient.root_department_id(config)
+        department_names: dict[str, str] = {}
+        department_ids = FeishuClient.collect_department_ids(config, token, root_id, department_names, limit)
+        users: list[UserUpsert] = []
+        seen: set[str] = set()
+        for department_id in department_ids:
+            for item in FeishuClient.users_by_department(config, token, department_id, limit=max(limit - len(users), 1)):
+                external_id = item.get("user_id") or item.get("open_id") or item.get("union_id")
+                if not external_id or external_id in seen:
+                    continue
+                seen.add(external_id)
+                dept_ids = item.get("department_ids") or [department_id]
+                dept_id = dept_ids[0] if dept_ids else department_id
+                users.append(
+                    UserUpsert(
+                        user_id=FeishuClient.local_user_id(external_id),
+                        username=str(item.get("email") or item.get("mobile") or external_id)[:64],
+                        display_name=item.get("name") or item.get("en_name") or external_id,
+                        email=item.get("email"),
+                        dept_id=dept_id,
+                        dept_name=department_names.get(dept_id) or dept_id,
+                        role=config.get("default_role", "user"),
+                        source="feishu",
+                        external_id=f"feishu:{external_id}",
+                        status=FeishuClient.user_status(item),
+                    )
+                )
+                if len(users) >= limit:
+                    return users
+        return users
+
+    @staticmethod
+    def collect_department_ids(config: dict, token: str, root_id: str, department_names: dict[str, str], limit: int) -> list[str]:
+        queue = [root_id]
+        result = [root_id]
+        max_departments = int(config.get("department_limit") or limit or 200)
+        while queue and len(result) < max_departments:
+            current = queue.pop(0)
+            children = FeishuClient.department_children(config, token, current)
+            for dept in children:
+                dept_id = dept.get("open_department_id") or dept.get("department_id")
+                if not dept_id or dept_id in result:
+                    continue
+                department_names[dept_id] = dept.get("name") or dept_id
+                result.append(dept_id)
+                queue.append(dept_id)
+                if len(result) >= max_departments:
+                    break
+        return result
+
+    @staticmethod
+    def tenant_access_token(config: dict) -> str:
+        app_id = config.get("app_id")
+        app_secret = config.get("app_secret") or config.get("tenant_key")
+        if not app_id or not app_secret:
+            raise ValueError("app_id and app_secret are required")
+        data = FeishuClient.request_json(
+            "POST",
+            "/auth/v3/tenant_access_token/internal",
+            body={"app_id": app_id, "app_secret": app_secret},
+        )
+        token = data.get("tenant_access_token")
+        if not token:
+            raise ValueError("Feishu tenant_access_token missing in response")
+        return token
+
+    @staticmethod
+    def department_children(config: dict, token: str, department_id: str, page_size: int | None = None, limit: int | None = None) -> list[dict]:
+        query = {
+            "department_id_type": config.get("department_id_type", "open_department_id"),
+            "page_size": page_size or int(config.get("page_size") or 50),
+        }
+        return FeishuClient.paged_get(
+            f"/contact/v3/departments/{department_id}/children",
+            token,
+            query,
+            item_key="items",
+            limit=limit,
+        )
+
+    @staticmethod
+    def users_by_department(config: dict, token: str, department_id: str, limit: int) -> list[dict]:
+        query = {
+            "department_id": department_id,
+            "department_id_type": config.get("department_id_type", "open_department_id"),
+            "user_id_type": config.get("user_id_type", "user_id"),
+            "page_size": min(int(config.get("page_size") or 50), max(limit, 1)),
+        }
+        return FeishuClient.paged_get("/contact/v3/users/find_by_department", token, query, item_key="items", limit=limit)
+
+    @staticmethod
+    def paged_get(path: str, token: str, query: dict, item_key: str, limit: int | None = None) -> list[dict]:
+        items: list[dict] = []
+        page_token = ""
+        while True:
+            params = {**query}
+            if page_token:
+                params["page_token"] = page_token
+            data = FeishuClient.request_json("GET", path, token=token, query=params)
+            page = data.get("data") or {}
+            items.extend(page.get(item_key) or [])
+            if limit and len(items) >= limit:
+                return items[:limit]
+            if not page.get("has_more"):
+                return items
+            page_token = page.get("page_token") or ""
+            if not page_token:
+                return items
+
+    @staticmethod
+    def request_json(method: str, path: str, token: str | None = None, query: dict | None = None, body: dict | None = None) -> dict:
+        url = f"{FeishuClient.API_BASE}{path}"
+        if query:
+            url = f"{url}?{urlencode({key: value for key, value in query.items() if value not in (None, '')})}"
+        data = json.dumps(body).encode("utf-8") if body is not None else None
+        headers = {"Content-Type": "application/json; charset=utf-8"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        request = Request(url, data=data, headers=headers, method=method)
+        try:
+            with urlopen(request, timeout=15) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="ignore")
+            raise ValueError(f"Feishu API HTTP {exc.code}: {detail[:200]}") from exc
+        except URLError as exc:
+            raise ValueError(f"Feishu API connection failed: {exc.reason}") from exc
+        code = payload.get("code", 0)
+        if code != 0:
+            raise ValueError(f"Feishu API error {code}: {payload.get('msg') or payload.get('message') or payload}")
+        return payload
+
+    @staticmethod
+    def root_department_id(config: dict) -> str:
+        return str(config.get("root_department_id") or "0")
+
+    @staticmethod
+    def user_status(item: dict) -> str:
+        status = item.get("status") or {}
+        if status.get("is_frozen") or status.get("is_resigned"):
+            return "disabled"
+        return "active"
+
+    @staticmethod
+    def local_user_id(external_id: str) -> str:
+        safe = re.sub(r"[^A-Za-z0-9_-]+", "-", str(external_id).upper()).strip("-")
+        if len(safe) <= 57:
+            return f"FEISHU-{safe}"
+        digest = hashlib.sha1(str(external_id).encode("utf-8")).hexdigest()[:16].upper()
+        return f"FEISHU-{digest}"

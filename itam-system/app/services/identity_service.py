@@ -203,6 +203,15 @@ class IdentityService:
             except Exception as exc:
                 provider.last_test_status = "failed"
                 provider.last_test_message = str(exc)[:255]
+        elif provider.provider_type == "feishu":
+            try:
+                from app.services.sso_service import FeishuClient
+
+                provider.last_test_status = "success"
+                provider.last_test_message = FeishuClient.test(provider.config or {})
+            except Exception as exc:
+                provider.last_test_status = "failed"
+                provider.last_test_message = str(exc)[:255]
         else:
             provider.last_test_status = "success"
             provider.last_test_message = f"{provider.provider_type.upper()} configuration looks valid"
@@ -220,8 +229,12 @@ class IdentityService:
             from app.services.sso_service import LdapClient
 
             payloads = LdapClient.sync_users(provider.config or {}, limit=int((provider.config or {}).get("sync_limit", 200)))
+        elif provider and provider.provider_type == "feishu":
+            from app.services.sso_service import FeishuClient
+
+            payloads = FeishuClient.sync_users(provider.config or {}, limit=int((provider.config or {}).get("sync_limit", 200)))
         else:
-            raise ValueError("No users to sync. Configure an LDAP identity source or submit explicit users.")
+            raise ValueError("No users to sync. Configure an LDAP or Feishu identity source, or submit explicit users.")
         created = 0
         updated = 0
         synced: list[UserDirectory] = []
