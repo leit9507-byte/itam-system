@@ -318,16 +318,32 @@ function mapScrapRequest(row) {
 function mapLifecycle(row) {
   const fromStatusLabel = statusLabel(row.from_status)
   const toStatusLabel = statusLabel(row.to_status)
+  const category = lifecycleCategory(row)
   return {
     ...row,
     time_value: row.time,
     time: formatDateTime(row.time),
-    type_label: lifecycleActionMap[row.type] || row.type || '-',
+    category,
+    category_label: category === 'daily_inventory' ? '日常出入库' : '其他操作',
+    type_label: lifecycleActionLabel(row),
     from_status_label: fromStatusLabel,
     to_status_label: toStatusLabel,
     status_change_label: statusChangeLabel(fromStatusLabel, toStatusLabel),
     description: lifecycleDescription(row, fromStatusLabel, toStatusLabel)
   }
+}
+
+function lifecycleCategory(row) {
+  if (row.type !== 'STATUS_CHANGE') return 'other'
+  return ['in_stock', 'in_use', 'borrowed', 'out_stock'].includes(row.to_status) ? 'daily_inventory' : 'other'
+}
+
+function lifecycleActionLabel(row) {
+  if (row.type === 'STATUS_CHANGE') {
+    if (row.to_status === 'in_stock') return '入库回收'
+    if (['in_use', 'borrowed', 'out_stock'].includes(row.to_status)) return `出库-${statusLabel(row.to_status)}`
+  }
+  return lifecycleActionMap[row.type] || row.type || '-'
 }
 
 function statusLabel(status) {
