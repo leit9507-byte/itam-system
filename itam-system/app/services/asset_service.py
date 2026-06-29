@@ -462,7 +462,7 @@ class AssetService:
             model=pick("model", "型号"),
             sn=pick("sn", "serial_number", "序列号", "SN"),
             config=config,
-            purchase_price=float(price or 0),
+            purchase_price=AssetService.parse_float(price, "采购价格"),
             purchase_date=AssetService.parse_datetime(pick("purchase_date", "采购日期", "采购时间")),
             purchase_approval_no=pick("purchase_approval_no", "采购审批单号", "审批单号", "采购单号"),
             purchase_supplier_name=pick("purchase_supplier_name", "采购供应商", "供应商"),
@@ -705,10 +705,25 @@ class AssetService:
             return None
 
     @staticmethod
+    def parse_float(value: Any, field_name: str = "数字") -> float:
+        if value in (None, ""):
+            return 0
+        if isinstance(value, int | float):
+            return float(value)
+        text = str(value).strip()
+        if not text:
+            return 0
+        normalized = text.replace(",", "").replace("￥", "").replace("¥", "").replace("元", "").replace(" ", "")
+        try:
+            return float(normalized)
+        except ValueError as exc:
+            raise AssetValidationError(f"{field_name}格式不正确：{text}，请填写数字，例如 1380.00") from exc
+
+    @staticmethod
     def parse_int(value: Any) -> int | None:
         if value in (None, ""):
             return None
         try:
-            return int(float(value))
+            return int(AssetService.parse_float(value))
         except (TypeError, ValueError):
             return None
