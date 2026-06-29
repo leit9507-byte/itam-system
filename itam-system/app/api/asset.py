@@ -51,22 +51,26 @@ def preview_assets_from_text(payload: AssetTextImport, db: Session = Depends(get
 async def import_assets_from_excel(operator: str = "asset-import", file: UploadFile = File(...), db: Session = Depends(get_db)):
     filename = file.filename or ""
     if not filename.lower().endswith((".xlsx", ".xlsm")):
-        raise HTTPException(status_code=400, detail="please upload .xlsx or .xlsm file")
+        raise HTTPException(status_code=400, detail="请上传 .xlsx 或 .xlsm 格式的 Excel 文件")
     try:
         return AssetService.import_assets_from_excel(db, await file.read(), operator)
+    except AssetValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"invalid excel file: {exc}") from exc
+        raise HTTPException(status_code=400, detail=f"Excel 导入失败：{exc}") from exc
 
 
 @router.post("/import/excel/preview")
 async def preview_assets_from_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
     filename = file.filename or ""
     if not filename.lower().endswith((".xlsx", ".xlsm")):
-        raise HTTPException(status_code=400, detail="please upload .xlsx or .xlsm file")
+        raise HTTPException(status_code=400, detail="请上传 .xlsx 或 .xlsm 格式的 Excel 文件")
     try:
         return AssetService.preview_import_excel(db, await file.read())
+    except AssetValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"invalid excel file: {exc}") from exc
+        raise HTTPException(status_code=400, detail=f"Excel 预览失败：{exc}") from exc
 
 
 @router.get("/import/template")

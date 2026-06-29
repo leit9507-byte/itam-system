@@ -1,4 +1,5 @@
 import csv
+from zipfile import BadZipFile
 from datetime import datetime
 from io import BytesIO, StringIO
 from types import SimpleNamespace
@@ -7,6 +8,7 @@ from typing import Any
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.utils.exceptions import InvalidFileException
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -388,13 +390,38 @@ class AssetService:
 
     @staticmethod
     def parse_import_excel(content: bytes) -> list[AssetImportRow]:
-        workbook = load_workbook(BytesIO(content), data_only=True, read_only=True)
+        if not content:
+            raise AssetValidationError("Excel 文件为空，请重新选择文件")
+        try:
+            workbook = load_workbook(BytesIO(content), data_only=True, read_only=True)
+        except BadZipFile as exc:
+            raise AssetValidationError("Excel 文件无法打开，可能不是有效的 .xlsx/.xlsm 文件或文件已损坏") from exc
+        except InvalidFileException as exc:
+            raise AssetValidationError("Excel 文件格式不支持，请上传 .xlsx 或 .xlsm 文件") from exc
+        except Exception as exc:
+            raise AssetValidationError(f"Excel 文件解析失败：{exc}") from exc
+
         sheet = workbook.active
+        if not sheet:
+            raise AssetValidationError("Excel 文件没有可读取的工作表")
         rows = list(sheet.iter_rows(values_only=True))
         if not rows:
-            return []
+            raise AssetValidationError("Excel 工作表为空，请至少保留表头行")
 
         headers = [str(cell).strip() if cell is not None else "" for cell in rows[0]]
+        if not any(headers):
+            raise AssetValidationError("Excel 第一行没有表头，请使用导入模板或填写字段名")
+        normalized_headers = {header.lower() for header in headers if header}
+        name_headers = {"name", "product_name", "资产名称", "产品名称"}
+        category_headers = {"category", "device_type", "设备类型", "类别"}
+        missing = []
+        if not normalized_headers & {value.lower() for value in name_headers}:
+            missing.append("资产名称(name)")
+        if not normalized_headers & {value.lower() for value in category_headers}:
+            missing.append("设备类型(category)")
+        if missing:
+            raise AssetValidationError(f"Excel 表头缺少必填字段：{', '.join(missing)}")
+
         items: list[AssetImportRow] = []
         for values in rows[1:]:
             mapping = {
@@ -404,6 +431,8 @@ class AssetService:
             }
             if mapping:
                 items.append(AssetService.row_from_mapping(mapping))
+        if not items:
+            return []
         return items
 
     @staticmethod

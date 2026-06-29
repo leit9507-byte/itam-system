@@ -736,9 +736,12 @@ function clearImportPreview() {
 async function previewExcelImport(file) {
   importDialog.loading = true
   importDialog.result = null
+  importDialog.preview = null
   try {
     importDialog.preview = await previewAssetsFromExcel(file)
     ElMessage.success(`预览完成：${importDialog.preview.valid}/${importDialog.preview.total} 行可导入`)
+  } catch (error) {
+    ElMessage.error({ message: importErrorMessage(error, 'Excel 文件预览失败'), duration: 6000, showClose: true })
   } finally {
     importDialog.loading = false
   }
@@ -752,9 +755,12 @@ async function previewTextImport() {
   }
   importDialog.loading = true
   importDialog.result = null
+  importDialog.preview = null
   try {
     importDialog.preview = await previewAssetsFromText(importDialog.content, 'frontend-text-preview')
     ElMessage.success(`预览完成：${importDialog.preview.valid}/${importDialog.preview.total} 行可导入`)
+  } catch (error) {
+    ElMessage.error({ message: importErrorMessage(error, '粘贴内容预览失败'), duration: 6000, showClose: true })
   } finally {
     importDialog.loading = false
   }
@@ -769,9 +775,19 @@ async function confirmImport() {
     ElMessage.success(`导入完成：新增 ${importDialog.result.created} 条，跳过 ${importDialog.result.skipped} 条`)
     importDialog.preview = null
     await loadAssets()
+  } catch (error) {
+    ElMessage.error({ message: importErrorMessage(error, '确认导入失败'), duration: 6000, showClose: true })
   } finally {
     importDialog.importing = false
   }
+}
+
+function importErrorMessage(error, fallback) {
+  const detail = error?.response?.data?.detail
+  if (Array.isArray(detail)) return `${fallback}：${detail.map(item => item.msg || item.message || JSON.stringify(item)).join('；')}`
+  if (detail) return `${fallback}：${detail}`
+  if (error?.message) return `${fallback}：${error.message}`
+  return fallback
 }
 
 async function submitBatch() {
