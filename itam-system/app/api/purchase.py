@@ -1,3 +1,5 @@
+from datetime import date, datetime, time
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -11,8 +13,14 @@ router = APIRouter(prefix="/purchase", tags=["Purchase"])
 
 
 @router.get("/list", response_model=list[PurchaseOut])
-def list_purchases(db: Session = Depends(get_db)):
-    return PurchaseService.list_purchases(db)
+def list_purchases(
+    created_from: date | None = None,
+    created_to: date | None = None,
+    db: Session = Depends(get_db),
+):
+    start = datetime.combine(created_from, time.min) if created_from else None
+    end = datetime.combine(created_to, time.max) if created_to else None
+    return PurchaseService.list_purchases(db, start, end)
 
 
 @router.post("/create", response_model=PurchaseOut)

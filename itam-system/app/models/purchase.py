@@ -1,4 +1,6 @@
-from sqlalchemy import Column, Float, ForeignKey, Integer, String, Text
+from datetime import datetime
+
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -15,6 +17,7 @@ class Purchase(Base):
     purchase_reason = Column(Text, nullable=True)
     total_amount = Column(Float, default=0)
     status = Column(String(32), default="created", index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     items = relationship("PurchaseItem", cascade="all, delete-orphan", back_populates="purchase")
 

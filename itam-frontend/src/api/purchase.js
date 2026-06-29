@@ -1,7 +1,12 @@
 import request from '../utils/request'
 
-export async function getPurchases() {
-  const rows = await request.get('/purchase/list')
+export async function getPurchases(filters = {}) {
+  const rows = await request.get('/purchase/list', {
+    params: {
+      created_from: filters.created_from || undefined,
+      created_to: filters.created_to || undefined
+    }
+  })
   return rows.map(mapBackendPurchase)
 }
 
@@ -77,6 +82,7 @@ function mapBackendPurchase(row) {
   return {
     id: row.purchase_no,
     purchase_no: row.purchase_no,
+    created_at: formatDateTime(row.created_at),
     company: row.company || '',
     approval_no: row.approval_no || '',
     supplier_name: row.supplier_name || '未指定供应商',
@@ -107,6 +113,13 @@ function mapBackendPurchase(row) {
     })),
     quantity: items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
   }
+}
+
+function formatDateTime(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN', { hour12: false })
 }
 
 function purchaseReasonSummary(items) {

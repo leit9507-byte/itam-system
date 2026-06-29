@@ -10,7 +10,7 @@ services:
       dockerfile: Dockerfile.dev
     environment:
       VITE_BACKEND_PROXY_TARGET: http://backend:8000
-      VITE_API_BASE_URL: http://127.0.0.1:8000
+      VITE_API_BASE_URL: /backend
       CHOKIDAR_USEPOLLING: "false"
     ports:
       - "5173:5173"

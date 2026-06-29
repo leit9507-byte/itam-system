@@ -16,6 +16,9 @@ def ensure_compatible_schema(engine) -> None:
         add_column(engine, columns, "purchases", "approval_no", "VARCHAR(128) NULL")
         add_column(engine, columns, "purchases", "supplier_name", "VARCHAR(128) NULL")
         add_column(engine, columns, "purchases", "purchase_reason", "TEXT NULL")
+        add_column(engine, columns, "purchases", "created_at", "DATETIME NULL")
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE purchases SET created_at = NOW() WHERE created_at IS NULL"))
 
     if "purchase_items" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("purchase_items")}

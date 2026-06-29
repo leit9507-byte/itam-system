@@ -11,6 +11,21 @@
       </div>
     </div>
 
+    <el-card shadow="never" class="filter-card">
+      <div class="filter-row">
+        <el-date-picker
+          v-model="filters.createdRange"
+          type="daterange"
+          value-format="YYYY-MM-DD"
+          range-separator="至"
+          start-placeholder="创建开始"
+          end-placeholder="创建结束"
+          @change="load"
+        />
+        <el-button @click="resetFilters">重置</el-button>
+      </div>
+    </el-card>
+
     <el-card shadow="never">
       <el-table :data="purchases" border stripe row-key="purchase_no">
         <el-table-column type="expand">
@@ -33,6 +48,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="purchase_no" label="采购单号" width="160" />
+        <el-table-column prop="created_at" label="创建时间" width="170" />
         <el-table-column prop="approval_no" label="审批单号" width="160" />
         <el-table-column prop="company" label="公司" width="150" show-overflow-tooltip />
         <el-table-column prop="supplier_name" label="供应商" width="170" />
@@ -61,7 +77,7 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="createDialog" title="创建采购单" width="1080px">
+    <el-dialog v-model="createDialog" title="创建采购单" width="1160px">
       <el-form :model="form" label-width="100px">
         <div class="header-form">
           <el-form-item label="采购单号"><el-input v-model="form.purchase_no" /></el-form-item>
@@ -102,7 +118,7 @@
         </el-table-column>
         <el-table-column label="类型" width="130"><template #default="{ row }"><el-input v-model="row.category" /></template></el-table-column>
         <el-table-column label="品牌" width="130"><template #default="{ row }"><el-input v-model="row.brand" /></template></el-table-column>
-        <el-table-column label="数量" width="110"><template #default="{ row }"><el-input-number v-model="row.quantity" :min="1" style="width: 100%" /></template></el-table-column>
+        <el-table-column label="数量" width="160"><template #default="{ row }"><el-input-number v-model="row.quantity" :min="1" controls-position="right" style="width: 140px" /></template></el-table-column>
         <el-table-column label="单价" width="140"><template #default="{ row }"><el-input-number v-model="row.unit_price" :min="0" style="width: 100%" /></template></el-table-column>
         <el-table-column label="采购原因" min-width="190"><template #default="{ row }"><el-input v-model="row.purchase_reason" /></template></el-table-column>
         <el-table-column label="仓库" width="150"><template #default="{ row }"><el-input v-model="row.warehouse" /></template></el-table-column>
@@ -212,6 +228,7 @@ const catalogDialog = ref(false)
 const currentPurchase = ref(null)
 const form = reactive(defaultForm())
 const receiveForm = reactive({ items: [] })
+const filters = reactive({ createdRange: [] })
 const typeForm = reactive({ id: null, name: '', description: '' })
 const productForm = reactive(defaultProductForm())
 
@@ -221,11 +238,19 @@ const realCompanies = computed(() => companies.value.filter(item => !item.virtua
 onMounted(load)
 
 async function load() {
-  purchases.value = await getPurchases()
+  purchases.value = await getPurchases({
+    created_from: filters.createdRange?.[0] || '',
+    created_to: filters.createdRange?.[1] || ''
+  })
   products.value = await getProducts()
   deviceTypes.value = await getDeviceTypes()
   companies.value = await getCompanies()
   suppliers.value = await getSuppliers()
+}
+
+async function resetFilters() {
+  filters.createdRange = []
+  await load()
 }
 
 function defaultForm() {
@@ -390,6 +415,17 @@ async function removeProduct(row) {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.filter-card {
+  margin-bottom: 12px;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .header-form {

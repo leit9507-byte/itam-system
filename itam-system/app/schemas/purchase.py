@@ -87,4 +87,5 @@ class PurchaseOut(BaseModel):
     purchase_reason: Optional[str] = None
     total_amount: float
     status: str
+    created_at: datetime
     items: List[PurchaseItemOut] = Field(default_factory=list)

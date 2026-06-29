@@ -12,8 +12,13 @@ from app.services.supplier_service import SupplierService
 
 class PurchaseService:
     @staticmethod
-    def list_purchases(db: Session) -> list[Purchase]:
-        return db.query(Purchase).order_by(Purchase.id.desc()).all()
+    def list_purchases(db: Session, created_from: datetime | None = None, created_to: datetime | None = None) -> list[Purchase]:
+        query = db.query(Purchase)
+        if created_from:
+            query = query.filter(Purchase.created_at >= created_from)
+        if created_to:
+            query = query.filter(Purchase.created_at <= created_to)
+        return query.order_by(Purchase.id.desc()).all()
 
     @staticmethod
     def create_purchase(db: Session, payload: PurchaseCreate) -> Purchase:
