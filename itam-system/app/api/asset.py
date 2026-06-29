@@ -42,6 +42,11 @@ def import_assets_from_text(payload: AssetTextImport, db: Session = Depends(get_
     return AssetService.import_assets_from_text(db, payload)
 
 
+@router.post("/import/text/preview")
+def preview_assets_from_text(payload: AssetTextImport, db: Session = Depends(get_db)):
+    return AssetService.preview_import_text(db, payload)
+
+
 @router.post("/import/excel", response_model=AssetImportResult)
 async def import_assets_from_excel(operator: str = "asset-import", file: UploadFile = File(...), db: Session = Depends(get_db)):
     filename = file.filename or ""
@@ -49,6 +54,17 @@ async def import_assets_from_excel(operator: str = "asset-import", file: UploadF
         raise HTTPException(status_code=400, detail="please upload .xlsx or .xlsm file")
     try:
         return AssetService.import_assets_from_excel(db, await file.read(), operator)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"invalid excel file: {exc}") from exc
+
+
+@router.post("/import/excel/preview")
+async def preview_assets_from_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    filename = file.filename or ""
+    if not filename.lower().endswith((".xlsx", ".xlsm")):
+        raise HTTPException(status_code=400, detail="please upload .xlsx or .xlsm file")
+    try:
+        return AssetService.preview_import_excel(db, await file.read())
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"invalid excel file: {exc}") from exc
 

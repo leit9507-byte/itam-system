@@ -80,6 +80,18 @@ export async function importAssetsFromExcel(file, operator = 'asset-excel-import
   return normalizeImportResult(result)
 }
 
+export async function previewAssetsFromExcel(file) {
+  const form = new FormData()
+  form.append('file', file)
+  return normalizeImportPreview(await request.post('/asset/import/excel/preview', form, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }))
+}
+
+export async function previewAssetsFromText(content, operator = 'asset-import') {
+  return normalizeImportPreview(await request.post('/asset/import/text/preview', { content, operator }))
+}
+
 export async function downloadAssetImportTemplate() {
   const blob = await request.get('/asset/import/template', { responseType: 'blob' })
   const url = window.URL.createObjectURL(blob)
@@ -95,6 +107,19 @@ export async function downloadAssetImportTemplate() {
 export async function importAssets(items, operator = 'asset-import') {
   const result = await request.post('/asset/import', { items, operator })
   return normalizeImportResult(result)
+}
+
+function normalizeImportPreview(result) {
+  return {
+    total: Number(result.total || 0),
+    valid: Number(result.valid || 0),
+    errors: result.errors || [],
+    items: (result.items || []).map(item => ({
+      row: item.row,
+      valid: item.valid,
+      data: item.data || {}
+    }))
+  }
 }
 
 export async function updateAsset(assetId, payload) {

@@ -7,7 +7,7 @@
       </div>
       <div class="header-actions">
         <el-button @click="downloadTemplate">下载导入模板</el-button>
-        <el-button type="primary" @click="importDialog.visible = true">批量导入资产</el-button>
+        <el-button type="primary" @click="openImportDialog">批量导入资产</el-button>
       </div>
     </div>
 
@@ -273,20 +273,40 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="importDialog.visible" title="批量导入资产" width="900px">
-      <el-alert title="支持上传 .xlsx/.xlsm，也支持从 Excel 复制粘贴。推荐表头：资产名称、设备类型、品牌、型号、序列号、价格、采购日期、采购审批单号、采购供应商、维保年限、使用人、部门、仓库、状态。" type="info" show-icon :closable="false" />
+    <el-dialog v-model="importDialog.visible" title="批量导入资产" width="1080px">
+      <el-alert title="先上传文件或粘贴内容生成预览，确认数据无误后再正式导入资产。" type="info" show-icon :closable="false" />
       <div class="upload-row">
-        <el-upload :show-file-list="false" accept=".xlsx,.xlsm" :before-upload="submitExcelImport">
-          <el-button type="primary">上传 Excel 文件</el-button>
+        <el-upload :show-file-list="false" accept=".xlsx,.xlsm" :before-upload="previewExcelImport">
+          <el-button type="primary">上传并预览 Excel</el-button>
         </el-upload>
         <el-button @click="downloadTemplate">下载导入模板</el-button>
         <el-button @click="fillImportExample">填入粘贴示例</el-button>
       </div>
-      <el-input v-model="importDialog.content" type="textarea" :rows="9" class="import-textarea" placeholder="也可以把 Excel 表格复制后粘贴到这里" />
+      <el-input v-model="importDialog.content" type="textarea" :rows="9" class="import-textarea" placeholder="也可以把 Excel 表格复制后粘贴到这里" @input="clearImportPreview" />
       <div class="import-actions">
-        <el-button type="primary" :loading="importDialog.loading" @click="submitTextImport">导入粘贴内容</el-button>
+        <el-button :loading="importDialog.loading" @click="previewTextImport">预览粘贴内容</el-button>
+        <el-button type="primary" :disabled="!canConfirmImport" :loading="importDialog.importing" @click="confirmImport">确认导入</el-button>
       </div>
-      <el-table v-if="importDialog.result?.errors?.length" :data="importDialog.result.errors" border size="small" class="import-result">
+      <el-descriptions v-if="importDialog.preview" :column="3" border class="import-result">
+        <el-descriptions-item label="总行数">{{ importDialog.preview.total }}</el-descriptions-item>
+        <el-descriptions-item label="可导入">{{ importDialog.preview.valid }}</el-descriptions-item>
+        <el-descriptions-item label="错误">{{ importDialog.preview.errors.length }}</el-descriptions-item>
+      </el-descriptions>
+      <el-table v-if="importDialog.preview?.items?.length" :data="importDialog.preview.items" border size="small" class="import-result" max-height="320">
+        <el-table-column prop="row" label="行号" width="70" />
+        <el-table-column label="校验" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.valid ? 'success' : 'danger'">{{ row.valid ? '通过' : '错误' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="资产名称" min-width="160"><template #default="{ row }">{{ row.data.name || '-' }}</template></el-table-column>
+        <el-table-column label="类型" width="120"><template #default="{ row }">{{ row.data.category || '-' }}</template></el-table-column>
+        <el-table-column label="序列号" width="150"><template #default="{ row }">{{ row.data.sn || '-' }}</template></el-table-column>
+        <el-table-column label="状态" width="120"><template #default="{ row }">{{ statusMap[row.data.status]?.label || row.data.status || '-' }}</template></el-table-column>
+        <el-table-column label="责任人/位置" min-width="160"><template #default="{ row }">{{ row.data.owner_user_id || row.data.location || '-' }}</template></el-table-column>
+        <el-table-column label="采购价格" width="120"><template #default="{ row }">¥{{ Number(row.data.purchase_price || 0).toLocaleString() }}</template></el-table-column>
+      </el-table>
+      <el-table v-if="importDialog.preview?.errors?.length" :data="importDialog.preview.errors" border size="small" class="import-result">
         <el-table-column prop="row" label="行号" width="80" />
         <el-table-column prop="message" label="提示" />
       </el-table>
@@ -300,7 +320,7 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import { computed, defineComponent, h, onMounted, reactive, ref, resolveComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { assetStatuses, batchUpdateAssets, createScrapRequest, downloadAssetImportTemplate, editableAssetStatuses, getAssets, importAssetsFromExcel, importAssetsFromText, inboundAsset, outboundAsset, statusMap, updateAsset } from '../../api/asset'
+import { assetStatuses, batchUpdateAssets, createScrapRequest, downloadAssetImportTemplate, editableAssetStatuses, getAssets, importAssets, inboundAsset, outboundAsset, previewAssetsFromExcel, previewAssetsFromText, statusMap, updateAsset } from '../../api/asset'
 import { getCompanies } from '../../api/company'
 import { getLocations } from '../../api/location'
 import { getDeviceTypes } from '../../api/product'
@@ -320,7 +340,7 @@ const locations = ref([])
 const filters = reactive({ keyword: '', status: '', category: '', company: '', supplier: '' })
 const batch = reactive({ visible: false, type: 'inbound', assets: [], form: defaultBatchForm() })
 const batchEdit = reactive({ visible: false, form: defaultBatchEditForm(), fields: defaultBatchEditFields() })
-const importDialog = reactive({ visible: false, loading: false, content: '', result: null })
+const importDialog = reactive({ visible: false, loading: false, importing: false, content: '', preview: null, result: null })
 const editDialog = reactive({ visible: false, form: {} })
 const repairDialog = reactive({ visible: false, asset: null, assets: [], form: defaultRepairForm() })
 const assignedStatuses = ['in_use', 'borrowed']
@@ -329,6 +349,7 @@ const unassignedStatuses = ['pending_purchase', 'pending_acceptance', 'in_stock'
 const batchTitle = computed(() => ({ inbound: '批量入库', outbound: '批量出库', scrap: '批量申请报废' }[batch.type]))
 const realCompanies = computed(() => companies.value.filter(item => !item.virtual && item.name !== '未设置公司'))
 const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
+const canConfirmImport = computed(() => importDialog.preview?.valid > 0 && !importDialog.preview.errors.length)
 
 onMounted(async () => {
   await Promise.all([loadAssets(), loadUsers(), loadTypes(), loadSuppliers(), loadCompanies(), loadLocations()])
@@ -692,36 +713,64 @@ function fillImportExample() {
     'ThinkPad X1 Carbon,笔记本电脑,Lenovo,X1 Carbon Gen 12,SN-IMPORT-001,15000,2026-06-24,OA-20260624-001,联想授权供应商,3,U-ADMIN,IT,上海IT仓,in_stock',
     'Dell U2723QE,显示器,Dell,U2723QE,SN-IMPORT-002,3999,2026-06-24,OA-20260624-001,Dell渠道商,3,U-AUDITOR,AUDIT,上海IT仓,in_stock'
   ].join('\n')
+  clearImportPreview()
 }
 
 async function downloadTemplate() {
   await downloadAssetImportTemplate()
 }
 
-async function submitExcelImport(file) {
+function openImportDialog() {
+  importDialog.visible = true
+  importDialog.loading = false
+  importDialog.importing = false
+  importDialog.preview = null
+  importDialog.result = null
+}
+
+function clearImportPreview() {
+  importDialog.preview = null
+  importDialog.result = null
+}
+
+async function previewExcelImport(file) {
   importDialog.loading = true
+  importDialog.result = null
   try {
-    importDialog.result = await importAssetsFromExcel(file, 'frontend-excel-import')
-    ElMessage.success(`Excel 导入完成：新增 ${importDialog.result.created} 条，跳过 ${importDialog.result.skipped} 条`)
-    await loadAssets()
+    importDialog.preview = await previewAssetsFromExcel(file)
+    ElMessage.success(`预览完成：${importDialog.preview.valid}/${importDialog.preview.total} 行可导入`)
   } finally {
     importDialog.loading = false
   }
   return false
 }
 
-async function submitTextImport() {
+async function previewTextImport() {
   if (!importDialog.content.trim()) {
     ElMessage.warning('请先粘贴导入内容')
     return
   }
   importDialog.loading = true
+  importDialog.result = null
   try {
-    importDialog.result = await importAssetsFromText(importDialog.content, 'frontend-text-import')
-    ElMessage.success(`导入完成：新增 ${importDialog.result.created} 条，跳过 ${importDialog.result.skipped} 条`)
-    await loadAssets()
+    importDialog.preview = await previewAssetsFromText(importDialog.content, 'frontend-text-preview')
+    ElMessage.success(`预览完成：${importDialog.preview.valid}/${importDialog.preview.total} 行可导入`)
   } finally {
     importDialog.loading = false
+  }
+}
+
+async function confirmImport() {
+  if (!canConfirmImport.value) return
+  importDialog.importing = true
+  try {
+    const items = importDialog.preview.items.filter(item => item.valid).map(item => item.data)
+    importDialog.result = await importAssets(items, 'frontend-confirm-import')
+    ElMessage.success(`导入完成：新增 ${importDialog.result.created} 条，跳过 ${importDialog.result.skipped} 条`)
+    importDialog.preview = null
+    await loadAssets()
+  } finally {
+    importDialog.importing = false
   }
 }
 

@@ -1,6 +1,7 @@
 import csv
 from datetime import datetime
 from io import BytesIO, StringIO
+from types import SimpleNamespace
 from typing import Any
 
 from openpyxl import Workbook, load_workbook
@@ -145,6 +146,9 @@ class AssetService:
                     skipped += 1
                     errors.append({"row": index, "message": f"duplicate asset_id: {normalized.asset_id}", "data": row.model_dump()})
                     continue
+                AssetService.validate_status_owner(
+                    SimpleNamespace(status=normalized.status, owner_user_id=normalized.owner_user_id, location=normalized.location)
+                )
 
                 asset = Asset(
                     asset_id=normalized.asset_id or AssetService.generate_asset_id(db),
@@ -196,6 +200,47 @@ class AssetService:
     def import_assets_from_excel(db: Session, content: bytes, operator: str = "asset-import") -> dict:
         items = AssetService.parse_import_excel(content)
         return AssetService.import_assets(db, AssetBatchImport(operator=operator, items=items))
+
+    @staticmethod
+    def preview_import_assets(db: Session, items: list[AssetImportRow]) -> dict:
+        errors: list[dict] = []
+        preview_items: list[dict] = []
+        seen_sn: set[str] = set()
+        seen_asset_id: set[str] = set()
+
+        for index, row in enumerate(items, start=1):
+            try:
+                normalized = AssetService.normalize_import_row(row)
+                if normalized.sn:
+                    if normalized.sn in seen_sn or db.query(Asset).filter(Asset.sn == normalized.sn).first():
+                        raise AssetValidationError(f"duplicate sn: {normalized.sn}")
+                    seen_sn.add(normalized.sn)
+                if normalized.asset_id:
+                    if normalized.asset_id in seen_asset_id or db.get(Asset, normalized.asset_id):
+                        raise AssetValidationError(f"duplicate asset_id: {normalized.asset_id}")
+                    seen_asset_id.add(normalized.asset_id)
+                AssetService.validate_status_owner(
+                    SimpleNamespace(status=normalized.status, owner_user_id=normalized.owner_user_id, location=normalized.location)
+                )
+                preview_items.append({"row": index, "valid": True, "data": normalized.model_dump(mode="json")})
+            except Exception as exc:
+                errors.append({"row": index, "message": str(exc), "data": row.model_dump(mode="json")})
+                preview_items.append({"row": index, "valid": False, "data": row.model_dump(mode="json")})
+
+        return {
+            "total": len(items),
+            "valid": len([item for item in preview_items if item["valid"]]),
+            "errors": errors,
+            "items": preview_items,
+        }
+
+    @staticmethod
+    def preview_import_text(db: Session, payload: AssetTextImport) -> dict:
+        return AssetService.preview_import_assets(db, AssetService.parse_import_text(payload.content))
+
+    @staticmethod
+    def preview_import_excel(db: Session, content: bytes) -> dict:
+        return AssetService.preview_import_assets(db, AssetService.parse_import_excel(content))
 
     @staticmethod
     def build_import_template() -> bytes:
