@@ -80,6 +80,18 @@ export async function importAssetsFromExcel(file, operator = 'asset-excel-import
   return normalizeImportResult(result)
 }
 
+export async function downloadAssetImportTemplate() {
+  const blob = await request.get('/asset/import/template', { responseType: 'blob' })
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'asset_import_template.xlsx'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.URL.revokeObjectURL(url)
+}
+
 export async function importAssets(items, operator = 'asset-import') {
   const result = await request.post('/asset/import', { items, operator })
   return normalizeImportResult(result)

@@ -5,7 +5,10 @@
         <h2 class="page-title">资产管理</h2>
         <p class="page-subtitle">支持批量导入、批量编辑、批量维修、出入库、责任人绑定、供应商关联和报废审批</p>
       </div>
-      <el-button type="primary" @click="importDialog.visible = true">批量导入资产</el-button>
+      <div class="header-actions">
+        <el-button @click="downloadTemplate">下载导入模板</el-button>
+        <el-button type="primary" @click="importDialog.visible = true">批量导入资产</el-button>
+      </div>
     </div>
 
     <el-card shadow="never">
@@ -263,6 +266,7 @@
         <el-upload :show-file-list="false" accept=".xlsx,.xlsm" :before-upload="submitExcelImport">
           <el-button type="primary">上传 Excel 文件</el-button>
         </el-upload>
+        <el-button @click="downloadTemplate">下载导入模板</el-button>
         <el-button @click="fillImportExample">填入粘贴示例</el-button>
       </div>
       <el-input v-model="importDialog.content" type="textarea" :rows="9" class="import-textarea" placeholder="也可以把 Excel 表格复制后粘贴到这里" />
@@ -283,7 +287,7 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import { computed, defineComponent, h, onMounted, reactive, ref, resolveComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { assetStatuses, batchUpdateAssets, createScrapRequest, editableAssetStatuses, getAssets, importAssetsFromExcel, importAssetsFromText, inboundAsset, outboundAsset, statusMap, updateAsset } from '../../api/asset'
+import { assetStatuses, batchUpdateAssets, createScrapRequest, downloadAssetImportTemplate, editableAssetStatuses, getAssets, importAssetsFromExcel, importAssetsFromText, inboundAsset, outboundAsset, statusMap, updateAsset } from '../../api/asset'
 import { getCompanies } from '../../api/company'
 import { getDeviceTypes } from '../../api/product'
 import { createRepairRecords } from '../../api/repair'
@@ -649,6 +653,10 @@ function fillImportExample() {
   ].join('\n')
 }
 
+async function downloadTemplate() {
+  await downloadAssetImportTemplate()
+}
+
 async function submitExcelImport(file) {
   importDialog.loading = true
   try {
@@ -799,6 +807,13 @@ function resolveDatePicker() { return resolveComponent('ElDatePicker') }
   justify-content: flex-end;
   gap: 10px;
   margin-top: 12px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .upload-row {

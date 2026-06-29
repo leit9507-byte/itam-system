@@ -3,7 +3,9 @@ from datetime import datetime
 from io import BytesIO, StringIO
 from typing import Any
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill
+from openpyxl.worksheet.datavalidation import DataValidation
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -23,6 +25,26 @@ class AssetService:
     ASSIGNED_STATUSES = {"in_use", "borrowed", "out_stock"}
     UNASSIGNED_STATUSES = {"pending_purchase", "pending_acceptance", "in_stock", "idle", "ready_scrap"}
     WORKFLOW_STATUSES = {"pending_purchase", "pending_acceptance", "pending_scrap", "scrapped"}
+    IMPORT_TEMPLATE_HEADERS = [
+        "asset_id",
+        "name",
+        "category",
+        "brand",
+        "model",
+        "sn",
+        "purchase_price",
+        "purchase_date",
+        "purchase_approval_no",
+        "purchase_supplier_name",
+        "warranty_years",
+        "status",
+        "owner_user_id",
+        "dept_id",
+        "location",
+        "company",
+        "spec",
+        "warehouse",
+    ]
 
     @staticmethod
     def normalize_company(value: str | None) -> str | None:
@@ -171,6 +193,130 @@ class AssetService:
     def import_assets_from_excel(db: Session, content: bytes, operator: str = "asset-import") -> dict:
         items = AssetService.parse_import_excel(content)
         return AssetService.import_assets(db, AssetBatchImport(operator=operator, items=items))
+
+    @staticmethod
+    def build_import_template() -> bytes:
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "资产导入"
+        sheet.append(AssetService.IMPORT_TEMPLATE_HEADERS)
+        sheet.append(
+            [
+                "",
+                "ThinkPad X1 Carbon",
+                "笔记本电脑",
+                "Lenovo",
+                "X1 Carbon Gen 12",
+                "SN-IMPORT-001",
+                15000,
+                "2026-06-24",
+                "OA-20260624-001",
+                "联想授权供应商",
+                3,
+                "in_stock",
+                "",
+                "IT",
+                "上海IT仓",
+                "总部",
+                "32G/1TB",
+                "上海IT仓",
+            ]
+        )
+        sheet.append(
+            [
+                "",
+                "Dell U2723QE",
+                "显示器",
+                "Dell",
+                "U2723QE",
+                "SN-IMPORT-002",
+                3999,
+                "2026-06-24",
+                "OA-20260624-001",
+                "Dell渠道商",
+                3,
+                "in_use",
+                "U-ADMIN",
+                "IT",
+                "上海办公区",
+                "总部",
+                "27英寸 4K",
+                "上海IT仓",
+            ]
+        )
+
+        header_fill = PatternFill("solid", fgColor="D9EAF7")
+        header_font = Font(bold=True)
+        for cell in sheet[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+
+        widths = {
+            "A": 18,
+            "B": 24,
+            "C": 16,
+            "D": 16,
+            "E": 20,
+            "F": 20,
+            "G": 16,
+            "H": 16,
+            "I": 22,
+            "J": 22,
+            "K": 16,
+            "L": 16,
+            "M": 18,
+            "N": 16,
+            "O": 18,
+            "P": 18,
+            "Q": 20,
+            "R": 18,
+        }
+        for column, width in widths.items():
+            sheet.column_dimensions[column].width = width
+        sheet.freeze_panes = "A2"
+
+        status_validation = DataValidation(
+            type="list",
+            formula1='"in_stock,in_use,idle,borrowed,out_stock,repair,ready_scrap"',
+            allow_blank=False,
+        )
+        sheet.add_data_validation(status_validation)
+        status_validation.add("L2:L500")
+
+        instruction = workbook.create_sheet("字段说明")
+        instruction.append(["字段", "是否必填", "说明"])
+        rows = [
+            ("asset_id", "否", "资产编号；留空时系统自动生成"),
+            ("name", "是", "资产名称"),
+            ("category", "是", "设备类型，如 笔记本电脑、显示器"),
+            ("brand", "否", "品牌"),
+            ("model", "否", "型号"),
+            ("sn", "否", "序列号；重复序列号会跳过导入"),
+            ("purchase_price", "否", "采购价格，数字"),
+            ("purchase_date", "否", "采购日期，格式 YYYY-MM-DD"),
+            ("purchase_approval_no", "否", "采购审批单号或采购单号"),
+            ("purchase_supplier_name", "否", "采购供应商"),
+            ("warranty_years", "否", "维保年限，系统会换算为月数并计算质保到期"),
+            ("status", "是", "可填 in_stock、in_use、idle、borrowed、out_stock、repair、ready_scrap"),
+            ("owner_user_id", "按状态", "in_use、borrowed、out_stock 必填；库存/闲置/待报废必须留空"),
+            ("dept_id", "否", "部门编号或部门名称"),
+            ("location", "否", "当前位置"),
+            ("company", "否", "所属公司"),
+            ("spec", "否", "规格配置"),
+            ("warehouse", "否", "仓库名称"),
+        ]
+        for row in rows:
+            instruction.append(row)
+        for cell in instruction[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+        instruction.column_dimensions["A"].width = 24
+        instruction.column_dimensions["B"].width = 12
+        instruction.column_dimensions["C"].width = 74
+
+        output = BytesIO()
+        workbook.save(output)
+        return output.getvalue()
 
     @staticmethod
     def parse_import_text(content: str) -> list[AssetImportRow]:

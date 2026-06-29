@@ -1,4 +1,7 @@
+from io import BytesIO
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -48,6 +51,17 @@ async def import_assets_from_excel(operator: str = "asset-import", file: UploadF
         return AssetService.import_assets_from_excel(db, await file.read(), operator)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"invalid excel file: {exc}") from exc
+
+
+@router.get("/import/template")
+def download_asset_import_template():
+    content = AssetService.build_import_template()
+    headers = {"Content-Disposition": 'attachment; filename="asset_import_template.xlsx"'}
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
 
 
 @router.post("/{asset_id}/status", response_model=AssetOut)
