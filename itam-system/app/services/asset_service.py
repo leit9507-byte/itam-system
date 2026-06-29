@@ -248,9 +248,18 @@ class AssetService:
             ]
         )
 
+        example = workbook.create_sheet("填写示例")
+        example.append(AssetService.IMPORT_TEMPLATE_HEADERS)
+        for values in sheet.iter_rows(min_row=2, max_row=3, values_only=True):
+            example.append(list(values))
+        sheet.delete_rows(2, 2)
+
         header_fill = PatternFill("solid", fgColor="D9EAF7")
         header_font = Font(bold=True)
         for cell in sheet[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+        for cell in example[1]:
             cell.fill = header_fill
             cell.font = header_font
 
@@ -276,7 +285,9 @@ class AssetService:
         }
         for column, width in widths.items():
             sheet.column_dimensions[column].width = width
+            example.column_dimensions[column].width = width
         sheet.freeze_panes = "A2"
+        example.freeze_panes = "A2"
 
         status_validation = DataValidation(
             type="list",
