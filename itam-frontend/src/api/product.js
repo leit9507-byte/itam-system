@@ -12,6 +12,10 @@ export function updateDeviceType(id, payload) {
   return request.put(`/catalog/device-types/${id}`, payload)
 }
 
+export function deleteDeviceType(id) {
+  return request.delete(`/catalog/device-types/${id}`)
+}
+
 export function getProducts() {
   return request.get('/catalog/products')
 }
@@ -22,4 +26,8 @@ export function createProduct(payload) {
 
 export function updateProduct(id, payload) {
   return request.put(`/catalog/products/${id}`, payload)
+}
+
+export function deleteProduct(id) {
+  return request.delete(`/catalog/products/${id}`)
 }

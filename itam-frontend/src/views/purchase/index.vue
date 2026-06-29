@@ -134,8 +134,11 @@
           <el-table :data="deviceTypes" border>
             <el-table-column prop="name" label="类型" />
             <el-table-column prop="description" label="说明" />
-            <el-table-column label="操作" width="90">
-              <template #default="{ row }"><el-button link type="primary" @click="editType(row)">编辑</el-button></template>
+            <el-table-column label="操作" width="130">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="editType(row)">编辑</el-button>
+                <el-button link type="danger" @click="removeType(row)">删除</el-button>
+              </template>
             </el-table-column>
           </el-table>
         </el-card>
@@ -161,8 +164,11 @@
             <el-table-column prop="brand" label="品牌" width="100" />
             <el-table-column prop="model" label="型号" width="130" />
             <el-table-column prop="retirement_years" label="退役年限" width="100" />
-            <el-table-column label="操作" width="90">
-              <template #default="{ row }"><el-button link type="primary" @click="editProduct(row)">编辑</el-button></template>
+            <el-table-column label="操作" width="130">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="editProduct(row)">编辑</el-button>
+                <el-button link type="danger" @click="removeProduct(row)">删除</el-button>
+              </template>
             </el-table-column>
           </el-table>
         </el-card>
@@ -172,10 +178,10 @@
 </template>
 
 <script setup>
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { acceptPurchase, approvePurchase, createPurchase, getPurchases } from '../../api/purchase'
-import { createDeviceType, createProduct, getDeviceTypes, getProducts, updateDeviceType, updateProduct } from '../../api/product'
+import { createDeviceType, createProduct, deleteDeviceType, deleteProduct, getDeviceTypes, getProducts, updateDeviceType, updateProduct } from '../../api/product'
 
 const purchases = ref([])
 const products = ref([])
@@ -312,6 +318,14 @@ async function saveType() {
   await load()
 }
 
+async function removeType(row) {
+  await ElMessageBox.confirm(`确认删除设备类型「${row.name}」？已有资产不会被删除。`, '删除设备类型', { type: 'warning' })
+  await deleteDeviceType(row.id)
+  if (typeForm.id === row.id) Object.assign(typeForm, { id: null, name: '', description: '' })
+  ElMessage.success('设备类型已删除')
+  await load()
+}
+
 function editProduct(row) {
   Object.assign(productForm, row)
 }
@@ -321,6 +335,14 @@ async function saveProduct() {
   else await createProduct(productForm)
   Object.assign(productForm, defaultProductForm())
   ElMessage.success('产品档案已保存')
+  await load()
+}
+
+async function removeProduct(row) {
+  await ElMessageBox.confirm(`确认删除产品档案「${row.product_name} / ${row.model || '-'}」？已有资产不会被删除。`, '删除产品档案', { type: 'warning' })
+  await deleteProduct(row.id)
+  if (productForm.id === row.id) Object.assign(productForm, defaultProductForm())
+  ElMessage.success('产品档案已删除')
   await load()
 }
 </script>

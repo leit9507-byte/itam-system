@@ -51,6 +51,9 @@
         <el-table-column prop="category" label="类型" width="110" />
         <el-table-column prop="purchase_supplier_name" label="供应商" width="150" show-overflow-tooltip />
         <el-table-column prop="purchase_date" label="采购时间" width="120" />
+        <el-table-column prop="retirement_years" label="退役年限" width="100">
+          <template #default="{ row }">{{ row.retirement_years ? `${row.retirement_years} 年` : '-' }}</template>
+        </el-table-column>
         <el-table-column label="使用人" width="150">
           <template #default="{ row }">{{ displayUser(row) }}</template>
         </el-table-column>
@@ -155,6 +158,9 @@
 
           <el-checkbox v-model="batchEdit.fields.warranty_years">维保年限</el-checkbox>
           <el-input-number v-model="batchEdit.form.warranty_years" :min="0" :step="1" :precision="0" :disabled="!batchEdit.fields.warranty_years" style="width: 100%" />
+
+          <el-checkbox v-model="batchEdit.fields.retirement_years">退役年限</el-checkbox>
+          <el-input-number v-model="batchEdit.form.retirement_years" :min="0" :step="1" :precision="0" :disabled="!batchEdit.fields.retirement_years" style="width: 100%" />
 
           <el-checkbox v-model="batchEdit.fields.owner_user_id">责任人</el-checkbox>
           <el-select v-model="batchEdit.form.owner_user_id" filterable remote clearable reserve-keyword :remote-method="searchUsers" :disabled="!batchEdit.fields.owner_user_id" @change="fillUserToForm(batchEdit.form, $event)">
@@ -360,6 +366,7 @@ function defaultBatchEditForm() {
     purchase_approval_no: '',
     purchase_supplier_name: '',
     warranty_years: 0,
+    retirement_years: 0,
     owner_user_id: '',
     owner_name: '',
     dept_id: '',
@@ -384,6 +391,7 @@ function defaultBatchEditFields() {
     purchase_approval_no: false,
     purchase_supplier_name: false,
     warranty_years: false,
+    retirement_years: false,
     owner_user_id: false,
     dept_id: false,
     location: false,
@@ -715,6 +723,7 @@ const AssetEditFields = defineComponent({
         field('采购供应商', h(resolveSelect(), { modelValue: props.form.purchase_supplier_name, 'onUpdate:modelValue': value => (props.form.purchase_supplier_name = value), filterable: true, clearable: true, allowCreate: true, defaultFirstOption: true, style: 'width:100%' }, () => props.suppliers.map(item => h(resolveOption(), { key: item.id || item.name, label: item.name, value: item.name })))),
         field('维保年限', h(resolveInputNumber(), { modelValue: props.form.warranty_years, 'onUpdate:modelValue': value => (props.form.warranty_years = value), min: 0, step: 1, precision: 0, style: 'width:100%' })),
         field('维保到期', h(resolveInput(), { modelValue: warrantyExpirePreview(props.form), disabled: true, placeholder: '根据采购时间和维保年限自动计算' })),
+        field('退役年限', h(resolveInputNumber(), { modelValue: props.form.retirement_years, 'onUpdate:modelValue': value => (props.form.retirement_years = value), min: 0, step: 1, precision: 0, style: 'width:100%' })),
         field('责任人', h(resolveSelect(), { modelValue: props.form.owner_user_id, 'onUpdate:modelValue': value => (props.form.owner_user_id = value), filterable: true, remote: true, clearable: true, reserveKeyword: true, remoteMethod: value => emit('search-users', value), style: 'width:100%', onChange: value => emit('select-user', value) }, () => props.users.map(user => h(resolveOption(), { key: user.user_id, label: `${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`, value: user.user_id })))),
         field('部门', h(resolveInput(), { modelValue: props.form.dept_id, 'onUpdate:modelValue': value => (props.form.dept_id = value), disabled: true })),
         field('位置', h(resolveInput(), { modelValue: props.form.location, 'onUpdate:modelValue': value => (props.form.location = value) })),

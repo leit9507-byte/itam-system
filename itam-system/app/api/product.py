@@ -44,6 +44,16 @@ def update_device_type(type_id: int, payload: DeviceTypeUpsert, db: Session = De
     return item
 
 
+@router.delete("/device-types/{type_id}")
+def delete_device_type(type_id: int, db: Session = Depends(get_db)):
+    item = db.get(DeviceType, type_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="设备类型不存在")
+    db.delete(item)
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/products", response_model=list[ProductOut])
 def list_products(db: Session = Depends(get_db)):
     ensure_seed(db)
@@ -79,6 +89,16 @@ def update_product(product_id: int, payload: ProductUpsert, db: Session = Depend
     return item
 
 
+@router.delete("/products/{product_id}")
+def delete_product(product_id: int, db: Session = Depends(get_db)):
+    item = db.get(ProductCatalog, product_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="产品档案不存在")
+    db.delete(item)
+    db.commit()
+    return {"ok": True}
+
+
 def sync_assets_from_product(db: Session, old_snapshot: dict, product: ProductCatalog) -> int:
     assets = (
         db.query(Asset)
@@ -95,6 +115,10 @@ def sync_assets_from_product(db: Session, old_snapshot: dict, product: ProductCa
         config["spec"] = product.spec or ""
         if product.default_warehouse:
             config["warehouse"] = product.default_warehouse
+        if product.retirement_years:
+            config["retirement_years"] = product.retirement_years
+        else:
+            config.pop("retirement_years", None)
         asset.name = product.product_name
         asset.category = product.device_type
         asset.brand = product.brand

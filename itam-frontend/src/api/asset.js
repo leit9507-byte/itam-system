@@ -96,7 +96,11 @@ export async function updateAsset(assetId, payload) {
     brand: payload.brand,
     model: payload.model,
     sn: payload.sn,
-    config: { spec: payload.spec || '', warehouse: payload.warehouse || '' },
+    config: {
+      spec: payload.spec || '',
+      warehouse: payload.warehouse || '',
+      retirement_years: payload.retirement_years === '' || payload.retirement_years == null ? null : Number(payload.retirement_years)
+    },
     purchase_price: Number(payload.price || payload.purchase_price || 0),
     purchase_date: dateToApi(payload.purchase_date),
     purchase_approval_no: payload.purchase_approval_no || '',
@@ -210,7 +214,7 @@ export async function addAcceptedAssets(product, serialNumbers = []) {
       brand: product.brand,
       model: product.model,
       sn,
-      config: { spec: product.spec, warehouse: product.warehouse },
+      config: { spec: product.spec, warehouse: product.warehouse, retirement_years: product.retirement_years || null },
       purchase_price: Number(product.unit_price || 0),
       purchase_date: dateToApi(product.purchase_date),
       purchase_approval_no: product.purchase_no || product.approval_no || '',
