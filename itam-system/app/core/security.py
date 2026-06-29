@@ -54,7 +54,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return JSONResponse({"detail": "User disabled or not found"}, status_code=403)
             if not has_permission(db, user.role, request.url.path, method_to_action(request.method)):
                 return JSONResponse({"detail": "Permission denied"}, status_code=403)
-            request.state.user = {"user_id": user.user_id, "username": user.username, "role": user.role}
+            request.state.user = {
+                "user_id": user.user_id,
+                "username": user.username,
+                "display_name": user.display_name,
+                "role": user.role,
+            }
 
         return await call_next(request)
 
@@ -89,3 +94,11 @@ def has_permission(db, role: str, path: str, action: str) -> bool:
         .first()
     )
     return bool(permission)
+
+
+def operator_from_request(request: Request) -> str:
+    user = getattr(request.state, "user", {}) or {}
+    name = user.get("display_name") or user.get("username") or user.get("user_id") or "system"
+    role = user.get("role")
+    label = f"{name}（{role}）" if role else name
+    return label[:64]

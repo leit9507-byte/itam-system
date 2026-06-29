@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.security import operator_from_request
 from app.services.scrap_service import ScrapService
 
 
@@ -27,24 +28,24 @@ def list_scrap_requests(page: int = 1, page_size: int = 20, status: str | None =
 
 
 @router.post("/{asset_id}/create")
-def create_scrap_request(asset_id: str, payload: ScrapPayload, db: Session = Depends(get_db)):
+def create_scrap_request(asset_id: str, payload: ScrapPayload, request: Request, db: Session = Depends(get_db)):
     try:
-        return ScrapService.create_request(db, asset_id, payload.model_dump(), payload.operator)
+        return ScrapService.create_request(db, asset_id, payload.model_dump(), operator_from_request(request))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/{request_id}/approve")
-def approve_scrap_request(request_id: int, payload: ScrapApprovePayload, db: Session = Depends(get_db)):
+def approve_scrap_request(request_id: int, payload: ScrapApprovePayload, request: Request, db: Session = Depends(get_db)):
     try:
-        return ScrapService.approve(db, request_id, payload.approver)
+        return ScrapService.approve(db, request_id, operator_from_request(request))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/{request_id}/reject")
-def reject_scrap_request(request_id: int, payload: ScrapApprovePayload, db: Session = Depends(get_db)):
+def reject_scrap_request(request_id: int, payload: ScrapApprovePayload, request: Request, db: Session = Depends(get_db)):
     try:
-        return ScrapService.reject(db, request_id, payload.approver)
+        return ScrapService.reject(db, request_id, operator_from_request(request))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -1,9 +1,10 @@
 from datetime import date, datetime, time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.security import operator_from_request
 from app.schemas.asset import AssetOut
 from app.schemas.purchase import PurchaseAcceptanceReceive, PurchaseCreate, PurchaseOut, PurchaseReceive
 from app.services.purchase_service import PurchaseService
@@ -35,9 +36,9 @@ def create_purchase(payload: PurchaseCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/receive")
-def receive_purchase(purchase_no: str, payload: PurchaseReceive | None = None, db: Session = Depends(get_db)):
+def receive_purchase(request: Request, purchase_no: str, payload: PurchaseReceive | None = None, db: Session = Depends(get_db)):
     try:
-        result = PurchaseService.receive_purchase(db, purchase_no, payload.operator if payload else "system")
+        result = PurchaseService.receive_purchase(db, purchase_no, operator_from_request(request))
         return {
             "purchase": PurchaseOut.model_validate(result["purchase"]),
             "assets": [AssetOut.model_validate(asset) for asset in result["assets"]],
@@ -47,9 +48,9 @@ def receive_purchase(purchase_no: str, payload: PurchaseReceive | None = None, d
 
 
 @router.post("/accept")
-def accept_purchase(purchase_no: str, payload: PurchaseAcceptanceReceive, db: Session = Depends(get_db)):
+def accept_purchase(purchase_no: str, payload: PurchaseAcceptanceReceive, request: Request, db: Session = Depends(get_db)):
     try:
-        result = PurchaseService.accept_purchase(db, purchase_no, payload)
+        result = PurchaseService.accept_purchase(db, purchase_no, payload.model_copy(update={"operator": operator_from_request(request)}))
         return {
             "purchase": PurchaseOut.model_validate(result["purchase"]),
             "assets": [AssetOut.model_validate(asset) for asset in result["assets"]],
