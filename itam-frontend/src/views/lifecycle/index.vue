@@ -34,6 +34,7 @@
         <el-table-column prop="asset_name" label="资产名称" min-width="180" />
         <el-table-column prop="category_label" label="分类" width="120" />
         <el-table-column prop="type_label" label="动作" width="150" />
+        <el-table-column prop="responsible_label" label="责任人/对象" width="150" show-overflow-tooltip />
         <el-table-column prop="status_change_label" label="状态变化" width="190" />
         <el-table-column prop="operator" label="操作人" width="130" />
         <el-table-column prop="description" label="说明" min-width="240" show-overflow-tooltip />
@@ -65,6 +66,7 @@ const filteredItems = computed(() => {
       item.type,
       item.category_label,
       item.type_label,
+      item.responsible_label,
       item.from_status_label,
       item.to_status_label,
       item.status_change_label,

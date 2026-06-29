@@ -319,12 +319,14 @@ function mapLifecycle(row) {
   const fromStatusLabel = statusLabel(row.from_status)
   const toStatusLabel = statusLabel(row.to_status)
   const category = lifecycleCategory(row)
+  const responsibleLabel = lifecycleResponsibleLabel(row, category)
   return {
     ...row,
     time_value: row.time,
     time: formatDateTime(row.time),
     category,
     category_label: category === 'daily_inventory' ? '日常出入库' : '其他操作',
+    responsible_label: responsibleLabel,
     type_label: lifecycleActionLabel(row),
     from_status_label: fromStatusLabel,
     to_status_label: toStatusLabel,
@@ -344,6 +346,13 @@ function lifecycleActionLabel(row) {
     if (['in_use', 'borrowed', 'out_stock'].includes(row.to_status)) return `出库-${statusLabel(row.to_status)}`
   }
   return lifecycleActionMap[row.type] || row.type || '-'
+}
+
+function lifecycleResponsibleLabel(row, category) {
+  if (category !== 'daily_inventory') return '-'
+  const text = String(row.description || '')
+  const match = text.match(/(?:领用人|借用人|出库责任人|退回人)[:：]\s*([^;；]+)/)
+  return match?.[1]?.trim() || '-'
 }
 
 function statusLabel(status) {

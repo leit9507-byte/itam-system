@@ -323,6 +323,8 @@ class AssetService:
             raise ValueError("asset not found")
 
         from_status = asset.status
+        previous_owner_user_id = asset.owner_user_id
+        previous_user = AssetService.find_user(db, previous_owner_user_id)
         if owner_user_id is not None:
             asset.owner_user_id = AssetService.normalize_blank(owner_user_id)
         user = AssetService.sync_owner_department(db, asset)
@@ -332,10 +334,48 @@ class AssetService:
             asset.location = location
         asset.status = to_status
         AssetService.validate_status_owner(asset, status_changed=to_status != from_status)
-        LifecycleService.record(db, asset.asset_id, "STATUS_CHANGE", from_status, to_status, operator, remark)
+        lifecycle_remark = AssetService.inventory_lifecycle_remark(
+            to_status,
+            remark,
+            previous_owner_user_id,
+            previous_user,
+            asset.owner_user_id,
+            user,
+        )
+        LifecycleService.record(db, asset.asset_id, "STATUS_CHANGE", from_status, to_status, operator, lifecycle_remark)
         db.commit()
         db.refresh(asset)
         return AssetService.to_out(asset, user)
+
+    @staticmethod
+    def user_label(user: UserDirectory | None, fallback: str | None) -> str:
+        if user:
+            return user.display_name or user.username or user.user_id
+        return AssetService.normalize_blank(fallback) or "-"
+
+    @staticmethod
+    def inventory_lifecycle_remark(
+        to_status: str,
+        remark: str | None,
+        previous_owner_user_id: str | None,
+        previous_user: UserDirectory | None,
+        owner_user_id: str | None,
+        owner_user: UserDirectory | None,
+    ) -> str | None:
+        base = AssetService.normalize_blank(remark)
+        labels = {
+            "in_stock": ("退回人", AssetService.user_label(previous_user, previous_owner_user_id)),
+            "in_use": ("领用人", AssetService.user_label(owner_user, owner_user_id)),
+            "borrowed": ("借用人", AssetService.user_label(owner_user, owner_user_id)),
+            "out_stock": ("出库责任人", AssetService.user_label(owner_user, owner_user_id)),
+        }
+        if to_status not in labels:
+            return base or None
+        key, value = labels[to_status]
+        detail = f"{key}: {value}"
+        if detail in base:
+            return base
+        return f"{base}; {detail}" if base else detail
 
     @staticmethod
     def find_user(db: Session, value: str | None) -> UserDirectory | None:
