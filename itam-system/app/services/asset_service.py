@@ -22,7 +22,7 @@ class AssetValidationError(ValueError):
 
 class AssetService:
     DEFAULT_COMPANY = "未设置公司"
-    ASSIGNED_STATUSES = {"in_use", "borrowed", "out_stock"}
+    ASSIGNED_STATUSES = {"in_use", "borrowed"}
     UNASSIGNED_STATUSES = {"pending_purchase", "pending_acceptance", "in_stock", "idle", "ready_scrap"}
     WORKFLOW_STATUSES = {"pending_purchase", "pending_acceptance", "pending_scrap", "scrapped"}
     IMPORT_TEMPLATE_HEADERS = [
@@ -59,12 +59,15 @@ class AssetService:
     def validate_status_owner(asset: Asset, *, status_changed: bool = True) -> None:
         status = asset.status
         has_owner = bool(AssetService.normalize_blank(asset.owner_user_id))
+        has_location = bool(AssetService.normalize_blank(asset.location))
         if status_changed and status in AssetService.WORKFLOW_STATUSES:
             raise AssetValidationError("pending purchase, pending acceptance, pending scrap, and scrapped statuses are controlled by workflows")
         if status in AssetService.UNASSIGNED_STATUSES and has_owner:
             raise AssetValidationError("pending purchase, pending acceptance, in-stock, idle, and ready-to-scrap assets cannot keep an owner")
         if status in AssetService.ASSIGNED_STATUSES and not has_owner:
-            raise AssetValidationError("in-use, borrowed, and out-stock assets require an owner")
+            raise AssetValidationError("in-use and borrowed assets require an owner")
+        if status == "out_stock" and not has_owner and not has_location:
+            raise AssetValidationError("out-stock assets require an owner or a location")
 
     @staticmethod
     def apply_warranty_expire(asset: Asset) -> None:
@@ -487,6 +490,7 @@ class AssetService:
             previous_user,
             asset.owner_user_id,
             user,
+            asset.location,
         )
         LifecycleService.record(db, asset.asset_id, "STATUS_CHANGE", from_status, to_status, operator, lifecycle_remark)
         db.commit()
@@ -507,6 +511,7 @@ class AssetService:
         previous_user: UserDirectory | None,
         owner_user_id: str | None,
         owner_user: UserDirectory | None,
+        location: str | None = None,
     ) -> str | None:
         base = AssetService.normalize_blank(remark)
         labels = {
@@ -518,6 +523,8 @@ class AssetService:
         if to_status not in labels:
             return base or None
         key, value = labels[to_status]
+        if to_status == "out_stock" and not AssetService.normalize_blank(owner_user_id):
+            key, value = "公用设备位置", AssetService.normalize_blank(location) or "-"
         detail = f"{key}: {value}"
         if detail in base:
             return base

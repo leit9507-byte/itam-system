@@ -188,15 +188,19 @@ export async function inboundAsset(assetId, payload = {}) {
 
 export async function outboundAsset(assetId, payload = {}) {
   const status = payload.toStatus || 'in_use'
+  const isPublicLocation = payload.outboundTarget === 'location'
   const asset = await changeAssetStatus(assetId, status, {
     ...payload,
-    owner_user_id: payload.owner_user_id,
-    dept_id: payload.dept_id,
+    owner_user_id: isPublicLocation ? '' : payload.owner_user_id,
+    dept_id: isPublicLocation ? '' : payload.dept_id,
     location: payload.location,
     action: '出库',
-    remark: payload.remark || '资产出库'
+    remark: payload.remark || (isPublicLocation ? `公用设备：${payload.location || ''}` : '资产出库')
   })
-  localInventoryRecords.unshift(buildInventory(assetId, '出库', `${payload.owner_name || asset.owner_name || asset.owner || '未指定'} / ${payload.dept_name || asset.dept_name || asset.dept || '未指定'}`, payload.remark || '资产出库'))
+  const target = isPublicLocation
+    ? `公用设备 / ${payload.location || asset.location || '未指定位置'}`
+    : `${payload.owner_name || asset.owner_name || asset.owner || '未指定'} / ${payload.dept_name || asset.dept_name || asset.dept || '未指定'}`
+  localInventoryRecords.unshift(buildInventory(assetId, '出库', target, payload.remark || (isPublicLocation ? '公用设备' : '资产出库')))
   return asset
 }
 

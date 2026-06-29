@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError
 
-from app.api import asset, audit, company, files, identity, lifecycle, product, purchase, repair, reporting, scrap, stocktake, supplier
+from app.api import asset, audit, company, files, identity, lifecycle, location, product, purchase, repair, reporting, scrap, stocktake, supplier
 from app.core.database import Base, engine
 from app.core.schema_compat import ensure_compatible_schema
 from app.core.security import AuthMiddleware
@@ -47,6 +47,7 @@ def create_app() -> FastAPI:
     app.include_router(scrap.router)
     app.include_router(stocktake.router)
     app.include_router(lifecycle.router)
+    app.include_router(location.router)
     app.include_router(supplier.router)
     app.include_router(product.router)
     app.include_router(identity.router)

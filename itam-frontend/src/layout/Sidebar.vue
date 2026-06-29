@@ -6,24 +6,37 @@
     </div>
     <el-menu :default-active="route.path" router class="menu" :collapse="store.collapsed">
       <el-menu-item index="/dashboard"><el-icon><DataBoard /></el-icon><span>资产总览</span></el-menu-item>
-      <el-menu-item index="/company"><el-icon><OfficeBuilding /></el-icon><span>公司管理</span></el-menu-item>
-      <el-menu-item index="/asset/list"><el-icon><Monitor /></el-icon><span>资产管理</span></el-menu-item>
-      <el-menu-item index="/purchase"><el-icon><ShoppingCart /></el-icon><span>采购管理</span></el-menu-item>
-      <el-menu-item index="/supplier"><el-icon><Van /></el-icon><span>供应商管理</span></el-menu-item>
-      <el-menu-item index="/stocktake"><el-icon><Tickets /></el-icon><span>资产盘点</span></el-menu-item>
-      <el-menu-item index="/repair"><el-icon><Tools /></el-icon><span>维修管理</span></el-menu-item>
+      <el-sub-menu index="/asset">
+        <template #title><el-icon><Monitor /></el-icon><span>资产运营</span></template>
+        <el-menu-item index="/asset/list">资产管理</el-menu-item>
+        <el-menu-item index="/location">位置管理</el-menu-item>
+        <el-menu-item index="/stocktake">资产盘点</el-menu-item>
+        <el-menu-item index="/lifecycle">生命周期</el-menu-item>
+      </el-sub-menu>
+      <el-sub-menu index="/purchase-group">
+        <template #title><el-icon><ShoppingCart /></el-icon><span>采购供应</span></template>
+        <el-menu-item index="/purchase">采购管理</el-menu-item>
+        <el-menu-item index="/supplier">供应商管理</el-menu-item>
+      </el-sub-menu>
+      <el-sub-menu index="/workflow">
+        <template #title><el-icon><Tools /></el-icon><span>流程处理</span></template>
+        <el-menu-item index="/repair">维修管理</el-menu-item>
+        <el-menu-item index="/scrap">报废审批</el-menu-item>
+      </el-sub-menu>
+      <el-sub-menu index="/system">
+        <template #title><el-icon><Setting /></el-icon><span>管理配置</span></template>
+        <el-menu-item index="/company">公司管理</el-menu-item>
+        <el-menu-item index="/permission">权限管理</el-menu-item>
+      </el-sub-menu>
       <el-menu-item index="/audit"><el-icon><View /></el-icon><span>审计中心</span></el-menu-item>
-      <el-menu-item index="/lifecycle"><el-icon><Clock /></el-icon><span>生命周期</span></el-menu-item>
-      <el-menu-item index="/scrap"><el-icon><CircleClose /></el-icon><span>报废审批</span></el-menu-item>
       <el-menu-item index="/report"><el-icon><Document /></el-icon><span>报告中心</span></el-menu-item>
-      <el-menu-item index="/permission"><el-icon><Lock /></el-icon><span>权限管理</span></el-menu-item>
     </el-menu>
   </el-aside>
 </template>
 
 <script setup>
 import { useRoute } from 'vue-router'
-import { CircleClose, Clock, DataBoard, Document, Lock, Monitor, OfficeBuilding, ShoppingCart, Tickets, Tools, Van, View } from '@element-plus/icons-vue'
+import { DataBoard, Document, Monitor, Setting, ShoppingCart, Tools, View } from '@element-plus/icons-vue'
 import { useAppStore } from '../store'
 
 const route = useRoute()
@@ -69,9 +82,18 @@ const store = useAppStore()
   color: #cbd5e1;
 }
 
+:deep(.el-sub-menu__title) {
+  color: #cbd5e1;
+}
+
 :deep(.el-menu-item.is-active),
-:deep(.el-menu-item:hover) {
+:deep(.el-menu-item:hover),
+:deep(.el-sub-menu__title:hover) {
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
+}
+
+:deep(.el-menu--inline) {
+  background: rgba(15, 23, 42, 0.35);
 }
 </style>
