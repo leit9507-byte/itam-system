@@ -41,6 +41,7 @@
             <el-descriptions-item label="质保到期">{{ detail.asset?.warranty_expire_date || '-' }}</el-descriptions-item>
             <el-descriptions-item label="质保月数">{{ detail.asset?.warranty_months || '-' }}</el-descriptions-item>
             <el-descriptions-item label="退役年限">{{ detail.asset?.retirement_years ? `${detail.asset.retirement_years} 年` : '-' }}</el-descriptions-item>
+            <el-descriptions-item label="预计退役时间">{{ detail.asset?.retirement_date || '-' }}</el-descriptions-item>
             <el-descriptions-item label="质保状态">
               <el-tag :type="warrantyTag.type">{{ warrantyTag.text }}</el-tag>
             </el-descriptions-item>

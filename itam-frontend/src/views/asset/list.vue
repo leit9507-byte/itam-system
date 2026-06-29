@@ -54,6 +54,9 @@
         <el-table-column prop="retirement_years" label="退役年限" width="100">
           <template #default="{ row }">{{ row.retirement_years ? `${row.retirement_years} 年` : '-' }}</template>
         </el-table-column>
+        <el-table-column prop="retirement_date" label="预计退役时间" width="130">
+          <template #default="{ row }">{{ row.retirement_date || '-' }}</template>
+        </el-table-column>
         <el-table-column label="使用人" width="150">
           <template #default="{ row }">{{ displayUser(row) }}</template>
         </el-table-column>
@@ -443,6 +446,11 @@ function warrantyExpirePreview(form) {
   return addYears(form.purchase_date, Number(form.warranty_years))
 }
 
+function retirementDatePreview(form) {
+  if (!form?.purchase_date || !form?.retirement_years) return form?.retirement_date || ''
+  return addYears(form.purchase_date, Number(form.retirement_years))
+}
+
 function addYears(value, years) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime()) || !years) return ''
@@ -724,6 +732,7 @@ const AssetEditFields = defineComponent({
         field('维保年限', h(resolveInputNumber(), { modelValue: props.form.warranty_years, 'onUpdate:modelValue': value => (props.form.warranty_years = value), min: 0, step: 1, precision: 0, style: 'width:100%' })),
         field('维保到期', h(resolveInput(), { modelValue: warrantyExpirePreview(props.form), disabled: true, placeholder: '根据采购时间和维保年限自动计算' })),
         field('退役年限', h(resolveInputNumber(), { modelValue: props.form.retirement_years, 'onUpdate:modelValue': value => (props.form.retirement_years = value), min: 0, step: 1, precision: 0, style: 'width:100%' })),
+        field('预计退役时间', h(resolveInput(), { modelValue: retirementDatePreview(props.form), disabled: true, placeholder: '根据采购时间和退役年限自动计算' })),
         field('责任人', h(resolveSelect(), { modelValue: props.form.owner_user_id, 'onUpdate:modelValue': value => (props.form.owner_user_id = value), filterable: true, remote: true, clearable: true, reserveKeyword: true, remoteMethod: value => emit('search-users', value), style: 'width:100%', onChange: value => emit('select-user', value) }, () => props.users.map(user => h(resolveOption(), { key: user.user_id, label: `${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`, value: user.user_id })))),
         field('部门', h(resolveInput(), { modelValue: props.form.dept_id, 'onUpdate:modelValue': value => (props.form.dept_id = value), disabled: true })),
         field('位置', h(resolveInput(), { modelValue: props.form.location, 'onUpdate:modelValue': value => (props.form.location = value) })),

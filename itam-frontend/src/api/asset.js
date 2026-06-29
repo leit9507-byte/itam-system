@@ -257,6 +257,8 @@ function mapBackendAsset(row) {
   const config = row.config || {}
   const ownerName = row.owner_display_name || row.owner_name || ''
   const deptName = row.dept_name || ''
+  const purchaseDate = formatDate(row.purchase_date)
+  const retirementYears = config.retirement_years || ''
   return {
     asset_id: row.asset_id,
     config,
@@ -273,13 +275,14 @@ function mapBackendAsset(row) {
     status: row.status || 'in_stock',
     price: Number(row.purchase_price || 0),
     purchase_price: Number(row.purchase_price || 0),
-    purchase_date: formatDate(row.purchase_date),
+    purchase_date: purchaseDate,
     purchase_approval_no: row.purchase_approval_no || '',
     purchase_supplier_name: row.purchase_supplier_name || '',
     warranty_expire_date: formatDate(row.warranty_expire_date),
     warranty_months: row.warranty_months ?? '',
     warranty_years: row.warranty_months ? Math.round(Number(row.warranty_months) / 12) : '',
-    retirement_years: config.retirement_years || '',
+    retirement_years: retirementYears,
+    retirement_date: addYears(purchaseDate, Number(retirementYears)),
     brand: row.brand || '',
     model: row.model || '',
     spec: config.spec || '',
