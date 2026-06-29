@@ -28,6 +28,10 @@ export function updateIdentityProvider(id, payload) {
   return request.put(`/identity/providers/${id}`, payload)
 }
 
+export function deleteIdentityProvider(id) {
+  return request.delete(`/identity/providers/${id}`)
+}
+
 export function testIdentityProvider(id) {
   return request.post(`/identity/providers/${id}/test`)
 }

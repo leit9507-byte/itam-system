@@ -97,11 +97,12 @@
                 </template>
               </el-table-column>
               <el-table-column prop="last_test_message" label="测试信息" min-width="220" show-overflow-tooltip />
-              <el-table-column label="操作" width="190">
+              <el-table-column label="操作" width="230">
                 <template #default="{ row }">
                   <el-button link type="primary" @click="editProvider(row)">编辑</el-button>
                   <el-button link type="warning" @click="testProvider(row)">测试</el-button>
                   <el-button link type="success" @click="syncFromProvider(row)">同步</el-button>
+                  <el-button link type="danger" @click="removeProvider(row)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -141,10 +142,11 @@
 
 <script setup>
 import { onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAppStore } from '../../store'
 import {
   createIdentityProvider,
+  deleteIdentityProvider,
   getIdentityProviders,
   getRolePermissions,
   getUsers,
@@ -198,35 +200,35 @@ function defaultProviderForm() {
 function defaultConfig(type = 'ldap') {
   const samples = {
     ldap: {
-      host: 'ldap://ldap.example.com',
-      port: 389,
+      host: '',
+      port: null,
       use_ssl: false,
       start_tls: false,
       tls_validate: false,
-      bind_dn: 'CN=ldap-reader,OU=Service Accounts,DC=example,DC=com',
-      bind_password: 'change-me',
-      base_dn: 'DC=example,DC=com',
-      user_filter: '(&(objectClass=person)(uid={username}))',
-      sync_filter: '(objectClass=person)',
-      username_attr: 'uid',
-      display_name_attr: 'cn',
-      email_attr: 'mail',
-      dept_id_attr: 'ou',
-      dept_name_attr: 'ou',
+      bind_dn: '',
+      bind_password: '',
+      base_dn: '',
+      user_filter: '',
+      sync_filter: '',
+      username_attr: '',
+      display_name_attr: '',
+      email_attr: '',
+      dept_id_attr: '',
+      dept_name_attr: '',
       default_role: 'user',
       sync_limit: 200,
       test_username: ''
     },
     oidc: {
-      issuer: 'https://sso.example.com',
-      authorization_endpoint: 'https://sso.example.com/oauth2/authorize',
-      client_id: 'itam-dashboard',
-      redirect_uri: 'http://127.0.0.1:8000/auth/callback/oidc',
-      scopes: 'openid profile email'
+      issuer: '',
+      authorization_endpoint: '',
+      client_id: '',
+      redirect_uri: '',
+      scopes: ''
     },
-    saml: { sso_url: 'https://sso.example.com/saml/login', entity_id: 'itam-dashboard' },
-    feishu: { app_id: 'cli_xxx', tenant_key: 'tenant_xxx' },
-    wechat_work: { corp_id: 'ww_xxx', agent_id: '1000001' }
+    saml: { sso_url: '', entity_id: '' },
+    feishu: { app_id: '', tenant_key: '' },
+    wechat_work: { corp_id: '', agent_id: '' }
   }
   return samples[type] || {}
 }
@@ -267,8 +269,32 @@ async function testProvider(row) {
   await loadProviders()
 }
 
+async function removeProvider(row) {
+  try {
+    await ElMessageBox.confirm(`确认删除身份源“${row.name}”？删除后不会影响已同步用户。`, '删除身份源', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  await deleteIdentityProvider(row.id)
+  if (providerForm.id === row.id) resetProviderForm()
+  ElMessage.success('身份源已删除')
+  await loadProviders()
+}
+
 async function syncFromProvider(row = null) {
   const provider = row?.id ? row : providers.value.find(item => item.enabled)
+  if (!provider) {
+    ElMessage.warning('请先配置并启用一个身份源')
+    return
+  }
+  if (provider.provider_type !== 'ldap') {
+    ElMessage.warning('当前仅 LDAP 身份源支持从目录同步用户')
+    return
+  }
   const result = await syncUsers({ provider_id: provider?.id })
   ElMessage.success(`同步完成：新增 ${result.created} 人，更新 ${result.updated} 人`)
   await loadUsers()

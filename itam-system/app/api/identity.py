@@ -103,6 +103,15 @@ def update_provider(provider_id: int, payload: IdentityProviderSave, db: Session
     return IdentityService.save_provider(db, payload, provider_id)
 
 
+@router.delete("/identity/providers/{provider_id}")
+def delete_provider(provider_id: int, db: Session = Depends(get_db)):
+    try:
+        IdentityService.delete_provider(db, provider_id)
+        return {"message": "identity provider deleted"}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.post("/identity/providers/{provider_id}/test", response_model=IdentityProviderOut)
 def test_provider(provider_id: int, db: Session = Depends(get_db)):
     try:

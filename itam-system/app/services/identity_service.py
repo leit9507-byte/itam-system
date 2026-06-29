@@ -40,36 +40,7 @@ class IdentityService:
             for item in seed_users:
                 IdentityService.upsert_user(db, item, commit=False)
 
-        if not db.query(IdentityProviderConfig).first():
-            db.add(
-                IdentityProviderConfig(
-                    name="Corporate LDAP",
-                    provider_type="ldap",
-                    enabled=True,
-                    config={
-                        "host": "ldap://ldap.example.com",
-                        "base_dn": "dc=example,dc=com",
-                        "user_filter": "(objectClass=person)",
-                        "username_attr": "sAMAccountName",
-                    },
-                    last_test_status="mock",
-                    last_test_message="Waiting for real LDAP configuration",
-                )
-            )
-            db.add(
-                IdentityProviderConfig(
-                    name="Enterprise OIDC",
-                    provider_type="oidc",
-                    enabled=False,
-                    config={
-                        "issuer": "https://sso.example.com",
-                        "client_id": "itam-dashboard",
-                        "scopes": "openid profile email",
-                    },
-                    last_test_status="mock",
-                    last_test_message="Waiting for real SSO configuration",
-                )
-            )
+        IdentityService.remove_mock_providers(db)
         admin = db.query(UserDirectory).filter(UserDirectory.username == "admin").first()
         if admin and not admin.password_hash:
             admin.password_hash = hash_password("admin")
@@ -198,6 +169,14 @@ class IdentityService:
         return provider
 
     @staticmethod
+    def delete_provider(db: Session, provider_id: int) -> None:
+        provider = db.get(IdentityProviderConfig, provider_id)
+        if not provider:
+            raise ValueError("identity provider not found")
+        db.delete(provider)
+        db.commit()
+
+    @staticmethod
     def test_provider(db: Session, provider_id: int) -> IdentityProviderConfig:
         provider = db.get(IdentityProviderConfig, provider_id)
         if not provider:
@@ -242,7 +221,7 @@ class IdentityService:
 
             payloads = LdapClient.sync_users(provider.config or {}, limit=int((provider.config or {}).get("sync_limit", 200)))
         else:
-            payloads = IdentityService.mock_provider_users(provider)
+            raise ValueError("No users to sync. Configure an LDAP identity source or submit explicit users.")
         created = 0
         updated = 0
         synced: list[UserDirectory] = []
@@ -257,29 +236,14 @@ class IdentityService:
         return created, updated, synced
 
     @staticmethod
-    def mock_provider_users(provider: IdentityProviderConfig | None) -> list[UserUpsert]:
-        source = provider.provider_type if provider else "ldap"
-        return [
-            UserUpsert(
-                user_id=f"{source.upper()}-001",
-                username="zhang.wei",
-                display_name="Zhang Wei",
-                email="zhang.wei@example.com",
-                dept_id="RD",
-                dept_name="R&D Department",
-                role="user",
-                source=source,
-                external_id=f"{source}-001",
-            ),
-            UserUpsert(
-                user_id=f"{source.upper()}-002",
-                username="li.na",
-                display_name="Li Na",
-                email="li.na@example.com",
-                dept_id="FIN",
-                dept_name="Finance Department",
-                role="auditor",
-                source=source,
-                external_id=f"{source}-002",
-            ),
-        ]
+    def remove_mock_providers(db: Session) -> None:
+        rows = (
+            db.query(IdentityProviderConfig)
+            .filter(
+                IdentityProviderConfig.last_test_status == "mock",
+                IdentityProviderConfig.name.in_(["Corporate LDAP", "Enterprise OIDC"]),
+            )
+            .all()
+        )
+        for row in rows:
+            db.delete(row)
