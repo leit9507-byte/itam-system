@@ -17,6 +17,20 @@ export const assetStatuses = [
 export const statusMap = Object.fromEntries(assetStatuses.map(item => [item.value, item]))
 export const editableAssetStatuses = assetStatuses.filter(item => !['pending_purchase', 'pending_acceptance', 'pending_scrap', 'scrapped'].includes(item.value))
 
+export const lifecycleActionMap = {
+  CREATE: '资产建档',
+  BATCH_IMPORT: '批量导入',
+  ASSET_UPDATE: '资产信息更新',
+  STATUS_CHANGE: '状态变更',
+  PURCHASE: '采购入库',
+  PURCHASE_ACCEPTANCE: '采购验收入库',
+  REPAIR_CREATE: '创建维修单',
+  REPAIR_FINISH: '维修完成',
+  SCRAP_REQUEST: '提交报废审批',
+  SCRAP_APPROVE: '报废审批通过',
+  SCRAP_REJECT: '报废审批驳回'
+}
+
 const localLifecycles = {}
 const localInventoryRecords = []
 const scrapRequests = []
@@ -121,13 +135,9 @@ export async function getAssetDetail(assetId) {
   }
 }
 
-export async function getLifecycleList() {
-  const rows = await request.get('/lifecycle/list')
-  return rows.map(row => ({
-    ...row,
-    time: formatDateTime(row.time),
-    description: row.description || `${row.from_status || '-'} -> ${row.to_status || '-'}`
-  }))
+export async function getLifecycleList(params = {}) {
+  const rows = await request.get('/lifecycle/list', { params })
+  return rows.map(mapLifecycle)
 }
 
 export function getInventoryRecords() {
@@ -303,6 +313,52 @@ function mapScrapRequest(row) {
     approver: row.approver || '',
     approved_at: formatDate(row.approved_at)
   }
+}
+
+function mapLifecycle(row) {
+  const fromStatusLabel = statusLabel(row.from_status)
+  const toStatusLabel = statusLabel(row.to_status)
+  return {
+    ...row,
+    time_value: row.time,
+    time: formatDateTime(row.time),
+    type_label: lifecycleActionMap[row.type] || row.type || '-',
+    from_status_label: fromStatusLabel,
+    to_status_label: toStatusLabel,
+    status_change_label: statusChangeLabel(fromStatusLabel, toStatusLabel),
+    description: lifecycleDescription(row, fromStatusLabel, toStatusLabel)
+  }
+}
+
+function statusLabel(status) {
+  return status ? statusMap[status]?.label || status : ''
+}
+
+function statusChangeLabel(fromStatus, toStatus) {
+  if (fromStatus && toStatus) return `${fromStatus} -> ${toStatus}`
+  if (toStatus) return `更新为 ${toStatus}`
+  if (fromStatus) return `原状态 ${fromStatus}`
+  return '-'
+}
+
+function lifecycleDescription(row, fromStatus, toStatus) {
+  const remark = row.description && !String(row.description).includes('->') ? row.description : ''
+  const statusText = statusChangeLabel(fromStatus, toStatus)
+  const action = lifecycleActionMap[row.type] || row.type || '生命周期记录'
+  const base = {
+    CREATE: `新建资产，初始状态为 ${toStatus || '-'}`,
+    BATCH_IMPORT: `批量导入资产，初始状态为 ${toStatus || '-'}`,
+    ASSET_UPDATE: fromStatus !== toStatus && toStatus ? `更新资产信息，状态从 ${fromStatus || '-'} 调整为 ${toStatus}` : '更新资产信息',
+    STATUS_CHANGE: `资产状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
+    PURCHASE: `采购完成并入库，状态为 ${toStatus || '-'}`,
+    PURCHASE_ACCEPTANCE: `采购验收完成并入库，状态为 ${toStatus || '-'}`,
+    REPAIR_CREATE: `创建维修单，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
+    REPAIR_FINISH: `维修完成，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
+    SCRAP_REQUEST: `提交报废审批，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
+    SCRAP_APPROVE: `报废审批通过，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
+    SCRAP_REJECT: `报废审批驳回，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`
+  }[row.type] || `${action}，${statusText}`
+  return remark ? `${base}；备注：${remark}` : base
 }
 
 function groupBy(list, key, emptyLabel) {

@@ -1,3 +1,5 @@
+from datetime import datetime, time
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -10,12 +12,22 @@ router = APIRouter(prefix="/lifecycle", tags=["Lifecycle"])
 
 
 @router.get("/list")
-def list_lifecycles(asset_id: str | None = None, company: str | None = None, db: Session = Depends(get_db)):
+def list_lifecycles(
+    asset_id: str | None = None,
+    company: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    db: Session = Depends(get_db),
+):
     query = db.query(Lifecycle, Asset).join(Asset, Asset.asset_id == Lifecycle.asset_id)
     if asset_id:
         query = query.filter(Lifecycle.asset_id == asset_id)
     if company:
         query = query.filter(Asset.company == company)
+    if start_date:
+        query = query.filter(Lifecycle.timestamp >= datetime.combine(datetime.fromisoformat(start_date).date(), time.min))
+    if end_date:
+        query = query.filter(Lifecycle.timestamp <= datetime.combine(datetime.fromisoformat(end_date).date(), time.max))
     rows = query.order_by(Lifecycle.timestamp.desc()).limit(500).all()
     return [
         {
