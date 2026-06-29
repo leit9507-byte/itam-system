@@ -10,13 +10,19 @@ from app.schemas.supplier import SupplierSave
 
 class SupplierService:
     @staticmethod
-    def list_suppliers(db: Session, keyword: str | None = None) -> list[dict]:
+    def list_suppliers(db: Session, keyword: str | None = None, page: int = 1, page_size: int = 20) -> dict:
         SupplierService.ensure_from_business_data(db)
-        rows = db.query(Supplier).order_by(Supplier.id.desc()).all()
-        if keyword:
-            lowered = keyword.lower()
-            rows = [row for row in rows if lowered in row.name.lower() or lowered in (row.contact or "").lower()]
-        return [SupplierService.with_stats(db, row) for row in rows]
+        query = db.query(Supplier)
+        clean_keyword = (keyword or "").strip()
+        if clean_keyword:
+            pattern = f"%{clean_keyword}%"
+            query = query.filter((Supplier.name.like(pattern)) | (Supplier.contact.like(pattern)))
+        total = query.count()
+        query = query.order_by(Supplier.id.desc())
+        if page_size and page_size > 0:
+            query = query.offset((max(page, 1) - 1) * page_size).limit(page_size)
+        rows = query.all()
+        return {"list": [SupplierService.with_stats(db, row) for row in rows], "total": total, "page": max(page, 1), "page_size": page_size or total}
 
     @staticmethod
     def save_supplier(db: Session, payload: SupplierSave, supplier_id: int | None = None) -> dict:
@@ -57,7 +63,7 @@ class SupplierService:
         return row
 
     @staticmethod
-    def purchase_devices(db: Session, supplier_name: str) -> list[dict]:
+    def purchase_devices(db: Session, supplier_name: str, page: int = 1, page_size: int = 20) -> dict:
         purchases = SupplierService.purchase_query(db, supplier_name).order_by(Purchase.id.desc()).all()
         rows = []
         status_map = {"created": "审批中", "pending_acceptance": "待验收", "received": "已入库"}
@@ -97,7 +103,11 @@ class SupplierService:
                     "dept": asset.dept_id,
                 }
             )
-        return rows
+        total = len(rows)
+        if page_size and page_size > 0:
+            start = (max(page, 1) - 1) * page_size
+            rows = rows[start : start + page_size]
+        return {"list": rows, "total": total, "page": max(page, 1), "page_size": page_size or total}
 
     @staticmethod
     def ensure_from_business_data(db: Session) -> None:

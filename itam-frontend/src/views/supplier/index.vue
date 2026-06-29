@@ -16,7 +16,7 @@
             <el-input v-model="keyword" clearable placeholder="搜索供应商" style="width: 220px" @input="refreshSuppliers" />
           </div>
         </template>
-        <el-table :data="pagedSuppliers" border stripe highlight-current-row @current-change="selectSupplier">
+        <el-table :data="suppliers" border stripe highlight-current-row @current-change="selectSupplier">
           <el-table-column prop="name" label="供应商" min-width="170" />
           <el-table-column prop="level" label="等级" width="90" />
           <el-table-column prop="purchase_count" label="采购单" width="90" />
@@ -30,8 +30,10 @@
             v-model:current-page="supplierPagination.page"
             v-model:page-size="supplierPagination.pageSize"
             :page-sizes="[10, 20, 50, 100]"
-            :total="suppliers.length"
-            layout="total, sizes, prev, pager, next"
+            :total="supplierPagination.total"
+            layout="total, sizes, prev, pager, next, jumper"
+            @size-change="handleSupplierPageSizeChange"
+            @current-change="load"
           />
         </div>
       </el-card>
@@ -48,7 +50,7 @@
           <el-statistic title="采购设备数" :value="currentSupplier.device_count" />
           <el-statistic title="采购金额" :value="currentSupplier.total_amount" prefix="¥" />
         </div>
-        <el-table :data="pagedDevices" border stripe empty-text="请选择供应商或当前供应商暂无采购设备">
+        <el-table :data="devices" border stripe empty-text="请选择供应商或当前供应商暂无采购设备">
           <el-table-column prop="purchase_no" label="采购单号" width="150" />
           <el-table-column prop="product_name" label="设备名称" min-width="170" />
           <el-table-column prop="category" label="类型" width="110" />
@@ -69,8 +71,10 @@
             v-model:current-page="devicePagination.page"
             v-model:page-size="devicePagination.pageSize"
             :page-sizes="[10, 20, 50, 100]"
-            :total="devices.length"
-            layout="total, sizes, prev, pager, next"
+            :total="devicePagination.total"
+            layout="total, sizes, prev, pager, next, jumper"
+            @size-change="handleDevicePageSizeChange"
+            @current-change="loadDevices"
           />
         </div>
       </el-card>
@@ -99,23 +103,23 @@
 
 <script setup>
 import { ElMessage } from 'element-plus'
-import { computed, onMounted, reactive, ref } from 'vue'
-import { getSupplierPurchaseDevices, getSuppliers, saveSupplier } from '../../api/supplier'
+import { onMounted, reactive, ref } from 'vue'
+import { getSupplierPurchaseDevices, getSuppliersPaged, saveSupplier } from '../../api/supplier'
 
 const suppliers = ref([])
 const devices = ref([])
 const currentSupplier = ref(null)
 const keyword = ref('')
 const dialog = reactive({ visible: false, form: defaultForm() })
-const supplierPagination = reactive({ page: 1, pageSize: 20 })
-const devicePagination = reactive({ page: 1, pageSize: 20 })
-const pagedSuppliers = computed(() => paginate(suppliers.value, supplierPagination))
-const pagedDevices = computed(() => paginate(devices.value, devicePagination))
+const supplierPagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const devicePagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
 onMounted(load)
 
 async function load() {
-  suppliers.value = await getSuppliers({ keyword: keyword.value })
+  const result = await getSuppliersPaged({ keyword: keyword.value, page: supplierPagination.page, page_size: supplierPagination.pageSize })
+  suppliers.value = result.list
+  supplierPagination.total = result.total
   if (!currentSupplier.value && suppliers.value.length) await selectSupplier(suppliers.value[0])
 }
 
@@ -123,14 +127,32 @@ async function refreshSuppliers() {
   supplierPagination.page = 1
   currentSupplier.value = null
   devices.value = []
+  devicePagination.total = 0
   await load()
 }
 
 async function selectSupplier(row) {
   if (!row) return
   currentSupplier.value = row
-  devices.value = await getSupplierPurchaseDevices(row.name)
   devicePagination.page = 1
+  await loadDevices()
+}
+
+async function loadDevices() {
+  if (!currentSupplier.value) return
+  const result = await getSupplierPurchaseDevices(currentSupplier.value.name, { page: devicePagination.page, page_size: devicePagination.pageSize })
+  devices.value = result.list
+  devicePagination.total = result.total
+}
+
+function handleSupplierPageSizeChange() {
+  supplierPagination.page = 1
+  load()
+}
+
+function handleDevicePageSizeChange() {
+  devicePagination.page = 1
+  loadDevices()
 }
 
 function openCreate() {
@@ -146,17 +168,13 @@ async function save() {
   await saveSupplier(dialog.form)
   dialog.visible = false
   ElMessage.success('供应商已保存')
+  supplierPagination.page = 1
   currentSupplier.value = null
   await load()
 }
 
 function defaultForm() {
   return { id: '', name: '', contact: '', phone: '', level: '普通', status: '启用' }
-}
-
-function paginate(rows, pagination) {
-  const start = (pagination.page - 1) * pagination.pageSize
-  return rows.slice(start, start + pagination.pageSize)
 }
 </script>
 
