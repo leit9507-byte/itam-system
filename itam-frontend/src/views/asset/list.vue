@@ -209,7 +209,6 @@
               <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
             </el-select>
           </el-form-item>
-          <el-form-item label="仓库名称"><el-input v-model="batch.form.warehouse" placeholder="默认使用入库地址，可按需填写仓库名称" /></el-form-item>
           <el-form-item label="备注"><el-input v-model="batch.form.remark" type="textarea" :rows="3" placeholder="例如：归还入库、调拨回库" /></el-form-item>
         </template>
         <template v-if="batch.type === 'outbound'">
@@ -413,7 +412,6 @@ async function loadLocations() {
 
 function defaultBatchForm() {
   return {
-    warehouse: '',
     outboundTarget: 'user',
     toStatus: 'in_use',
     owner_user_id: '',
@@ -826,7 +824,6 @@ async function submitBatch() {
       ElMessage.warning('请选择或填写入库地址')
       return
     }
-    if (!batch.form.warehouse) batch.form.warehouse = batch.form.location
   }
   if (batch.type === 'outbound') {
     if (batch.form.outboundTarget === 'user' && !batch.form.owner_user_id) {

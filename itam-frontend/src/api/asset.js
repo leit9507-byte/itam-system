@@ -179,7 +179,6 @@ export async function changeAssetStatus(assetId, status, payload = {}) {
     owner_user_id: payload.owner_user_id,
     dept_id: payload.dept_id,
     location: payload.location,
-    warehouse: payload.warehouse,
     remark: payload.remark || ''
   })
   pushLifecycle(assetId, payload.action || '状态变更', status, payload.operator || '资产管理员', payload.remark || `状态更新为${statusMap[status]?.label || status}`)
@@ -187,17 +186,16 @@ export async function changeAssetStatus(assetId, status, payload = {}) {
 }
 
 export async function inboundAsset(assetId, payload = {}) {
-  const inboundAddress = payload.location || payload.warehouse || ''
+  const inboundAddress = payload.location || ''
   const asset = await changeAssetStatus(assetId, 'in_stock', {
     ...payload,
     owner_user_id: '',
     dept_id: '',
     location: inboundAddress,
-    warehouse: inboundAddress,
     action: '入库',
     remark: payload.remark || '资产入库'
   })
-  localInventoryRecords.unshift(buildInventory(assetId, '入库', inboundAddress || asset.location || asset.warehouse || '默认仓库', payload.remark || '资产入库'))
+  localInventoryRecords.unshift(buildInventory(assetId, '入库', inboundAddress || asset.location || '未指定入库地址', payload.remark || '资产入库'))
   return asset
 }
 

@@ -105,7 +105,6 @@ def change_asset_status(asset_id: str, payload: AssetStatusChange, request: Requ
             payload.owner_user_id,
             payload.dept_id,
             payload.location,
-            payload.warehouse,
             payload.remark,
         )
     except AssetValidationError as exc:
