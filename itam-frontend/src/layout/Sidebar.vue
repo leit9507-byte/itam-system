@@ -20,6 +20,7 @@
       </el-sub-menu>
       <el-sub-menu index="/workflow">
         <template #title><el-icon><Tools /></el-icon><span>流程处理</span></template>
+        <el-menu-item index="/todo">待办中心</el-menu-item>
         <el-menu-item index="/repair">维修管理</el-menu-item>
         <el-menu-item index="/scrap">报废审批</el-menu-item>
       </el-sub-menu>

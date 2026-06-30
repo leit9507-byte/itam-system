@@ -431,6 +431,10 @@ function applyWorkflowQuery() {
   const userId = queryValue(route.query.user_id)
   const username = queryValue(route.query.username)
   const name = queryValue(route.query.name) || username || userId
+  const status = queryValue(route.query.status)
+  const keyword = queryValue(route.query.keyword)
+  if (status) filters.status = status
+  if (keyword) filters.keyword = keyword
   if (action === 'assign' && (userId || username)) {
     filters.keyword = ''
     filters.status = 'in_stock'

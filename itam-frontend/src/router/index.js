@@ -18,6 +18,7 @@ const routes = [
       { path: 'purchase', name: 'Purchase', component: () => import('../views/purchase/index.vue'), meta: { title: '采购管理' } },
       { path: 'supplier', name: 'Supplier', component: () => import('../views/supplier/index.vue'), meta: { title: '供应商管理' } },
       { path: 'stocktake', name: 'Stocktake', component: () => import('../views/stocktake/index.vue'), meta: { title: '资产盘点' } },
+      { path: 'todo', name: 'TodoCenter', component: () => import('../views/todo/index.vue'), meta: { title: '待办中心' } },
       { path: 'repair', name: 'Repair', component: () => import('../views/repair/index.vue'), meta: { title: '维修管理' } },
       { path: 'audit', name: 'Audit', component: () => import('../views/audit/index.vue'), meta: { title: '审计中心' } },
       { path: 'risk', redirect: '/audit' },
