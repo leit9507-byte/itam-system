@@ -36,6 +36,15 @@
       </div>
     </el-card>
 
+    <el-alert
+      v-if="workflowHint"
+      :title="workflowHint"
+      type="warning"
+      show-icon
+      class="workflow-alert"
+      @close="workflowHint = ''"
+    />
+
     <el-card shadow="never">
       <el-alert v-if="selected.length" :title="`已选择 ${selected.length} 个资产`" type="info" show-icon :closable="false" class="selection-alert" />
       <el-table :data="assets" border stripe @selection-change="selected = $event">
@@ -333,7 +342,7 @@
 <script setup>
 import { ArrowDown } from '@element-plus/icons-vue'
 import { computed, defineComponent, h, onMounted, reactive, ref, resolveComponent } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { assetStatuses, batchUpdateAssets, createScrapRequest, downloadAssetImportTemplate, editableAssetStatuses, getAssets, importAssets, inboundAsset, outboundAsset, previewAssetsFromExcel, previewAssetsFromText, statusMap, updateAsset } from '../../api/asset'
 import { getCompanies } from '../../api/company'
@@ -344,6 +353,7 @@ import { getSuppliers } from '../../api/supplier'
 import { getUsers } from '../../api/user'
 
 const router = useRouter()
+const route = useRoute()
 const assets = ref([])
 const selected = ref([])
 const categories = ref([])
@@ -359,6 +369,7 @@ const batchEdit = reactive({ visible: false, form: defaultBatchEditForm(), field
 const importDialog = reactive({ visible: false, loading: false, importing: false, content: '', preview: null, result: null })
 const editDialog = reactive({ visible: false, form: {} })
 const repairDialog = reactive({ visible: false, asset: null, assets: [], form: defaultRepairForm() })
+const workflowHint = ref('')
 const assignedStatuses = ['in_use', 'borrowed']
 const unassignedStatuses = ['pending_purchase', 'pending_acceptance', 'in_stock', 'idle', 'ready_scrap']
 
@@ -368,6 +379,7 @@ const activeLocations = computed(() => locations.value.filter(item => item.statu
 const canConfirmImport = computed(() => importDialog.preview?.valid > 0 && !importDialog.preview.errors.length)
 
 onMounted(async () => {
+  applyWorkflowQuery()
   await Promise.all([loadAssets(), loadUsers(), loadTypes(), loadSuppliers(), loadCompanies(), loadLocations()])
 })
 
@@ -408,6 +420,27 @@ async function loadSuppliers() {
 
 async function loadLocations() {
   locations.value = await getLocations()
+}
+
+function queryValue(value) {
+  return Array.isArray(value) ? value[0] : value || ''
+}
+
+function applyWorkflowQuery() {
+  const action = queryValue(route.query.action)
+  const userId = queryValue(route.query.user_id)
+  const username = queryValue(route.query.username)
+  const name = queryValue(route.query.name) || username || userId
+  if (action === 'assign' && (userId || username)) {
+    filters.keyword = ''
+    filters.status = 'in_stock'
+    workflowHint.value = `入职资产分配：请勾选要分配给 ${name} 的在库资产，然后点击“批量出库”，系统会默认带入该员工。`
+  }
+  if (action === 'reclaim' && (userId || username)) {
+    filters.keyword = userId || username
+    filters.status = ''
+    workflowHint.value = `离职资产收回：已按 ${name} 筛选相关资产，请勾选在用、借出或已出库资产后点击“批量入库”。`
+  }
 }
 
 function defaultBatchForm() {
@@ -671,9 +704,33 @@ function openBatch(type) {
   batch.type = type
   batch.assets = target
   Object.assign(batch.form, defaultBatchForm())
-  if (type === 'outbound') changeOutboundTarget(batch.form.outboundTarget)
+  if (type === 'outbound') {
+    changeOutboundTarget(batch.form.outboundTarget)
+    applyAssignUserToBatch()
+  }
+  if (type === 'inbound') applyReclaimRemarkToBatch()
   searchUsers('')
   batch.visible = true
+}
+
+function applyAssignUserToBatch() {
+  if (queryValue(route.query.action) !== 'assign') return
+  const userId = queryValue(route.query.user_id)
+  const username = queryValue(route.query.username)
+  if (!userId && !username) return
+  const user = users.value.find(item => item.user_id === userId || item.username === username)
+  batch.form.outboundTarget = 'user'
+  batch.form.toStatus = 'in_use'
+  batch.form.owner_user_id = user?.user_id || userId || username
+  batch.form.owner_name = user?.display_name || queryValue(route.query.name) || username
+  batch.form.dept_id = user?.dept_name || user?.dept_id || ''
+  batch.form.dept_name = user?.dept_name || user?.dept_id || ''
+  if (!batch.form.remark) batch.form.remark = '入职资产分配'
+}
+
+function applyReclaimRemarkToBatch() {
+  if (queryValue(route.query.action) !== 'reclaim') return
+  if (!batch.form.remark) batch.form.remark = '离职资产收回'
 }
 
 function openSingleInbound(row) {
@@ -915,6 +972,10 @@ function resolveDatePicker() { return resolveComponent('ElDatePicker') }
 <style scoped>
 .selection-alert {
   margin-bottom: 12px;
+}
+
+.workflow-alert {
+  margin-top: -4px;
 }
 
 .asset-name {

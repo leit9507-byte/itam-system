@@ -33,10 +33,12 @@
               <template #default="{ row }">{{ row.last_login_at || '-' }}</template>
             </el-table-column>
             <el-table-column prop="status" label="状态" width="90">
-              <template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ row.status }}</el-tag></template>
+              <template #default="{ row }"><el-tag :type="userStatusType(row.status)">{{ userStatusLabel(row.status) }}</el-tag></template>
             </el-table-column>
-            <el-table-column label="操作" width="90" fixed="right">
+            <el-table-column label="操作" width="230" fixed="right">
               <template #default="{ row }">
+                <el-button v-if="row.status === 'active'" link type="primary" @click="goAssetAssign(row)">资产分配</el-button>
+                <el-button v-if="isInactiveUser(row.status)" link type="warning" @click="goAssetReclaim(row)">离职回收</el-button>
                 <el-button link type="danger" :disabled="row.source !== 'local' || row.username === 'admin'" @click="removeUser(row)">删除</el-button>
               </template>
             </el-table-column>
@@ -206,6 +208,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAppStore } from '../../store'
 import {
@@ -224,6 +227,7 @@ import {
 } from '../../api/user'
 
 const activeTab = ref('users')
+const router = useRouter()
 const store = useAppStore()
 const users = ref([])
 const providers = ref([])
@@ -293,10 +297,49 @@ async function submitLocalUser() {
     ElMessage.warning('请填写账号、姓名和密码')
     return
   }
-  await saveUser(accountDialog.form)
+  const createdUser = await saveUser(accountDialog.form)
   accountDialog.visible = false
-  ElMessage.success('本地账户已创建')
+  try {
+    await ElMessageBox.confirm('入职账户已创建。是否现在进入资产管理，为该员工分配设备？', '入职提醒', {
+      confirmButtonText: '去资产分配',
+      cancelButtonText: '稍后处理',
+      type: 'success'
+    })
+    goAssetAssign(createdUser || accountDialog.form)
+  } catch {
+    ElMessage.success('入职账户已创建，请后续在用户目录中执行资产分配')
+  }
   await loadUsers()
+}
+
+function userStatusLabel(status) {
+  return {
+    active: '在职',
+    disabled: '停用',
+    resigned: '离职',
+    inactive: '停用',
+    locked: '锁定',
+    left: '离职',
+    offboarded: '离职'
+  }[status] || status || '-'
+}
+
+function userStatusType(status) {
+  if (status === 'active') return 'success'
+  if (isInactiveUser(status)) return 'warning'
+  return 'info'
+}
+
+function isInactiveUser(status) {
+  return ['inactive', 'disabled', 'locked', 'resigned', 'left', 'offboarded', '离职', '停用', '禁用'].includes(String(status || '').toLowerCase())
+}
+
+function goAssetAssign(row) {
+  router.push({ path: '/asset/list', query: { action: 'assign', user_id: row.user_id, username: row.username, name: row.display_name } })
+}
+
+function goAssetReclaim(row) {
+  router.push({ path: '/asset/list', query: { action: 'reclaim', user_id: row.user_id, username: row.username, name: row.display_name } })
 }
 
 async function removeUser(row) {
