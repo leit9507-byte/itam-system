@@ -30,6 +30,7 @@ class AssetStatusChange(BaseModel):
     owner_user_id: Optional[str] = None
     dept_id: Optional[str] = None
     location: Optional[str] = None
+    warehouse: Optional[str] = None
     remark: Optional[str] = None
 
 

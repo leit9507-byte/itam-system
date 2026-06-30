@@ -605,6 +605,7 @@ class AssetService:
         owner_user_id: str | None = None,
         dept_id: str | None = None,
         location: str | None = None,
+        warehouse: str | None = None,
         remark: str | None = None,
     ) -> Asset:
         asset = db.get(Asset, asset_id)
@@ -621,6 +622,14 @@ class AssetService:
             asset.dept_id = dept_id
         if location is not None:
             asset.location = location
+        if warehouse is not None:
+            config = dict(asset.config or {})
+            clean_warehouse = AssetService.normalize_blank(warehouse)
+            if clean_warehouse:
+                config["warehouse"] = clean_warehouse
+            else:
+                config.pop("warehouse", None)
+            asset.config = config
         asset.status = to_status
         AssetService.validate_status_owner(asset, status_changed=to_status != from_status)
         lifecycle_remark = AssetService.inventory_lifecycle_remark(
@@ -631,6 +640,7 @@ class AssetService:
             asset.owner_user_id,
             user,
             asset.location,
+            (asset.config or {}).get("warehouse"),
         )
         LifecycleService.record(db, asset.asset_id, "STATUS_CHANGE", from_status, to_status, operator, lifecycle_remark)
         db.commit()
@@ -652,6 +662,7 @@ class AssetService:
         owner_user_id: str | None,
         owner_user: UserDirectory | None,
         location: str | None = None,
+        warehouse: str | None = None,
     ) -> str | None:
         base = AssetService.normalize_blank(remark)
         labels = {
@@ -663,6 +674,8 @@ class AssetService:
         if to_status not in labels:
             return base or None
         key, value = labels[to_status]
+        if to_status == "in_stock":
+            key, value = "入库地址", AssetService.normalize_blank(warehouse) or AssetService.normalize_blank(location) or "-"
         if to_status == "out_stock" and not AssetService.normalize_blank(owner_user_id):
             key, value = "公用设备位置", AssetService.normalize_blank(location) or "-"
         detail = f"{key}: {value}"

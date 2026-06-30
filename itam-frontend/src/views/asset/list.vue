@@ -204,7 +204,12 @@
       <el-alert :title="`本次将处理 ${batch.assets.length} 个资产`" type="info" show-icon :closable="false" />
       <el-form :model="batch.form" label-width="110px" class="batch-form">
         <template v-if="batch.type === 'inbound'">
-          <el-form-item label="入库仓库"><el-input v-model="batch.form.warehouse" /></el-form-item>
+          <el-form-item label="入库地址" required>
+            <el-select v-model="batch.form.location" filterable clearable allow-create default-first-option style="width: 100%" placeholder="选择或填写入库地址">
+              <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="仓库名称"><el-input v-model="batch.form.warehouse" placeholder="默认使用入库地址，可按需填写仓库名称" /></el-form-item>
           <el-form-item label="备注"><el-input v-model="batch.form.remark" type="textarea" :rows="3" placeholder="例如：归还入库、调拨回库" /></el-form-item>
         </template>
         <template v-if="batch.type === 'outbound'">
@@ -816,6 +821,13 @@ function importErrorMessage(error, fallback) {
 
 async function submitBatch() {
   if (!validateBatchAssets(batch.type, batch.assets)) return
+  if (batch.type === 'inbound') {
+    if (!batch.form.location) {
+      ElMessage.warning('请选择或填写入库地址')
+      return
+    }
+    if (!batch.form.warehouse) batch.form.warehouse = batch.form.location
+  }
   if (batch.type === 'outbound') {
     if (batch.form.outboundTarget === 'user' && !batch.form.owner_user_id) {
       ElMessage.warning('请选择领用人')
