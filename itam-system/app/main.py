@@ -8,6 +8,7 @@ from app.api import asset, audit, company, files, identity, lifecycle, location,
 from app.core.database import Base, engine
 from app.core.schema_compat import ensure_compatible_schema
 from app.core.security import AuthMiddleware
+from app.services.sync_scheduler import start_daily_ldap_sync
 
 
 def init_database_with_retry(retries: int = 20, delay: float = 2.0) -> None:
@@ -58,6 +59,16 @@ def create_app() -> FastAPI:
     @app.get("/")
     def health_check():
         return {"ok": True, "service": "itam-system"}
+
+    @app.on_event("startup")
+    async def start_background_jobs():
+        app.state.ldap_sync_task = start_daily_ldap_sync()
+
+    @app.on_event("shutdown")
+    async def stop_background_jobs():
+        task = getattr(app.state, "ldap_sync_task", None)
+        if task:
+            task.cancel()
 
     return app
 

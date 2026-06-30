@@ -74,11 +74,19 @@ def list_users(db: Session = Depends(get_db)):
     return IdentityService.list_users(db)
 
 
+@router.post("/users/save", response_model=UserOut)
+def save_user(payload: UserUpsert, db: Session = Depends(get_db)):
+    try:
+        return IdentityService.save_local_user(db, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/users/sync", response_model=SyncUsersResponse)
 def sync_users(payload: SyncUsersRequest, db: Session = Depends(get_db)):
     try:
-        created, updated, users = IdentityService.sync_users(db, payload.provider_id, payload.users)
-        return {"created": created, "updated": updated, "users": users}
+        created, updated, offboarded, users = IdentityService.sync_users(db, payload.provider_id, payload.users)
+        return {"created": created, "updated": updated, "offboarded": offboarded, "users": users}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

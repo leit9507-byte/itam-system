@@ -12,6 +12,10 @@ export function getUsers() {
   return request.get('/users/list')
 }
 
+export function saveUser(payload) {
+  return request.post('/users/save', payload)
+}
+
 export function syncUsers(payload = {}) {
   return request.post('/users/sync', payload)
 }

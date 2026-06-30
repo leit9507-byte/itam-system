@@ -5,7 +5,10 @@
         <h2 class="page-title">权限与身份源</h2>
         <p class="page-subtitle">统一管理本地账号、LDAP/OIDC/SAML 登录、账号锁定和 RBAC 权限</p>
       </div>
-      <el-button type="primary" @click="syncFromProvider">从身份源同步用户</el-button>
+      <div class="header-actions">
+        <el-button @click="openLocalUserDialog">新增本地账户</el-button>
+        <el-button type="primary" @click="syncFromProvider">从身份源同步用户</el-button>
+      </div>
     </div>
 
     <el-tabs v-model="activeTab">
@@ -164,6 +167,35 @@
         </el-card>
       </el-tab-pane>
     </el-tabs>
+
+    <el-dialog v-model="accountDialog.visible" title="新增本地账户" width="560px">
+      <el-form :model="accountDialog.form" label-width="90px">
+        <el-form-item label="账号" required><el-input v-model="accountDialog.form.username" /></el-form-item>
+        <el-form-item label="姓名" required><el-input v-model="accountDialog.form.display_name" /></el-form-item>
+        <el-form-item label="密码" required><el-input v-model="accountDialog.form.password" type="password" show-password /></el-form-item>
+        <el-form-item label="邮箱"><el-input v-model="accountDialog.form.email" /></el-form-item>
+        <el-form-item label="部门编码"><el-input v-model="accountDialog.form.dept_id" /></el-form-item>
+        <el-form-item label="部门名称"><el-input v-model="accountDialog.form.dept_name" /></el-form-item>
+        <el-form-item label="角色">
+          <el-select v-model="accountDialog.form.role" style="width: 100%">
+            <el-option label="普通用户" value="user" />
+            <el-option label="审计员" value="auditor" />
+            <el-option label="管理员" value="admin" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="accountDialog.form.status" style="width: 100%">
+            <el-option label="在职" value="active" />
+            <el-option label="停用" value="disabled" />
+            <el-option label="离职" value="resigned" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="accountDialog.visible = false">取消</el-button>
+        <el-button type="primary" @click="submitLocalUser">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -178,6 +210,7 @@ import {
   getRolePermissions,
   getUsers,
   login,
+  saveUser,
   startSso,
   syncUsers,
   testIdentityProvider,
@@ -193,6 +226,7 @@ const loginResult = ref(null)
 const providerConfigText = ref('')
 const providerForm = reactive(defaultProviderForm())
 const loginForm = reactive({ provider: 'local', username: 'admin', password: 'admin' })
+const accountDialog = reactive({ visible: false, form: defaultLocalUserForm() })
 const userPagination = reactive({ page: 1, pageSize: 20 })
 const permissionPagination = reactive({ page: 1, pageSize: 20 })
 const providerPagination = reactive({ page: 1, pageSize: 20 })
@@ -228,6 +262,35 @@ async function loadPermissions() {
 
 function defaultProviderForm() {
   return { id: null, name: '', provider_type: 'ldap', enabled: true }
+}
+
+function defaultLocalUserForm() {
+  return {
+    username: '',
+    display_name: '',
+    password: '',
+    email: '',
+    dept_id: '',
+    dept_name: '',
+    role: 'user',
+    status: 'active'
+  }
+}
+
+function openLocalUserDialog() {
+  Object.assign(accountDialog.form, defaultLocalUserForm())
+  accountDialog.visible = true
+}
+
+async function submitLocalUser() {
+  if (!accountDialog.form.username.trim() || !accountDialog.form.display_name.trim() || !accountDialog.form.password) {
+    ElMessage.warning('请填写账号、姓名和密码')
+    return
+  }
+  await saveUser(accountDialog.form)
+  accountDialog.visible = false
+  ElMessage.success('本地账户已创建')
+  await loadUsers()
 }
 
 function defaultConfig(type = 'ldap') {
@@ -339,7 +402,7 @@ async function syncFromProvider(row = null) {
     return
   }
   const result = await syncUsers({ provider_id: provider?.id })
-  ElMessage.success(`同步完成：新增 ${result.created} 人，更新 ${result.updated} 人`)
+  ElMessage.success(`同步完成：新增 ${result.created} 人，更新 ${result.updated} 人，标记离职 ${result.offboarded || 0} 人`)
   await loadUsers()
 }
 
@@ -362,6 +425,13 @@ function paginate(rows, pagination) {
 </script>
 
 <style scoped>
+.header-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .provider-grid {
   display: grid;
   grid-template-columns: minmax(400px, 0.9fr) minmax(520px, 1.1fr);

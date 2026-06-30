@@ -107,6 +107,23 @@ class IdentityService:
         return user, created
 
     @staticmethod
+    def save_local_user(db: Session, payload: UserUpsert) -> UserDirectory:
+        IdentityService.ensure_seed(db)
+        clean_username = payload.username.strip()
+        if not clean_username:
+            raise ValueError("username is required")
+        existed = db.query(UserDirectory).filter(UserDirectory.username == clean_username).first()
+        if existed and existed.source != "local":
+            raise ValueError("username already exists in external identity source")
+        if not existed and not payload.password:
+            raise ValueError("password is required for new local user")
+        user, _ = IdentityService.upsert_user(
+            db,
+            payload.model_copy(update={"username": clean_username, "source": "local", "external_id": None}),
+        )
+        return user
+
+    @staticmethod
     def authenticate(db: Session, username: str, password: str, provider: str = "local") -> dict:
         IdentityService.ensure_seed(db)
         if provider == "ldap":
@@ -220,33 +237,61 @@ class IdentityService:
         return provider
 
     @staticmethod
-    def sync_users(db: Session, provider_id: int | None, users: list[UserUpsert]) -> tuple[int, int, list[UserDirectory]]:
+    def sync_users(db: Session, provider_id: int | None, users: list[UserUpsert]) -> tuple[int, int, int, list[UserDirectory]]:
         IdentityService.ensure_seed(db)
         provider = db.get(IdentityProviderConfig, provider_id) if provider_id else None
+        source = provider.provider_type if provider else None
+        sync_limit = int((provider.config or {}).get("sync_limit", 200)) if provider else 200
         if users:
             payloads = users
         elif provider and provider.provider_type == "ldap":
             from app.services.sso_service import LdapClient
 
-            payloads = LdapClient.sync_users(provider.config or {}, limit=int((provider.config or {}).get("sync_limit", 200)))
+            payloads = LdapClient.sync_users(provider.config or {}, limit=sync_limit)
         elif provider and provider.provider_type == "feishu":
             from app.services.sso_service import FeishuClient
 
-            payloads = FeishuClient.sync_users(provider.config or {}, limit=int((provider.config or {}).get("sync_limit", 200)))
+            payloads = FeishuClient.sync_users(provider.config or {}, limit=sync_limit)
         else:
             raise ValueError("No users to sync. Configure an LDAP or Feishu identity source, or submit explicit users.")
         created = 0
         updated = 0
+        offboarded = 0
         synced: list[UserDirectory] = []
+        synced_external_ids = {item.external_id for item in payloads if item.external_id}
+        synced_usernames = {item.username for item in payloads if item.username}
         for payload in payloads:
             user, was_created = IdentityService.upsert_user(db, payload, commit=False)
             created += 1 if was_created else 0
             updated += 0 if was_created else 1
             synced.append(user)
+        if source == "ldap" and len(payloads) < sync_limit:
+            active_ldap_users = db.query(UserDirectory).filter(UserDirectory.source == "ldap", UserDirectory.status == "active").all()
+            for user in active_ldap_users:
+                if user.external_id in synced_external_ids or user.username in synced_usernames:
+                    continue
+                user.status = "resigned"
+                user.last_synced_at = datetime.utcnow()
+                offboarded += 1
         db.commit()
         for user in synced:
             db.refresh(user)
-        return created, updated, synced
+        return created, updated, offboarded, synced
+
+    @staticmethod
+    def sync_enabled_ldap_providers(db: Session) -> tuple[int, int, int]:
+        providers = (
+            db.query(IdentityProviderConfig)
+            .filter(IdentityProviderConfig.provider_type == "ldap", IdentityProviderConfig.enabled.is_(True))
+            .all()
+        )
+        created = updated = offboarded = 0
+        for provider in providers:
+            provider_created, provider_updated, provider_offboarded, _ = IdentityService.sync_users(db, provider.id, [])
+            created += provider_created
+            updated += provider_updated
+            offboarded += provider_offboarded
+        return created, updated, offboarded
 
     @staticmethod
     def remove_mock_providers(db: Session) -> None:

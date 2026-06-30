@@ -96,4 +96,5 @@ class SyncUsersRequest(BaseModel):
 class SyncUsersResponse(BaseModel):
     created: int
     updated: int
+    offboarded: int = 0
     users: list[UserOut]
