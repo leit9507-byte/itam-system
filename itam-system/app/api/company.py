@@ -3,6 +3,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -78,7 +79,6 @@ def list_companies(db: Session = Depends(get_db)):
                 "scrapped_count": status_counter.get("scrapped", 0),
                 "pending_scrap_count": status_counter.get("pending_scrap", 0),
                 "status_distribution": [{"name": status_label(key), "value": value} for key, value in status_counter.items()],
-                "assets": [asset_row(asset) for asset in items],
             }
         )
     unset_items = groups.get(DEFAULT_COMPANY, [])
@@ -104,10 +104,46 @@ def list_companies(db: Session = Depends(get_db)):
                 "scrapped_count": status_counter.get("scrapped", 0),
                 "pending_scrap_count": status_counter.get("pending_scrap", 0),
                 "status_distribution": [{"name": status_label(key), "value": value} for key, value in status_counter.items()],
-                "assets": [asset_row(asset) for asset in unset_items],
             }
         )
     return sorted(rows, key=lambda item: item["asset_count"], reverse=True)
+
+
+@router.get("/assets")
+def list_company_assets(
+    company: str | None = None,
+    keyword: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+    db: Session = Depends(get_db),
+):
+    ensure_company_data(db)
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 100)
+    company_name = normalize_company(company)
+    query = db.query(Asset)
+    if company_name == DEFAULT_COMPANY:
+        query = query.filter(or_(Asset.company.is_(None), Asset.company == ""))
+    else:
+        query = query.filter(Asset.company == company_name)
+    if keyword:
+        pattern = f"%{keyword.strip()}%"
+        if keyword.strip():
+            query = query.filter(
+                or_(
+                    Asset.asset_id.like(pattern),
+                    Asset.name.like(pattern),
+                    Asset.category.like(pattern),
+                    Asset.brand.like(pattern),
+                    Asset.model.like(pattern),
+                    Asset.sn.like(pattern),
+                    Asset.dept_id.like(pattern),
+                    Asset.purchase_supplier_name.like(pattern),
+                )
+            )
+    total = query.count()
+    rows = query.order_by(Asset.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return {"list": [asset_row(asset) for asset in rows], "total": total, "page": page, "page_size": page_size}
 
 
 @router.post("/save")

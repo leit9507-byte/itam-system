@@ -12,9 +12,25 @@ export async function getCompanies() {
     repair_count: Number(row.repair_count || 0),
     ready_scrap_count: Number(row.ready_scrap_count || 0),
     scrapped_count: Number(row.scrapped_count || 0),
-    pending_scrap_count: Number(row.pending_scrap_count || 0),
-    assets: row.assets || []
+    pending_scrap_count: Number(row.pending_scrap_count || 0)
   }))
+}
+
+export async function getCompanyAssets(params = {}) {
+  const result = await request.get('/company/assets', {
+    params: {
+      company: params.company || undefined,
+      keyword: params.keyword || undefined,
+      page: params.page || undefined,
+      page_size: params.page_size ?? params.pageSize ?? undefined
+    }
+  })
+  return {
+    list: result.list || [],
+    total: Number(result.total || 0),
+    page: Number(result.page || params.page || 1),
+    pageSize: Number(result.page_size || params.page_size || params.pageSize || 20)
+  }
 }
 
 export function createCompany(payload) {

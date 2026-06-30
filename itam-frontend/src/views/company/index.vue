@@ -71,7 +71,7 @@
           <el-tag v-if="currentCompany" type="success">{{ currentCompany.asset_count }} 台资产</el-tag>
         </div>
       </template>
-      <el-table :data="pagedCurrentAssets" border stripe empty-text="请选择一个公司查看资产明细">
+      <el-table v-loading="assetLoading" :data="currentAssets" border stripe empty-text="请选择一个公司查看资产明细">
         <el-table-column prop="asset_id" label="资产ID" width="130" />
         <el-table-column prop="name" label="资产名称" min-width="170" />
         <el-table-column prop="category" label="类型" width="110" />
@@ -95,8 +95,10 @@
           v-model:current-page="assetPagination.page"
           v-model:page-size="assetPagination.pageSize"
           :page-sizes="[10, 20, 50, 100]"
-          :total="currentAssets.length"
+          :total="assetTotal"
           layout="total, sizes, prev, pager, next, jumper"
+          @current-change="loadCompanyAssets"
+          @size-change="handleAssetPageSizeChange"
         />
       </div>
     </el-card>
@@ -131,10 +133,13 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { statusMap } from '../../api/asset'
-import { createCompany, deleteCompany, getCompanies, updateCompany } from '../../api/company'
+import { createCompany, deleteCompany, getCompanies, getCompanyAssets, updateCompany } from '../../api/company'
 
 const companies = ref([])
 const currentCompany = ref(null)
+const currentAssets = ref([])
+const assetTotal = ref(0)
+const assetLoading = ref(false)
 const keyword = ref('')
 const dialog = reactive({ visible: false, form: defaultForm() })
 const companyPagination = reactive({ page: 1, pageSize: 20 })
@@ -144,8 +149,7 @@ const filteredCompanies = computed(() => {
   const text = keyword.value.trim().toLowerCase()
   if (!text) return companies.value
   return companies.value.filter(company => {
-    const assetText = company.assets.map(asset => [asset.asset_id, asset.name, asset.dept_id, asset.purchase_supplier_name].join(' ')).join(' ')
-    return [company.name, company.code, company.contact, assetText].join(' ').toLowerCase().includes(text)
+    return [company.name, company.code, company.contact].join(' ').toLowerCase().includes(text)
   })
 })
 
@@ -155,9 +159,7 @@ const summary = computed(() => ({
   inUse: filteredCompanies.value.reduce((sum, item) => sum + item.in_use_count, 0)
 }))
 
-const currentAssets = computed(() => currentCompany.value?.assets || [])
 const pagedCompanies = computed(() => paginate(filteredCompanies.value, companyPagination))
-const pagedCurrentAssets = computed(() => paginate(currentAssets.value, assetPagination))
 
 onMounted(load)
 
@@ -165,6 +167,8 @@ async function load() {
   companies.value = await getCompanies()
   if (!currentCompany.value) currentCompany.value = companies.value[0] || null
   else currentCompany.value = companies.value.find(item => item.id === currentCompany.value.id || item.name === currentCompany.value.name) || companies.value[0] || null
+  assetPagination.page = 1
+  await loadCompanyAssets()
 }
 
 function defaultForm() {
@@ -211,9 +215,36 @@ async function removeCompany(row) {
   await load()
 }
 
-function selectCompany(row) {
+async function selectCompany(row) {
   currentCompany.value = row
   assetPagination.page = 1
+  await loadCompanyAssets()
+}
+
+async function loadCompanyAssets() {
+  if (!currentCompany.value) {
+    currentAssets.value = []
+    assetTotal.value = 0
+    return
+  }
+  assetLoading.value = true
+  try {
+    const result = await getCompanyAssets({
+      company: currentCompany.value.name,
+      keyword: keyword.value,
+      page: assetPagination.page,
+      pageSize: assetPagination.pageSize
+    })
+    currentAssets.value = result.list
+    assetTotal.value = result.total
+  } finally {
+    assetLoading.value = false
+  }
+}
+
+async function handleAssetPageSizeChange() {
+  assetPagination.page = 1
+  await loadCompanyAssets()
 }
 
 function formatValue(value) {
@@ -222,6 +253,8 @@ function formatValue(value) {
 
 function resetCompanyPage() {
   companyPagination.page = 1
+  assetPagination.page = 1
+  loadCompanyAssets()
 }
 
 function paginate(rows, pagination) {
