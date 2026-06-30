@@ -82,6 +82,17 @@ def save_user(payload: UserUpsert, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.delete("/users/{user_id}")
+def delete_user(user_id: str, db: Session = Depends(get_db)):
+    try:
+        IdentityService.delete_local_user(db, user_id)
+        return {"message": "user deleted"}
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 404 if message == "user not found" else 400
+        raise HTTPException(status_code=status_code, detail=message) from exc
+
+
 @router.post("/users/sync", response_model=SyncUsersResponse)
 def sync_users(payload: SyncUsersRequest, db: Session = Depends(get_db)):
     try:

@@ -35,6 +35,11 @@
             <el-table-column prop="status" label="状态" width="90">
               <template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'">{{ row.status }}</el-tag></template>
             </el-table-column>
+            <el-table-column label="操作" width="90" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="danger" :disabled="row.source !== 'local' || row.username === 'admin'" @click="removeUser(row)">删除</el-button>
+              </template>
+            </el-table-column>
           </el-table>
           <div class="pagination-bar">
             <el-pagination
@@ -205,6 +210,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAppStore } from '../../store'
 import {
   createIdentityProvider,
+  deleteUser,
   deleteIdentityProvider,
   getIdentityProviders,
   getRolePermissions,
@@ -290,6 +296,29 @@ async function submitLocalUser() {
   await saveUser(accountDialog.form)
   accountDialog.visible = false
   ElMessage.success('本地账户已创建')
+  await loadUsers()
+}
+
+async function removeUser(row) {
+  if (row.source !== 'local') {
+    ElMessage.warning('LDAP / 飞书同步账户不能手动删除，请通过身份源同步标记离职')
+    return
+  }
+  if (row.username === 'admin') {
+    ElMessage.warning('内置管理员账户不能删除')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`确定删除账户“${row.display_name || row.username}”吗？`, '删除账户', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
+  await deleteUser(row.user_id)
+  ElMessage.success('账户已删除')
   await loadUsers()
 }
 

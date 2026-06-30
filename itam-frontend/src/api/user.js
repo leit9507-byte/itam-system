@@ -16,6 +16,10 @@ export function saveUser(payload) {
   return request.post('/users/save', payload)
 }
 
+export function deleteUser(userId) {
+  return request.delete(`/users/${encodeURIComponent(userId)}`)
+}
+
 export function syncUsers(payload = {}) {
   return request.post('/users/sync', payload)
 }

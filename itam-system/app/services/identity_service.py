@@ -124,6 +124,23 @@ class IdentityService:
         return user
 
     @staticmethod
+    def delete_local_user(db: Session, user_id: str) -> None:
+        IdentityService.ensure_seed(db)
+        user = db.get(UserDirectory, user_id)
+        if not user:
+            raise ValueError("user not found")
+        if user.source != "local":
+            raise ValueError("only local users can be deleted manually")
+        if user.username == "admin":
+            raise ValueError("built-in admin user cannot be deleted")
+        if user.role == "admin":
+            admin_count = db.query(UserDirectory).filter(UserDirectory.source == "local", UserDirectory.role == "admin").count()
+            if admin_count <= 1:
+                raise ValueError("cannot delete the last local admin user")
+        db.delete(user)
+        db.commit()
+
+    @staticmethod
     def authenticate(db: Session, username: str, password: str, provider: str = "local") -> dict:
         IdentityService.ensure_seed(db)
         if provider == "ldap":
