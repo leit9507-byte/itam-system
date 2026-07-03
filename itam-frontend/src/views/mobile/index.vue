@@ -32,6 +32,7 @@
       </div>
       <el-empty v-else description="暂无待办事项" :image-size="64" />
     </el-card>
+    <TodoAssetActions ref="todoAssetActionsRef" @completed="loadTodos" />
 
     <section class="mode-strip">
       <button v-for="item in modes" :key="item.value" type="button" class="mode-card" :class="{ active: mode === item.value }" @click="selectMode(item.value)">
@@ -51,6 +52,10 @@
       <el-select v-model="form.task_id" placeholder="请选择后台创建的盘点任务" style="width: 100%" @change="selectTask">
         <el-option v-for="task in stocktakeTasks" :key="task.id" :label="`${task.name} / ${task.status} / ${task.checked || 0}/${task.total || 0}`" :value="task.id" />
       </el-select>
+      <div v-if="selectedTask" class="task-progress">
+        <span>{{ selectedTask.checked || 0 }}/{{ selectedTask.total || 0 }}</span>
+        <el-progress :percentage="stocktakeProgress" />
+      </div>
       <p class="tip">盘点必须先在后台「资产盘点」创建任务，移动端只负责扫码执行任务明细。</p>
     </el-card>
 
@@ -111,14 +116,8 @@
           <el-form-item label="盘点任务">
             <el-input :model-value="selectedTask ? `${selectedTask.name} (${selectedTask.id})` : '未选择任务'" disabled />
           </el-form-item>
-          <el-form-item label="盘点结果">
-            <el-segmented v-model="form.stocktake_result" :options="['正常', '盘盈', '盘亏', '位置不符', '状态不符']" />
-          </el-form-item>
-          <el-form-item label="实际位置">
-            <el-select v-model="form.location" filterable clearable allow-create default-first-option placeholder="选择或填写实际位置" style="width: 100%">
-              <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
-            </el-select>
-          </el-form-item>
+          <el-alert class="inline-alert" title="扫码读取到任务内资产后，系统会按账面位置自动登记为正常；无需手动填写实盘位置。" type="success" show-icon :closable="false" />
+          <el-alert v-if="currentStocktakeItem?.checked_at" class="inline-alert" :title="`该资产已登记：${currentStocktakeItem.result} / ${currentStocktakeItem.checked_at}`" type="info" show-icon :closable="false" />
         </template>
 
         <template v-if="mode === 'inbound'">
@@ -218,6 +217,8 @@ import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
 import { getStocktakeTasks, startStocktakeTask, submitStocktakeItem } from '../../api/stocktake'
 import { getTodoItems } from '../../api/todo'
+import TodoAssetActions from '../../components/TodoAssetActions.vue'
+import { assetCodeCandidates, assetCodeMatches, parseAssetCode } from '../../utils/assetCode'
 import { isFeishuClient, scanByFeishuSdk } from '../../utils/feishuSdk'
 
 const router = useRouter()
@@ -244,11 +245,17 @@ const faultTypes = ref([])
 const logs = ref([])
 const todos = ref([])
 const todoLoading = ref(false)
+const todoAssetActionsRef = ref(null)
 const stocktakeTasks = ref([])
 const form = reactive(defaultForm())
 
 const currentMode = computed(() => modes.find(item => item.value === mode.value) || modes[0])
 const selectedTask = computed(() => stocktakeTasks.value.find(task => task.id === form.task_id))
+const currentStocktakeItem = computed(() => {
+  if (!selectedTask.value || !asset.value) return null
+  return selectedTask.value.items.find(item => item.asset_id === asset.value.asset_id || item.sn === asset.value.sn) || null
+})
+const stocktakeProgress = computed(() => (selectedTask.value?.total ? Math.round((Number(selectedTask.value.checked || 0) / Number(selectedTask.value.total || 0)) * 100) : 0))
 const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
 const activeFaultTypes = computed(() => faultTypes.value.filter(item => item.enabled !== '停用'))
 const recentCodes = computed(() => [...new Set(logs.value.map(item => item.asset_id).filter(Boolean))].slice(0, 4))
@@ -312,7 +319,8 @@ function priorityLabel(priority) {
   return ({ high: '高', medium: '中', low: '低' })[priority] || '-'
 }
 
-function goTodo(item) {
+async function goTodo(item) {
+  if (await todoAssetActionsRef.value?.handle(item)) return
   router.push({ path: item.target_path || '/todo', query: item.target_query || {} })
 }
 
@@ -382,31 +390,29 @@ function handleScanResult(value) {
   loadAsset()
 }
 
-function parseAssetCode(value) {
-  const text = String(value || '').trim()
-  if (!text) return ''
-  if (text.includes('ITAM-ASSET:')) return text.split('ITAM-ASSET:').pop().trim()
-  try {
-    const url = new URL(text)
-    return url.searchParams.get('asset_id') || url.pathname.split('/').filter(Boolean).pop() || text
-  } catch {
-    return text
-  }
-}
-
 async function loadAsset() {
   const code = parseAssetCode(assetCode.value)
   if (!code) return ElMessage.warning('请先扫码或输入资产编号')
+  const candidates = assetCodeCandidates(assetCode.value)
   if (mode.value === 'stocktake') {
     if (!selectedTask.value) return ElMessage.warning('请先选择后台创建的盘点任务')
-    const taskItem = selectedTask.value.items.find(item => item.asset_id === code || item.sn === code)
+    const taskItem = selectedTask.value.items.find(item => assetCodeMatches(item, assetCode.value))
     if (!taskItem) {
       asset.value = null
       return ElMessage.error('该资产不在当前盘点任务范围内')
     }
+    asset.value = taskItemToAsset(taskItem)
+    form.location = taskItem.book_location || ''
+    form.stocktake_result = '正常'
+    ElMessage[taskItem.checked_at ? 'info' : 'success'](taskItem.checked_at ? '该资产已登记，可重新扫码确认' : '已读取盘点资产')
+    return
   }
-  const { list } = await getAssets({ keyword: code })
-  const found = list.find(item => item.asset_id === code || item.sn === code) || list[0]
+  let found = null
+  for (const candidate of candidates) {
+    const { list } = await getAssets({ keyword: candidate })
+    found = list.find(item => assetCodeMatches(item, candidate)) || list[0]
+    if (found) break
+  }
   if (!found) {
     asset.value = null
     return ElMessage.error('未找到资产')
@@ -472,16 +478,42 @@ async function submitWork() {
 
 async function submitStocktake() {
   if (!selectedTask.value) return ElMessage.warning('请先选择盘点任务')
+  if (!currentStocktakeItem.value) return ElMessage.error('该资产不在当前盘点任务范围内')
   if (selectedTask.value.status === '待开始') await startStocktakeTask(selectedTask.value.id)
-  await submitStocktakeItem(selectedTask.value.id, asset.value.asset_id, {
-    actual_location: form.location,
-    result: form.stocktake_result,
+  const saved = await submitStocktakeItem(selectedTask.value.id, asset.value.asset_id, {
+    actual_location: currentStocktakeItem.value.book_location || '',
+    result: '正常',
     checker: '移动端扫码',
     remark: form.remark
   })
-  addLog('扫码盘点', `${selectedTask.value.id} / ${form.stocktake_result}`)
-  await loadStocktakeTasks()
-  ElMessage.success('盘点结果已提交到任务明细')
+  applyStocktakeItem(saved)
+  addLog('扫码盘点', `${selectedTask.value.id} / 正常`)
+  ElMessage.success('扫码确认完成')
+}
+
+function taskItemToAsset(item) {
+  return {
+    asset_id: item.asset_id,
+    name: item.name,
+    sn: item.sn,
+    status: item.book_status,
+    location: item.book_location,
+    warehouse: item.book_location,
+    category: '',
+    brand: '',
+    model: ''
+  }
+}
+
+function applyStocktakeItem(saved) {
+  const task = selectedTask.value
+  if (!task) return
+  const item = task.items.find(row => row.asset_id === saved.asset_id)
+  if (item) Object.assign(item, saved)
+  task.checked = task.items.filter(row => row.result !== '未盘').length
+  task.abnormal = task.items.filter(row => ['盘盈', '盘亏', '位置不符', '状态不符'].includes(row.result)).length
+  if (task.status !== '已完成' && task.total && task.checked === task.total) task.status = '待确认'
+  else if (task.status === '待开始') task.status = '进行中'
 }
 
 async function submitInbound() {
@@ -648,6 +680,21 @@ function statusType(value) {
 
 .todo-card :deep(.el-card__body) {
   padding-top: 10px;
+}
+
+.task-progress {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.inline-alert {
+  margin-bottom: 12px;
 }
 
 .mobile-todo-list {

@@ -10,6 +10,10 @@ export async function getStocktakeTasks(filters = {}) {
 
 export async function getStocktakeDashboard(filters = {}) {
   const visibleTasks = await getStocktakeTasks(filters)
+  return buildStocktakeDashboard(visibleTasks)
+}
+
+export function buildStocktakeDashboard(visibleTasks = []) {
   const allItems = visibleTasks.flatMap(task => task.items)
   const total = allItems.length
   const checked = allItems.filter(item => item.result !== RESULT_UNCHECKED).length

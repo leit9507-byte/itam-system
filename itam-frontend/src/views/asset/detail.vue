@@ -29,6 +29,7 @@
             <el-descriptions-item label="位置">{{ detail.asset?.location || '-' }}</el-descriptions-item>
             <el-descriptions-item label="仓库">{{ detail.asset?.warehouse || '-' }}</el-descriptions-item>
             <el-descriptions-item label="价值">¥{{ Number(detail.asset?.price || 0).toLocaleString() }}</el-descriptions-item>
+            <el-descriptions-item label="备注" :span="2">{{ detail.asset?.remark || '-' }}</el-descriptions-item>
           </el-descriptions>
         </el-card>
 

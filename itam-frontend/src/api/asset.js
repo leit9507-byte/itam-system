@@ -134,7 +134,8 @@ export async function updateAsset(assetId, payload) {
     status: payload.status,
     owner_user_id: payload.owner_user_id || '',
     dept_id: payload.dept_id || '',
-    location: payload.location || payload.warehouse || ''
+    location: payload.location || payload.warehouse || '',
+    remark: payload.remark || ''
   })
   return mapBackendAsset(row)
 }
@@ -257,7 +258,8 @@ export async function addAcceptedAssets(product, serialNumbers = []) {
       warranty_months: product.warranty_months || null,
       status: 'in_stock',
       dept_id: product.dept || '',
-      location: product.warehouse || '待分配仓库'
+      location: product.warehouse || '待分配仓库',
+      remark: product.remark || ''
     })
     created.push(mapBackendAsset(asset))
   }
@@ -320,6 +322,7 @@ function mapBackendAsset(row) {
     model: row.model || '',
     spec: config.spec || '',
     location: row.location || '',
+    remark: row.remark || '',
     sn: row.sn || '',
     warehouse: config.warehouse || row.location || '',
     created_at: formatDate(row.created_at)

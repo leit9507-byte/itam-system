@@ -2,6 +2,26 @@
 
 This project supports two container modes.
 
+## First Deployment
+
+Use the first-deploy script on a new server or a fresh workstation. It checks Docker Compose, creates `.env` from `.env.example` when available, rebuilds images, starts containers, and prints the service URLs.
+
+```powershell
+.\scripts\first-deploy.ps1
+```
+
+Linux/macOS:
+
+```bash
+bash scripts/first-deploy.sh
+```
+
+To rebuild from an empty database during the first rollout:
+
+```powershell
+.\scripts\first-deploy.ps1 -ResetData
+```
+
 ## Deployment Mode
 
 Fast page load. Frontend is built once and served by Nginx. Backend runs without reload.

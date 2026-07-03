@@ -111,6 +111,13 @@ def submit_item(task_id: str, asset_id: str, payload: StocktakeItemSubmit, db: S
 @router.post("/tasks/{task_id}/finish")
 def finish_task(task_id: str, db: Session = Depends(get_db)):
     task = get_task(db, task_id)
+    for item in task.items:
+        if item.result == "未盘":
+            item.result = "盘亏"
+            item.actual_location = ""
+            item.checker = task.owner or "资产管理员"
+            item.checked_at = datetime.utcnow()
+            item.remark = item.remark or "完成盘点时未扫描确认，自动标记为盘亏"
     task.status = "已完成"
     db.commit()
     db.refresh(task)

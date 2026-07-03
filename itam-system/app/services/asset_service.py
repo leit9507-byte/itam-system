@@ -49,6 +49,7 @@ class AssetService:
         "company",
         "spec",
         "warehouse",
+        "remark",
     ]
 
     @staticmethod
@@ -123,6 +124,7 @@ class AssetService:
             owner_user_id=user.user_id if user else payload.owner_user_id,
             dept_id=(user.dept_id or user.dept_name) if user else payload.dept_id,
             location=payload.location,
+            remark=payload.remark,
         )
         AssetService.apply_warranty_expire(asset)
         SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
@@ -174,6 +176,7 @@ class AssetService:
                         owner_user_id=normalized.owner_user_id,
                         dept_id=normalized.dept_id,
                         location=normalized.location,
+                        remark=normalized.remark,
                     )
                     AssetService.apply_warranty_expire(asset)
                     AssetService.sync_owner_department(db, asset)
@@ -286,6 +289,7 @@ class AssetService:
                 "总部",
                 "32G/1TB",
                 "上海IT仓",
+                "关键岗位备用机",
             ]
         )
         sheet.append(
@@ -308,6 +312,7 @@ class AssetService:
                 "总部",
                 "27英寸 4K",
                 "上海IT仓",
+                "设计部高色准显示器",
             ]
         )
 
@@ -345,6 +350,7 @@ class AssetService:
             "P": 18,
             "Q": 20,
             "R": 18,
+            "S": 28,
         }
         for column, width in widths.items():
             sheet.column_dimensions[column].width = width
@@ -381,6 +387,7 @@ class AssetService:
             ("company", "否", "所属公司"),
             ("spec", "否", "规格配置"),
             ("warehouse", "否", "仓库名称"),
+            ("remark", "否", "备注/特殊说明，例如备用机、涉密、借测、待补配件"),
         ]
         for row in rows:
             instruction.append(row)
@@ -488,6 +495,7 @@ class AssetService:
             owner_user_id=pick("owner_user_id", "owner", "使用人", "责任人"),
             dept_id=pick("dept_id", "dept", "部门"),
             location=pick("location", "warehouse", "位置", "仓库"),
+            remark=pick("remark", "备注", "特殊说明", "说明"),
         )
 
     @staticmethod
@@ -537,6 +545,7 @@ class AssetService:
                     Asset.owner_user_id.like(pattern),
                     Asset.purchase_approval_no.like(pattern),
                     Asset.purchase_supplier_name.like(pattern),
+                    Asset.remark.like(pattern),
                 )
             )
         if status:
@@ -880,6 +889,7 @@ class AssetService:
             "dept_id": asset.dept_id,
             "dept_name": user.dept_name if user else None,
             "location": asset.location,
+            "remark": asset.remark,
             "created_at": asset.created_at,
         }
 

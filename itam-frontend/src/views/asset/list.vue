@@ -13,7 +13,7 @@
 
     <el-card shadow="never">
       <div class="toolbar">
-        <el-input v-model="filters.keyword" clearable placeholder="搜索资产ID/名称/部门/序列号/使用人/供应商" style="width: 340px" @input="refreshAssets" />
+        <el-input v-model="filters.keyword" clearable placeholder="搜索资产ID/名称/部门/序列号/使用人/供应商/备注" style="width: 360px" @input="refreshAssets" />
         <el-select v-model="filters.status" clearable placeholder="状态" style="width: 140px" @change="refreshAssets">
           <el-option v-for="item in assetStatuses" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
@@ -62,6 +62,7 @@
         <el-table-column prop="sn" label="序列号" width="150" />
         <el-table-column prop="category" label="类型" width="110" />
         <el-table-column prop="purchase_supplier_name" label="供应商" width="150" show-overflow-tooltip />
+        <el-table-column prop="remark" label="备注" min-width="160" show-overflow-tooltip />
         <el-table-column prop="purchase_date" label="采购时间" width="120" />
         <el-table-column prop="retirement_years" label="退役年限" width="100">
           <template #default="{ row }">{{ row.retirement_years ? `${row.retirement_years} 年` : '-' }}</template>
@@ -205,6 +206,9 @@
 
           <el-checkbox v-model="batchEdit.fields.warehouse">仓库</el-checkbox>
           <el-input v-model="batchEdit.form.warehouse" :disabled="!batchEdit.fields.warehouse" />
+
+          <el-checkbox v-model="batchEdit.fields.remark">备注</el-checkbox>
+          <el-input v-model="batchEdit.form.remark" type="textarea" :rows="2" :disabled="!batchEdit.fields.remark" />
         </div>
       </el-form>
       <template #footer>
@@ -486,7 +490,8 @@ function defaultBatchEditForm() {
     dept_id: '',
     dept_name: '',
     location: '',
-    warehouse: ''
+    warehouse: '',
+    remark: ''
   }
 }
 
@@ -509,7 +514,8 @@ function defaultBatchEditFields() {
     owner_user_id: false,
     dept_id: false,
     location: false,
-    warehouse: false
+    warehouse: false,
+    remark: false
   }
 }
 
@@ -787,9 +793,9 @@ function locationLabel(item) {
 
 function fillImportExample() {
   importDialog.content = [
-    '资产名称,设备类型,品牌,型号,序列号,价格,采购日期,采购审批单号,采购供应商,维保年限,使用人,部门,仓库,状态',
-    'ThinkPad X1 Carbon,笔记本电脑,Lenovo,X1 Carbon Gen 12,SN-IMPORT-001,15000,2026-06-24,OA-20260624-001,联想授权供应商,3,U-ADMIN,IT,上海IT仓,in_stock',
-    'Dell U2723QE,显示器,Dell,U2723QE,SN-IMPORT-002,3999,2026-06-24,OA-20260624-001,Dell渠道商,3,U-AUDITOR,AUDIT,上海IT仓,in_stock'
+    '资产名称,设备类型,品牌,型号,序列号,价格,采购日期,采购审批单号,采购供应商,维保年限,使用人,部门,仓库,状态,备注',
+    'ThinkPad X1 Carbon,笔记本电脑,Lenovo,X1 Carbon Gen 12,SN-IMPORT-001,15000,2026-06-24,OA-20260624-001,联想授权供应商,3,U-ADMIN,IT,上海IT仓,in_stock,关键岗位备用机',
+    'Dell U2723QE,显示器,Dell,U2723QE,SN-IMPORT-002,3999,2026-06-24,OA-20260624-001,Dell渠道商,3,U-AUDITOR,AUDIT,上海IT仓,in_stock,设计部高色准显示器'
   ].join('\n')
   clearImportPreview()
 }
@@ -939,7 +945,8 @@ const AssetEditFields = defineComponent({
         field('责任人', h(resolveSelect(), { modelValue: props.form.owner_user_id, 'onUpdate:modelValue': value => (props.form.owner_user_id = value), filterable: true, remote: true, clearable: true, reserveKeyword: true, remoteMethod: value => emit('search-users', value), style: 'width:100%', onChange: value => emit('select-user', value) }, () => props.users.map(user => h(resolveOption(), { key: user.user_id, label: `${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`, value: user.user_id })))),
         field('部门', h(resolveInput(), { modelValue: props.form.dept_id, 'onUpdate:modelValue': value => (props.form.dept_id = value), disabled: true })),
         field('位置', h(resolveInput(), { modelValue: props.form.location, 'onUpdate:modelValue': value => (props.form.location = value) })),
-        field('仓库', h(resolveInput(), { modelValue: props.form.warehouse, 'onUpdate:modelValue': value => (props.form.warehouse = value) }))
+        field('仓库', h(resolveInput(), { modelValue: props.form.warehouse, 'onUpdate:modelValue': value => (props.form.warehouse = value) })),
+        field('备注', h(resolveInput(), { modelValue: props.form.remark, 'onUpdate:modelValue': value => (props.form.remark = value), type: 'textarea', rows: 3, placeholder: '特殊说明，例如备用机、涉密、借测、待补配件' }))
       ])
   }
 })

@@ -17,6 +17,8 @@ __pycache__/
 *.db
 audit_report.html
 artifacts/
+uploads/qrcodes/*.png
+itam-system/uploads/qrcodes/*.png
 
 # Local env files
 .env

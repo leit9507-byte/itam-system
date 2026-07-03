@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Column, DateTime, Float, Integer, String
+from sqlalchemy import JSON, Column, DateTime, Float, Integer, String, Text
 
 from app.core.database import Base
 
@@ -26,4 +26,5 @@ class Asset(Base):
     owner_user_id = Column(String(64), nullable=True, index=True)
     dept_id = Column(String(64), nullable=True, index=True)
     location = Column(String(128), nullable=True)
+    remark = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

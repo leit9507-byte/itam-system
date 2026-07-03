@@ -44,6 +44,9 @@ function buildOnboardingTodos(users, assignedUserIds) {
       priority: 'medium',
       status: '待分配',
       created_at: user.created_at || user.last_synced_at || '',
+      user_id: user.user_id,
+      username: user.username || '',
+      name: user.display_name || user.username || user.user_id,
       target_path: '/asset/list',
       target_query: {
         action: 'assign',
@@ -69,6 +72,7 @@ function buildPurchaseTodos(purchases) {
           priority: Number(item.total_amount || 0) >= 50000 ? 'high' : 'medium',
           status: '待审批',
           created_at: item.created_at || '',
+          purchase_no: item.purchase_no,
           target_path: '/purchase',
           target_query: { todo: 'purchase_approval', purchase_no: item.purchase_no }
         }
@@ -83,6 +87,7 @@ function buildPurchaseTodos(purchases) {
         priority: 'medium',
         status: '待验收',
         created_at: item.created_at || '',
+        purchase_no: item.purchase_no,
         target_path: '/purchase',
         target_query: { todo: 'purchase_acceptance', purchase_no: item.purchase_no }
       }
@@ -100,6 +105,9 @@ function buildScrapTodos(scraps) {
     priority: 'high',
     status: item.status || '审批中',
     created_at: item.created_at || '',
+    request_id: item.id,
+    request_no: item.request_no,
+    asset_id: item.asset_id,
     target_path: '/scrap',
     target_query: { todo: 'scrap_approval', request_no: item.request_no }
   }))
@@ -118,6 +126,7 @@ function buildReadyScrapTodos(assets) {
       priority: 'medium',
       status: '待提交',
       created_at: item.updated_at || item.created_at || '',
+      asset_id: item.asset_id,
       target_path: '/asset/list',
       target_query: { status: 'ready_scrap', keyword: item.asset_id }
     }))
@@ -138,6 +147,10 @@ function buildOffboardingTodos(assets, inactiveUserMap) {
         priority: 'high',
         status: '待回收',
         created_at: item.updated_at || item.created_at || '',
+        asset_id: item.asset_id,
+        user_id: user.user_id || item.owner_user_id,
+        username: user.username || '',
+        name: user.display_name || user.username || item.owner_user_id,
         target_path: '/asset/list',
         target_query: {
           action: 'reclaim',
@@ -162,6 +175,9 @@ function buildRepairTodos(repairs) {
       priority: 'low',
       status: '维修中',
       created_at: item.repair_time || item.created_at || '',
+      repair_id: item.id,
+      repair_no: item.repair_no,
+      asset_id: item.asset_id,
       target_path: '/repair',
       target_query: { todo: 'repair_followup', repair_no: item.repair_no }
     }))

@@ -20,6 +20,23 @@
       </div>
     </div>
 
+    <el-card shadow="never" class="task-picker-card">
+      <div class="task-picker">
+        <div>
+          <span class="muted">当前盘点任务</span>
+          <strong>{{ selectedTask?.name || '请选择盘点任务' }}</strong>
+          <p>{{ selectedTask ? `${selectedTask.id} / ${selectedTask.status} / ${selectedTask.checked || 0}/${selectedTask.total || 0}` : '选择任务后，下方仪表盘、图表和差异明细会刷新为该任务数据。' }}</p>
+        </div>
+        <div class="task-picker-actions">
+          <el-select v-model="selectedTaskId" filterable placeholder="选择盘点任务" style="width: 340px" @change="selectTask">
+            <el-option v-for="task in tasks" :key="task.id" :label="taskOptionLabel(task)" :value="task.id" />
+          </el-select>
+          <el-button :disabled="!selectedTask" @click="openDetail(selectedTask)">进入盘点</el-button>
+          <el-button type="success" :disabled="!selectedTask || !['待确认', '进行中'].includes(selectedTask.status)" @click="finish(selectedTask)">完成</el-button>
+        </div>
+      </div>
+    </el-card>
+
     <section class="stocktake-dashboard">
       <el-card shadow="never" class="completion-card">
         <div class="completion-body">
@@ -27,7 +44,7 @@
           <div>
             <span class="muted">盘点完成率</span>
             <strong>{{ dashboard.completionRate }}%</strong>
-            <p>基于当前时间范围内的盘点任务明细统计。</p>
+            <p>{{ selectedTask ? '基于当前选中盘点任务的明细统计。' : '请先选择一次盘点任务。' }}</p>
           </div>
         </div>
       </el-card>
@@ -52,11 +69,11 @@
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span>盘点任务</span>
+        <span>盘点任务列表</span>
           <el-tag type="info">{{ tasks.length }} 个任务</el-tag>
         </div>
       </template>
-      <el-table :data="pagedTasks" border stripe empty-text="当前时间范围暂无盘点任务">
+      <el-table v-loading="loading" :data="pagedTasks" border stripe empty-text="当前时间范围暂无盘点任务" highlight-current-row :current-row-key="selectedTaskId" row-key="id" @current-change="handleCurrentTaskChange">
         <el-table-column prop="id" label="任务编号" width="140" />
         <el-table-column prop="name" label="任务名称" min-width="220" />
         <el-table-column prop="scope" label="范围类型" width="100" />
@@ -95,7 +112,7 @@
 
     <el-card shadow="never">
       <template #header>差异明细</template>
-      <el-table :data="pagedAbnormalItems" border stripe empty-text="当前时间范围暂无盘点差异">
+      <el-table :data="pagedAbnormalItems" border stripe empty-text="当前任务暂无盘点差异">
         <el-table-column prop="asset_id" label="资产ID" width="120" />
         <el-table-column prop="name" label="资产名称" min-width="180" />
         <el-table-column prop="sn" label="序列号" width="150" />
@@ -137,8 +154,25 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="detailDialog" :title="currentTask ? `盘点明细：${currentTask.name}` : '盘点明细'" width="1100px">
-      <el-table :data="pagedTaskItems" border stripe>
+    <el-dialog v-model="detailDialog" :title="currentTask ? `盘点明细：${currentTask.name}` : '盘点明细'" width="1180px">
+      <div class="detail-toolbar">
+        <el-input v-model="itemFilters.keyword" clearable placeholder="搜索资产编号/名称/序列号/位置" style="width: 280px" />
+        <el-select v-model="itemFilters.result" clearable placeholder="盘点结果" style="width: 140px">
+          <el-option label="未盘" value="未盘" />
+          <el-option label="正常" value="正常" />
+          <el-option label="盘盈" value="盘盈" />
+          <el-option label="盘亏" value="盘亏" />
+          <el-option label="位置不符" value="位置不符" />
+          <el-option label="状态不符" value="状态不符" />
+        </el-select>
+        <el-button @click="resetItemFilters">重置</el-button>
+      </div>
+      <div class="quick-register">
+        <el-input v-model="quickForm.code" clearable autofocus placeholder="扫码或输入资产编号 / 序列号后回车确认" @keyup.enter="registerQuickItem" />
+        <el-button type="primary" :loading="savingItem" @click="registerQuickItem">扫码确认</el-button>
+        <span class="scan-tip">扫描确认后，系统按账面位置登记实盘位置；未扫描项目在完成盘点时自动记为盘亏。</span>
+      </div>
+      <el-table :data="pagedTaskItems" border stripe row-key="asset_id">
         <el-table-column prop="asset_id" label="资产ID" width="120" />
         <el-table-column prop="name" label="资产名称" min-width="160" />
         <el-table-column prop="sn" label="序列号" width="140" />
@@ -146,29 +180,17 @@
         <el-table-column prop="book_status" label="账面状态" width="100" />
         <el-table-column prop="actual_location" label="实盘位置" width="160">
           <template #default="{ row }">
-            <el-input v-model="row.actual_location" placeholder="实盘位置" />
+            {{ row.actual_location || '-' }}
           </template>
         </el-table-column>
         <el-table-column prop="result" label="结果" width="130">
           <template #default="{ row }">
-            <el-select v-model="row.result">
-              <el-option label="未盘" value="未盘" />
-              <el-option label="正常" value="正常" />
-              <el-option label="盘盈" value="盘盈" />
-              <el-option label="盘亏" value="盘亏" />
-              <el-option label="位置不符" value="位置不符" />
-              <el-option label="状态不符" value="状态不符" />
-            </el-select>
+            <el-tag :type="itemResultType(row.result)">{{ row.result }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="170">
           <template #default="{ row }">
-            <el-input v-model="row.remark" placeholder="备注" />
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="90" fixed="right">
-          <template #default="{ row }">
-            <el-button type="primary" link @click="submitItem(row)">保存</el-button>
+            {{ row.remark || '-' }}
           </template>
         </el-table-column>
       </el-table>
@@ -177,7 +199,7 @@
           v-model:current-page="itemPagination.page"
           v-model:page-size="itemPagination.pageSize"
           :page-sizes="[10, 20, 50, 100]"
-          :total="currentTaskItems.length"
+          :total="filteredTaskItems.length"
           layout="total, sizes, prev, pager, next, jumper"
         />
       </div>
@@ -191,17 +213,21 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import * as echarts from 'echarts'
 import {
   createStocktakeTask,
+  buildStocktakeDashboard,
   finishStocktakeTask,
-  getStocktakeDashboard,
   getStocktakeTasks,
   startStocktakeTask,
   submitStocktakeItem
 } from '../../api/stocktake'
+import { assetCodeMatches, parseAssetCode } from '../../utils/assetCode'
 
 const tasks = ref([])
+const loading = ref(false)
+const savingAssetId = ref('')
 const createDialog = ref(false)
 const detailDialog = ref(false)
 const currentTask = ref(null)
+const selectedTaskId = ref('')
 const dateRange = ref(defaultDateRange())
 const resultRef = ref(null)
 const trendRef = ref(null)
@@ -210,6 +236,8 @@ const form = reactive(defaultForm())
 const taskPagination = reactive({ page: 1, pageSize: 20 })
 const abnormalPagination = reactive({ page: 1, pageSize: 20 })
 const itemPagination = reactive({ page: 1, pageSize: 20 })
+const itemFilters = reactive({ keyword: '', result: '' })
+const quickForm = reactive({ code: '' })
 const dashboard = reactive({
   metrics: [],
   completionRate: 0,
@@ -219,35 +247,51 @@ const dashboard = reactive({
   abnormalItems: []
 })
 const currentTaskItems = computed(() => currentTask.value?.items || [])
+const selectedTask = computed(() => tasks.value.find(task => task.id === selectedTaskId.value) || null)
+const dashboardTasks = computed(() => selectedTask.value ? [selectedTask.value] : [])
+const savingItem = computed(() => Boolean(savingAssetId.value))
 const pagedTasks = computed(() => paginate(tasks.value, taskPagination))
 const pagedAbnormalItems = computed(() => paginate(dashboard.abnormalItems, abnormalPagination))
-const pagedTaskItems = computed(() => paginate(currentTaskItems.value, itemPagination))
+const filteredTaskItems = computed(() => {
+  const keyword = itemFilters.keyword.trim().toLowerCase()
+  return currentTaskItems.value.filter(item => {
+    const hitKeyword = !keyword || [item.asset_id, item.name, item.sn, item.book_location, item.actual_location, item.remark].join(' ').toLowerCase().includes(keyword)
+    const hitResult = !itemFilters.result || item.result === itemFilters.result
+    return hitKeyword && hitResult
+  })
+})
+const pagedTaskItems = computed(() => paginate(filteredTaskItems.value, itemPagination))
 
 onMounted(load)
 onUnmounted(() => charts.forEach(chart => chart.dispose()))
 
 async function load() {
-  tasks.value = await getStocktakeTasks({ dateRange: dateRange.value })
-  Object.assign(dashboard, await getStocktakeDashboard({ dateRange: dateRange.value }))
-  taskPagination.page = Math.min(taskPagination.page, Math.max(1, Math.ceil(tasks.value.length / taskPagination.pageSize) || 1))
-  abnormalPagination.page = Math.min(abnormalPagination.page, Math.max(1, Math.ceil(dashboard.abnormalItems.length / abnormalPagination.pageSize) || 1))
-  await nextTick()
-  renderCharts()
+  loading.value = true
+  try {
+    tasks.value = await getStocktakeTasks({ dateRange: dateRange.value })
+    ensureSelectedTask()
+    refreshDashboard()
+    taskPagination.page = Math.min(taskPagination.page, Math.max(1, Math.ceil(tasks.value.length / taskPagination.pageSize) || 1))
+    abnormalPagination.page = Math.min(abnormalPagination.page, Math.max(1, Math.ceil(dashboard.abnormalItems.length / abnormalPagination.pageSize) || 1))
+    syncCurrentTask()
+    await nextTick()
+    renderCharts()
+  } finally {
+    loading.value = false
+  }
 }
 
 function renderCharts() {
-  charts.forEach(chart => chart.dispose())
-  charts.length = 0
   if (!resultRef.value || !trendRef.value) return
 
-  const result = echarts.init(resultRef.value)
+  const result = charts[0] || echarts.init(resultRef.value)
   result.setOption({
     tooltip: { trigger: 'item' },
     legend: { bottom: 0 },
     series: [{ name: '盘点结果', type: 'pie', radius: ['42%', '68%'], center: ['50%', '44%'], data: dashboard.resultDistribution }]
   })
 
-  const trend = echarts.init(trendRef.value)
+  const trend = charts[1] || echarts.init(trendRef.value)
   trend.setOption({
     tooltip: { trigger: 'axis' },
     legend: { top: 0 },
@@ -261,7 +305,7 @@ function renderCharts() {
     ]
   })
 
-  charts.push(result, trend)
+  if (!charts.length) charts.push(result, trend)
 }
 
 function defaultDateRange() {
@@ -294,29 +338,104 @@ async function createTask() {
 
 async function start(row) {
   await startStocktakeTask(row.id)
+  selectedTaskId.value = row.id
   ElMessage.success('盘点任务已开始')
   await load()
 }
 
 function openDetail(row) {
+  if (!row) return
+  selectedTaskId.value = row.id
   currentTask.value = row
   itemPagination.page = 1
+  resetItemFilters()
+  quickForm.code = ''
   detailDialog.value = true
 }
 
-async function submitItem(row) {
-  if (!row.actual_location && row.result !== '盘亏') {
-    ElMessage.warning('请填写实盘位置，盘亏可留空')
-    return
+async function confirmScannedItem(row) {
+  savingAssetId.value = row.asset_id
+  try {
+    const saved = await submitStocktakeItem(currentTask.value.id, row.asset_id, {
+      actual_location: row.book_location || '',
+      result: '正常',
+      checker: '扫码确认',
+      remark: row.checked_at ? '重新扫码确认' : '扫码确认'
+    })
+    applySavedItem(currentTask.value.id, saved)
+    ElMessage.success(`${row.asset_id} 已扫码确认`)
+  } finally {
+    savingAssetId.value = ''
   }
-  await submitStocktakeItem(currentTask.value.id, row.asset_id, row)
-  ElMessage.success('盘点结果已保存')
-  await load()
+}
+
+async function registerQuickItem() {
+  const code = parseAssetCode(quickForm.code)
+  if (!code) return ElMessage.warning('请扫码或输入资产编号 / 序列号')
+  if (!currentTask.value) return
+  const row = currentTaskItems.value.find(item => assetCodeMatches(item, quickForm.code))
+  if (!row) return ElMessage.error('该资产不在当前盘点任务范围内')
+  await confirmScannedItem(row)
+  quickForm.code = ''
+}
+
+function applySavedItem(taskId, saved) {
+  const task = tasks.value.find(item => item.id === taskId)
+  if (!task) return
+  const item = task.items.find(row => row.asset_id === saved.asset_id)
+  if (item) Object.assign(item, saved)
+  task.checked = task.items.filter(row => row.result !== '未盘').length
+  task.abnormal = task.items.filter(row => ['盘盈', '盘亏', '位置不符', '状态不符'].includes(row.result)).length
+  if (task.status !== '已完成' && task.total && task.checked === task.total) task.status = '待确认'
+  currentTask.value = task
+  refreshDashboard()
+  renderCharts()
+}
+
+function refreshDashboard() {
+  Object.assign(dashboard, buildStocktakeDashboard(dashboardTasks.value))
+}
+
+function syncCurrentTask() {
+  if (!currentTask.value) return
+  currentTask.value = tasks.value.find(task => task.id === currentTask.value.id) || currentTask.value
+}
+
+function ensureSelectedTask() {
+  if (selectedTask.value) return
+  const active = tasks.value.find(task => ['进行中', '待开始', '待确认'].includes(task.status))
+  selectedTaskId.value = active?.id || tasks.value[0]?.id || ''
+}
+
+function selectTask() {
+  abnormalPagination.page = 1
+  if (detailDialog.value && selectedTask.value) currentTask.value = selectedTask.value
+  refreshDashboard()
+  nextTick(renderCharts)
+}
+
+function handleCurrentTaskChange(row) {
+  if (row?.id) {
+    selectedTaskId.value = row.id
+    selectTask()
+  }
+}
+
+function taskOptionLabel(task) {
+  return `${task.name} / ${task.status} / ${task.checked || 0}/${task.total || 0}`
+}
+
+function resetItemFilters() {
+  itemFilters.keyword = ''
+  itemFilters.result = ''
+  itemPagination.page = 1
 }
 
 async function finish(row) {
+  if (!row) return
   await ElMessageBox.confirm(`确认完成盘点任务 ${row.id}？完成后将汇总差异结果。`, '完成盘点', { type: 'warning' })
   await finishStocktakeTask(row.id)
+  selectedTaskId.value = row.id
   ElMessage.success('盘点任务已完成')
   await load()
 }
@@ -330,6 +449,13 @@ function taskStatusType(status) {
   if (status === '待确认') return 'warning'
   if (status === '进行中') return 'primary'
   return 'info'
+}
+
+function itemResultType(result) {
+  if (result === '正常') return 'success'
+  if (result === '未盘') return 'info'
+  if (result === '盘亏') return 'danger'
+  return 'warning'
 }
 
 function tagType(tone) {
@@ -369,6 +495,33 @@ function paginate(rows, pagination) {
   display: grid;
   grid-template-columns: 1.45fr repeat(3, minmax(150px, 1fr));
   gap: 12px;
+}
+
+.task-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+}
+
+.task-picker strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.task-picker p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.task-picker-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .completion-body {
@@ -424,6 +577,26 @@ function paginate(rows, pagination) {
   margin-top: 14px;
 }
 
+.detail-toolbar,
+.quick-register {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.quick-register {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto minmax(280px, 1.2fr);
+  align-items: center;
+}
+
+.scan-tip {
+  color: #64748b;
+  font-size: 12px;
+}
+
 @media (max-width: 1280px) {
   .stocktake-dashboard {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -433,8 +606,19 @@ function paginate(rows, pagination) {
 @media (max-width: 860px) {
   .stocktake-dashboard,
   .chart-grid,
-  .completion-body {
+  .completion-body,
+  .quick-register,
+  .task-picker {
     grid-template-columns: 1fr;
+  }
+
+  .task-picker-actions {
+    justify-content: stretch;
+  }
+
+  .task-picker-actions :deep(.el-select),
+  .task-picker-actions .el-button {
+    width: 100%;
   }
 }
 </style>

@@ -22,6 +22,7 @@ class AssetCreate(BaseModel):
     owner_user_id: Optional[str] = None
     dept_id: Optional[str] = None
     location: Optional[str] = None
+    remark: Optional[str] = None
 
 
 class AssetStatusChange(BaseModel):
@@ -30,6 +31,7 @@ class AssetStatusChange(BaseModel):
     owner_user_id: Optional[str] = None
     dept_id: Optional[str] = None
     location: Optional[str] = None
+    remark: Optional[str] = None
     remark: Optional[str] = None
 
 
@@ -77,6 +79,7 @@ class AssetOut(BaseModel):
     dept_id: Optional[str]
     dept_name: Optional[str] = None
     location: Optional[str]
+    remark: Optional[str] = None
     created_at: datetime
 
 
@@ -89,6 +92,7 @@ class AssetImportRow(AssetCreate):
     price: Optional[float] = None
     spec: Optional[str] = None
     warehouse: Optional[str] = None
+    remark: Optional[str] = None
 
 
 class AssetBatchImport(BaseModel):

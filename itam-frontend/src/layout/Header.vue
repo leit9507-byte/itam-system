@@ -37,6 +37,7 @@
           <el-button v-if="pendingTodos.length" class="notify-more" type="primary" plain @click="router.push('/todo')">查看全部 {{ pendingTodos.length }} 项</el-button>
         </div>
       </el-popover>
+      <TodoAssetActions ref="todoAssetActionsRef" @completed="loadPendingTodos" />
 
       <el-dropdown trigger="click" @command="handleUserCommand">
         <button class="user-trigger">
@@ -67,6 +68,7 @@ import { ElMessage } from 'element-plus'
 import { useAppStore } from '../store'
 import { getTodoItems } from '../api/todo'
 import request from '../utils/request'
+import TodoAssetActions from '../components/TodoAssetActions.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -76,6 +78,7 @@ const backendLabel = ref('后端检测中')
 const keyword = ref('')
 const pendingTodos = ref([])
 const todoLoading = ref(false)
+const todoAssetActionsRef = ref(null)
 let todoTimer = null
 
 const today = new Intl.DateTimeFormat('zh-CN', {
@@ -145,7 +148,8 @@ async function loadPendingTodos() {
   }
 }
 
-function goTodo(item) {
+async function goTodo(item) {
+  if (await todoAssetActionsRef.value?.handle(item)) return
   router.push({ path: item.target_path || '/todo', query: item.target_query || {} })
 }
 

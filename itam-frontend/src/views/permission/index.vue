@@ -324,6 +324,34 @@
               </template>
 
               <template v-else>
+                <el-card shadow="never" class="feishu-guide">
+                  <template #header>
+                    <div class="guide-header">
+                      <span>飞书应用配置指引</span>
+                      <el-link type="primary" href="https://open.feishu.cn/app" target="_blank">打开飞书开放平台</el-link>
+                    </div>
+                  </template>
+                  <el-steps :active="4" finish-status="success" align-center>
+                    <el-step title="创建企业自建应用" description="进入开发者后台，创建企业自建应用" />
+                    <el-step title="复制凭证" description="在凭证与基础信息中复制 App ID / App Secret" />
+                    <el-step title="开通权限" description="通讯录读取部门、用户基础信息权限" />
+                    <el-step title="发布测试" description="发布应用后回到本页保存并测试连接" />
+                  </el-steps>
+                  <div class="guide-list">
+                    <div>
+                      <strong>建议开通权限</strong>
+                      <span>获取部门组织架构、获取用户基本信息、获取用户邮箱等通讯录只读权限；权限名称以飞书后台实际显示为准。</span>
+                    </div>
+                    <div>
+                      <strong>根部门 ID</strong>
+                      <span>填 0 表示从根部门同步；只同步某个部门时，填飞书部门的 open_department_id。</span>
+                    </div>
+                    <div>
+                      <strong>发布后再测试</strong>
+                      <span>飞书权限变更需要发布应用后生效；保存配置后点击右侧“测试”确认 App Secret 和权限可用。</span>
+                    </div>
+                  </div>
+                </el-card>
                 <el-divider content-position="left">飞书应用</el-divider>
                 <el-form-item label="App ID" required><el-input v-model="providerConfig.app_id" placeholder="cli_xxx" /></el-form-item>
                 <el-form-item label="App Secret" required><el-input v-model="providerConfig.app_secret" type="password" show-password placeholder="飞书应用凭证" /></el-form-item>
@@ -503,14 +531,16 @@
         <el-button type="primary" :loading="userPermissionDialog.saving" @click="saveUserPermissionConfig">保存用户权限</el-button>
       </template>
     </el-dialog>
+
+    <TodoAssetActions ref="todoAssetActionsRef" @completed="loadUsers" />
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAppStore } from '../../store'
+import TodoAssetActions from '../../components/TodoAssetActions.vue'
 import {
   createIdentityProvider,
   deleteUser,
@@ -531,7 +561,6 @@ const props = defineProps({
   mode: { type: String, default: 'permission' }
 })
 
-const router = useRouter()
 const store = useAppStore()
 const isPersonnelMode = computed(() => props.mode === 'personnel')
 const pageTitle = computed(() => (isPersonnelMode.value ? '人员管理' : '权限管理'))
@@ -559,6 +588,7 @@ const onboardingPagination = reactive({ page: 1, pageSize: 20 })
 const offboardingPagination = reactive({ page: 1, pageSize: 20 })
 const permissionPagination = reactive({ page: 1, pageSize: 20 })
 const providerPagination = reactive({ page: 1, pageSize: 20 })
+const todoAssetActionsRef = ref(null)
 const pagedUsers = computed(() => paginate(users.value, userPagination))
 const onboardingUsers = computed(() => users.value.filter(user => user.status === 'active').sort((a, b) => dateValue(b.created_at) - dateValue(a.created_at)))
 const offboardingUsers = computed(() => users.value.filter(user => isInactiveUser(user.status)).sort((a, b) => dateValue(b.last_synced_at || b.created_at) - dateValue(a.last_synced_at || a.created_at)))
@@ -799,12 +829,23 @@ function isInactiveUser(status) {
   return ['inactive', 'disabled', 'locked', 'resigned', 'left', 'offboarded', '离职', '停用', '禁用'].includes(String(status || '').toLowerCase())
 }
 
-function goAssetAssign(row) {
-  router.push({ path: '/asset/list', query: { action: 'assign', user_id: row.user_id, username: row.username, name: row.display_name } })
+async function goAssetAssign(row) {
+  await todoAssetActionsRef.value?.handle({
+    type: 'onboarding_assign',
+    user_id: row.user_id,
+    username: row.username || '',
+    name: row.display_name || row.username || row.user_id,
+    owner: row.display_name || row.username || row.user_id
+  })
 }
 
-function goAssetReclaim(row) {
-  router.push({ path: '/asset/list', query: { action: 'reclaim', user_id: row.user_id, username: row.username, name: row.display_name } })
+async function goAssetReclaim(row) {
+  await todoAssetActionsRef.value?.handle({
+    type: 'user_reclaim',
+    user_id: row.user_id,
+    username: row.username || '',
+    name: row.display_name || row.username || row.user_id
+  })
 }
 
 function dateValue(value) {
@@ -1048,6 +1089,45 @@ function paginate(rows, pagination) {
 
 .config-help {
   margin: -4px 0 16px;
+}
+
+.feishu-guide {
+  margin-bottom: 16px;
+  background: #f8fbff;
+}
+
+.guide-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 700;
+}
+
+.guide-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.guide-list div {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid #dbe7f3;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.guide-list strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.guide-list span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .login-card {
