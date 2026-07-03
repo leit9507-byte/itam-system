@@ -1,4 +1,4 @@
-import { getAssets, getLifecycleList } from './asset'
+import { getAssets, getAssetSummary, getLifecycleList } from './asset'
 import { getPurchases } from './purchase'
 import { getProducts } from './product'
 import { getRepairDashboard } from './repair'
@@ -22,6 +22,7 @@ const lifecycleNames = {
 export async function getEnterpriseDashboard(filters = {}) {
   const [
     { list: allAssets },
+    assetSummary,
     purchaseResult,
     products,
     repairDashboard,
@@ -31,6 +32,7 @@ export async function getEnterpriseDashboard(filters = {}) {
     lifecycleResult
   ] = await Promise.all([
     getAssets({ page: 1, page_size: DASHBOARD_SOURCE_LIMIT }),
+    getAssetSummary().catch(() => null),
     getPurchases({ page: 1, page_size: DASHBOARD_SOURCE_LIMIT }).catch(() => ({ list: [] })),
     getProducts().catch(() => []),
     getRepairDashboard(filters).catch(() => ({ total: 0, inProgress: 0, totalCost: 0, topFaults: [] })),
@@ -43,21 +45,28 @@ export async function getEnterpriseDashboard(filters = {}) {
 
   const scopedAssets = filterByDateRange(allAssets, filters.dateRange, 'created_at')
   const assets = filters.dateRange?.length ? scopedAssets : allAssets
-  const total = assets.length
-  const originalValue = sumAssets(assets)
+  const summary = normalizeAssetSummary(assetSummary, allAssets)
+  const useGlobalSummary = !filters.dateRange?.length
+  const total = useGlobalSummary ? summary.total : assets.length
+  const originalValue = useGlobalSummary ? summary.totalValue : sumAssets(assets)
   const netValue = Math.round(originalValue * 0.68)
-  const inUse = countStatus(assets, 'in_use')
-  const idle = countStatus(assets, 'idle')
-  const repair = countStatus(assets, 'repair')
-  const thisMonthAssets = allAssets.filter(item => isMonth(item.created_at, 0)).length
-  const previousMonthAssets = allAssets.filter(item => isMonth(item.created_at, 1)).length
+  const inUse = useGlobalSummary ? summary.statusCounts.in_use || 0 : countStatus(assets, 'in_use')
+  const idle = useGlobalSummary ? summary.statusCounts.idle || 0 : countStatus(assets, 'idle')
+  const repair = useGlobalSummary ? summary.statusCounts.repair || 0 : countStatus(assets, 'repair')
+  const scrapped = useGlobalSummary ? summary.statusCounts.scrapped || 0 : countStatus(assets, 'scrapped')
+  const pendingScrap = useGlobalSummary
+    ? (summary.statusCounts.ready_scrap || 0) + (summary.statusCounts.pending_scrap || 0)
+    : countStatus(assets, 'ready_scrap') + countStatus(assets, 'pending_scrap')
+  const thisMonthAssets = useGlobalSummary ? summary.currentMonthCount : allAssets.filter(item => isMonth(item.created_at, 0)).length
+  const previousMonthAssets = useGlobalSummary ? summary.previousMonthCount : allAssets.filter(item => isMonth(item.created_at, 1)).length
+  const previousTotalAssets = Math.max(total - thisMonthAssets, 0)
   const retirementSoonAssets = buildRetirementSoonAssets(assets, products)
   const allRetirementSoonAssets = buildRetirementSoonAssets(allAssets, products)
   const retirementSoon = retirementSoonAssets.length
 
   return {
     metrics: [
-      metric('资产总数', total, '项', '', compare(thisMonthAssets, previousMonthAssets), monthTrendFromAssets(assets, 'count'), 'primary'),
+      metric('资产总数', total, '项', '', compare(total, previousTotalAssets), monthTrendFromAssets(assets, 'count'), 'primary'),
       metric('资产原值', originalValue, '', '¥', compare(sumAssetsByMonth(allAssets, 0), sumAssetsByMonth(allAssets, 1)), monthTrendFromAssets(assets, 'value'), 'success'),
       metric('资产净值', netValue, '', '¥', '按原值估算', monthTrendFromAssets(assets, 'net'), 'warning'),
       metric('在用资产', inUse, '项', '', compare(inUse, countStatus(allAssets, 'in_use')), statusTrend(assets, 'in_use'), 'success'),
@@ -66,12 +75,13 @@ export async function getEnterpriseDashboard(filters = {}) {
       metric('本月新增资产', thisMonthAssets, '项', '', compare(thisMonthAssets, previousMonthAssets), monthTrendFromAssets(allAssets, 'count'), 'primary'),
       metric('即将过保资产', retirementSoon, '项', '', compare(retirementSoon, allRetirementSoonAssets.length), retirementTrend(assets, products), 'danger')
     ],
-    categoryDistribution: buildCategoryDistribution(assets),
+    categoryDistribution: useGlobalSummary ? buildCategoryDistributionFromCounts(summary.categoryCounts) : buildCategoryDistribution(assets),
     departmentDistribution: buildDepartmentDistribution(assets),
     purchaseTrend: buildPurchaseTrend(purchases, filters.dateRange),
-    lifecycleDistribution: buildLifecycleDistribution(assets, purchases),
+    lifecycleDistribution: buildLifecycleDistribution(assets, purchases, useGlobalSummary ? summary.statusCounts : null),
     retirementSoonAssets,
     maintenance: buildMaintenance(repairDashboard, assets),
+    statusCounts: { in_use: inUse, idle, repair, scrapped, pending_scrap: pendingScrap },
     todoItems,
     recentRecords: buildRecentRecords(lifecycleResult.list || [], assets),
     stocktakeProgress: buildStocktakeProgress(stocktakeDashboard, stocktakeTasks),
@@ -95,6 +105,17 @@ function sumAssets(assets) {
 
 function sumAssetsByMonth(assets, offset) {
   return sumAssets(assets.filter(item => isMonth(item.created_at, offset)))
+}
+
+function normalizeAssetSummary(summary, fallbackAssets) {
+  return {
+    total: Number(summary?.total ?? fallbackAssets.length),
+    totalValue: Number(summary?.total_value ?? sumAssets(fallbackAssets)),
+    statusCounts: summary?.status_counts || {},
+    categoryCounts: summary?.category_counts || {},
+    currentMonthCount: Number(summary?.current_month_count ?? fallbackAssets.filter(item => isMonth(item.created_at, 0)).length),
+    previousMonthCount: Number(summary?.previous_month_count ?? fallbackAssets.filter(item => isMonth(item.created_at, 1)).length)
+  }
 }
 
 function isMonth(value, offset) {
@@ -215,6 +236,15 @@ function buildCategoryDistribution(assets) {
   return Object.entries(map).map(([name, value]) => ({ name, value }))
 }
 
+function buildCategoryDistributionFromCounts(counts = {}) {
+  const map = Object.fromEntries(categoryNames.map(name => [name, 0]))
+  Object.entries(counts).forEach(([category, value]) => {
+    const name = normalizeCategory(category)
+    map[name] = (map[name] || 0) + Number(value || 0)
+  })
+  return Object.entries(map).map(([name, value]) => ({ name, value }))
+}
+
 function normalizeCategory(category = '') {
   const raw = String(category).toLowerCase()
   if (raw.includes('laptop') || raw.includes('notebook') || raw.includes('笔记本')) return '笔记本电脑'
@@ -272,17 +302,18 @@ function buildPurchaseTrend(purchases, dateRange) {
   return { months, amount, quantity }
 }
 
-function buildLifecycleDistribution(assets, purchases) {
+function buildLifecycleDistribution(assets, purchases, statusCounts = null) {
+  const count = status => statusCounts ? Number(statusCounts[status] || 0) : countStatus(assets, status)
   return [
     { name: lifecycleNames.pending_purchase, value: purchases.filter(item => item.status === 'created').length },
-    { name: lifecycleNames.pending_acceptance, value: countStatus(assets, 'pending_acceptance') + purchases.filter(item => item.status === 'pending_acceptance').length },
-    { name: lifecycleNames.in_stock, value: countStatus(assets, 'in_stock') },
-    { name: lifecycleNames.in_use, value: countStatus(assets, 'in_use') },
-    { name: lifecycleNames.repair, value: countStatus(assets, 'repair') },
-    { name: lifecycleNames.idle, value: countStatus(assets, 'idle') },
-    { name: lifecycleNames.ready_scrap, value: countStatus(assets, 'ready_scrap') },
-    { name: lifecycleNames.pending_scrap, value: countStatus(assets, 'pending_scrap') },
-    { name: lifecycleNames.scrapped, value: countStatus(assets, 'scrapped') }
+    { name: lifecycleNames.pending_acceptance, value: count('pending_acceptance') + purchases.filter(item => item.status === 'pending_acceptance').length },
+    { name: lifecycleNames.in_stock, value: count('in_stock') },
+    { name: lifecycleNames.in_use, value: count('in_use') },
+    { name: lifecycleNames.repair, value: count('repair') },
+    { name: lifecycleNames.idle, value: count('idle') },
+    { name: lifecycleNames.ready_scrap, value: count('ready_scrap') },
+    { name: lifecycleNames.pending_scrap, value: count('pending_scrap') },
+    { name: lifecycleNames.scrapped, value: count('scrapped') }
   ]
 }
 

@@ -49,6 +49,10 @@ export async function getAssets(params = {}) {
   return { list, total }
 }
 
+export function getAssetSummary() {
+  return request.get('/asset/summary')
+}
+
 export async function importAssetsFromText(content, operator = 'asset-import') {
   const result = await request.post('/asset/import/text', { content, operator })
   return normalizeImportResult(result)

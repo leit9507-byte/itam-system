@@ -10,7 +10,7 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils.exceptions import InvalidFileException
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.asset import Asset
@@ -570,6 +570,39 @@ class AssetService:
         if changed:
             db.commit()
         return {"list": rows, "total": total, "page": max(page, 1), "page_size": page_size or total}
+
+    @staticmethod
+    def asset_summary(db: Session) -> dict:
+        now = datetime.utcnow()
+        current_month = datetime(now.year, now.month, 1)
+        previous_month = datetime(now.year - 1, 12, 1) if now.month == 1 else datetime(now.year, now.month - 1, 1)
+
+        total = db.query(func.count(Asset.asset_id)).scalar() or 0
+        total_value = db.query(func.coalesce(func.sum(Asset.purchase_price), 0)).scalar() or 0
+        current_month_count = db.query(func.count(Asset.asset_id)).filter(Asset.created_at >= current_month).scalar() or 0
+        previous_month_count = (
+            db.query(func.count(Asset.asset_id))
+            .filter(Asset.created_at >= previous_month, Asset.created_at < current_month)
+            .scalar()
+            or 0
+        )
+
+        status_counts = {
+            status or "unknown": count
+            for status, count in db.query(Asset.status, func.count(Asset.asset_id)).group_by(Asset.status).all()
+        }
+        category_counts = {
+            category or "其他": count
+            for category, count in db.query(Asset.category, func.count(Asset.asset_id)).group_by(Asset.category).all()
+        }
+        return {
+            "total": total,
+            "total_value": float(total_value),
+            "status_counts": status_counts,
+            "category_counts": category_counts,
+            "current_month_count": current_month_count,
+            "previous_month_count": previous_month_count,
+        }
 
     @staticmethod
     def update_asset(db: Session, asset_id: str, payload: AssetUpdate, operator: str = "system") -> Asset:

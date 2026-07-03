@@ -32,6 +32,11 @@ def list_assets(
     return AssetService.list_assets(db, page, page_size, keyword, status, category, company, supplier)
 
 
+@router.get("/summary")
+def asset_summary(db: Session = Depends(get_db)):
+    return AssetService.asset_summary(db)
+
+
 @router.put("/{asset_id}", response_model=AssetOut)
 def update_asset(asset_id: str, payload: AssetUpdate, request: Request, db: Session = Depends(get_db)):
     try:
