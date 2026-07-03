@@ -218,6 +218,7 @@ import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
 import { getStocktakeTasks, startStocktakeTask, submitStocktakeItem } from '../../api/stocktake'
 import { getTodoItems } from '../../api/todo'
+import { isFeishuClient, scanByFeishuSdk } from '../../utils/feishuSdk'
 
 const router = useRouter()
 const modes = [
@@ -340,15 +341,16 @@ async function scanCode() {
   if (fromFeishu) return handleScanResult(fromFeishu)
   const fromBrowser = await scanByBrowser()
   if (fromBrowser) return handleScanResult(fromBrowser)
-  ElMessage.info('当前环境暂未开放摄像头扫码，请手动输入资产编号')
+  ElMessage.info(isFeishuClient() ? '飞书扫码未返回内容，请确认已在飞书客户端内打开' : '当前环境暂未开放摄像头扫码，请手动输入资产编号')
 }
 
-function scanByFeishu() {
-  return new Promise(resolve => {
-    const tt = window.tt || window.lark || null
-    if (!tt?.scanCode) return resolve('')
-    tt.scanCode({ success: res => resolve(res?.result || res?.text || ''), fail: () => resolve('') })
-  })
+async function scanByFeishu() {
+  try {
+    return await scanByFeishuSdk()
+  } catch {
+    if (isFeishuClient()) ElMessage.warning('飞书 JS SDK 加载失败，已切换到浏览器扫码')
+    return ''
+  }
 }
 
 async function scanByBrowser() {
