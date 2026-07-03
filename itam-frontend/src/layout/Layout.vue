@@ -30,7 +30,7 @@ import Header from './Header.vue'
 .layout-main {
   flex: 1;
   min-width: 0;
-  padding: 20px;
+  padding: 22px 26px 26px;
   background: var(--app-bg);
 }
 </style>

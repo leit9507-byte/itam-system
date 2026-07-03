@@ -12,16 +12,18 @@
     </div>
 
     <el-card shadow="never" class="filter-card">
-      <div class="filter-row">
-        <el-date-picker
-          v-model="filters.createdRange"
-          type="daterange"
-          value-format="YYYY-MM-DD"
-          range-separator="至"
-          start-placeholder="创建开始"
-          end-placeholder="创建结束"
-          @change="refreshPurchases"
-        />
+      <div class="filter-grid">
+        <el-form-item label="创建时间">
+          <el-date-picker
+            v-model="filters.createdRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            @change="refreshPurchases"
+          />
+        </el-form-item>
         <el-button @click="resetFilters">重置</el-button>
       </div>
     </el-card>
@@ -42,7 +44,7 @@
                 <template #default="{ row: item }">¥{{ item.unit_price.toLocaleString() }}</template>
               </el-table-column>
               <el-table-column prop="purchase_reason" label="采购原因" min-width="180" show-overflow-tooltip />
-              <el-table-column prop="warehouse" label="入库仓库" width="140" />
+              <el-table-column prop="warehouse" label="入库地址" width="140" />
               <el-table-column prop="dept" label="申请部门" width="120" />
             </el-table>
           </template>
@@ -103,7 +105,11 @@
               <el-option v-for="item in suppliers" :key="item.id || item.name" :label="supplierLabel(item)" :value="item.name" />
             </el-select>
           </el-form-item>
-          <el-form-item label="申请部门"><el-input v-model="form.dept" /></el-form-item>
+          <el-form-item label="申请部门">
+            <el-select v-model="form.dept" filterable clearable placeholder="选择部门" style="width: 100%" @change="syncHeaderDeptToLines">
+              <el-option v-for="item in departments" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
         </div>
       </el-form>
 
@@ -132,7 +138,13 @@
         <el-table-column label="数量" width="160"><template #default="{ row }"><el-input-number v-model="row.quantity" :min="1" controls-position="right" style="width: 140px" /></template></el-table-column>
         <el-table-column label="单价" width="140"><template #default="{ row }"><el-input-number v-model="row.unit_price" :min="0" style="width: 100%" /></template></el-table-column>
         <el-table-column label="采购原因" min-width="190"><template #default="{ row }"><el-input v-model="row.purchase_reason" /></template></el-table-column>
-        <el-table-column label="仓库" width="150"><template #default="{ row }"><el-input v-model="row.warehouse" /></template></el-table-column>
+        <el-table-column label="入库地址" width="180">
+          <template #default="{ row }">
+            <el-select v-model="row.warehouse" filterable clearable allow-create default-first-option placeholder="选择地址" style="width: 100%">
+              <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
+            </el-select>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="80"><template #default="{ $index }"><el-button link type="danger" @click="removeLine($index)">删除</el-button></template></el-table-column>
       </el-table>
       <template #footer>
@@ -154,9 +166,21 @@
           <el-table-column label="资产名称" min-width="160"><template #default="{ row }"><el-input v-model="row.name" /></template></el-table-column>
           <el-table-column label="规格" min-width="160"><template #default="{ row }"><el-input v-model="row.spec" /></template></el-table-column>
           <el-table-column label="维保年限" width="120"><template #default="{ row }"><el-input-number v-model="row.warranty_years" :min="0" :step="1" :precision="0" style="width: 100%" /></template></el-table-column>
-          <el-table-column label="部门" width="130"><template #default="{ row }"><el-input v-model="row.dept_id" /></template></el-table-column>
+          <el-table-column label="部门" width="150">
+            <template #default="{ row }">
+              <el-select v-model="row.dept_id" filterable clearable placeholder="选择部门" style="width: 100%">
+                <el-option v-for="item in departments" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+            </template>
+          </el-table-column>
           <el-table-column label="使用人" width="130"><template #default="{ row }"><el-input v-model="row.owner_user_id" /></template></el-table-column>
-          <el-table-column label="位置/仓库" width="150"><template #default="{ row }"><el-input v-model="row.location" /></template></el-table-column>
+          <el-table-column label="入库地址" width="180">
+            <template #default="{ row }">
+              <el-select v-model="row.location" filterable clearable allow-create default-first-option placeholder="选择地址" style="width: 100%">
+                <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
+              </el-select>
+            </template>
+          </el-table-column>
         </el-table>
       </div>
       <template #footer>
@@ -198,17 +222,44 @@
         <el-card shadow="never">
           <template #header>产品档案</template>
           <div class="product-form">
-            <el-input v-model="productForm.product_name" placeholder="产品名称" />
-            <el-select v-model="productForm.device_type" placeholder="设备类型">
-              <el-option v-for="item in deviceTypes" :key="item.id" :label="item.name" :value="item.name" />
-            </el-select>
-            <el-input v-model="productForm.brand" placeholder="品牌" />
-            <el-input v-model="productForm.model" placeholder="型号" />
-            <el-input v-model="productForm.spec" placeholder="规格" />
-            <el-input-number v-model="productForm.unit_price" :min="0" placeholder="单价" style="width: 100%" />
-            <el-input v-model="productForm.default_warehouse" placeholder="默认仓库" />
-            <el-input-number v-model="productForm.retirement_years" :min="0" :step="1" :precision="0" placeholder="退役年限" style="width: 100%" />
-            <el-button type="primary" @click="saveProduct">保存产品</el-button>
+            <el-form-item label="产品名称" required>
+              <el-input v-model="productForm.product_name" placeholder="例如 ThinkPad X1 Carbon" />
+            </el-form-item>
+            <el-form-item label="设备类型" required>
+              <el-select v-model="productForm.device_type" filterable placeholder="选择设备类型" style="width: 100%">
+                <el-option v-for="item in deviceTypes" :key="item.id" :label="item.name" :value="item.name" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="品牌">
+              <el-input v-model="productForm.brand" placeholder="例如 Lenovo、Apple、Dell" />
+            </el-form-item>
+            <el-form-item label="型号">
+              <el-input v-model="productForm.model" placeholder="例如 X1 Carbon Gen 12" />
+            </el-form-item>
+            <el-form-item label="规格">
+              <el-input v-model="productForm.spec" placeholder="例如 i7 / 16G / 512G" />
+            </el-form-item>
+            <el-form-item label="参考单价">
+              <div class="number-with-unit">
+                <el-input-number v-model="productForm.unit_price" :min="0" :precision="2" controls-position="right" style="width: 100%" />
+                <span>元</span>
+              </div>
+            </el-form-item>
+            <el-form-item label="默认入库地址">
+              <el-select v-model="productForm.default_warehouse" filterable clearable allow-create default-first-option placeholder="选择或填写入库地址" style="width: 100%">
+                <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="退役年限">
+              <div class="number-with-unit">
+                <el-input-number v-model="productForm.retirement_years" :min="0" :step="1" :precision="0" controls-position="right" placeholder="不设置" style="width: 100%" />
+                <span>年</span>
+              </div>
+            </el-form-item>
+            <div class="product-form-actions">
+              <el-button @click="resetProductForm">清空</el-button>
+              <el-button type="primary" @click="saveProduct">{{ productForm.id ? '保存修改' : '保存产品档案' }}</el-button>
+            </div>
           </div>
           <el-table :data="pagedProducts" border>
             <el-table-column prop="product_name" label="产品名称" />
@@ -242,15 +293,19 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { getCompanies } from '../../api/company'
+import { getLocations } from '../../api/location'
 import { acceptPurchase, approvePurchase, createPurchase, getPurchases } from '../../api/purchase'
 import { createDeviceType, createProduct, deleteDeviceType, deleteProduct, getDeviceTypes, getProducts, updateDeviceType, updateProduct } from '../../api/product'
 import { getSuppliers } from '../../api/supplier'
+import { getUsers } from '../../api/user'
 
 const purchases = ref([])
 const products = ref([])
 const deviceTypes = ref([])
 const companies = ref([])
 const suppliers = ref([])
+const locations = ref([])
+const users = ref([])
 const createDialog = ref(false)
 const receiveDialog = ref(false)
 const catalogDialog = ref(false)
@@ -265,6 +320,17 @@ const productForm = reactive(defaultProductForm())
 
 const totalAmount = computed(() => form.items.reduce((sum, item) => sum + Number(item.quantity || 0) * Number(item.unit_price || 0), 0))
 const realCompanies = computed(() => companies.value.filter(item => !item.virtual && item.name !== '未设置公司'))
+const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
+const departments = computed(() => {
+  const map = new Map()
+  users.value.forEach(user => {
+    const value = user.dept_id || user.dept_name
+    if (!value) return
+    const label = user.dept_name && user.dept_id && user.dept_name !== user.dept_id ? `${user.dept_name} / ${user.dept_id}` : value
+    map.set(value, { label, value })
+  })
+  return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
+})
 const pagedDeviceTypes = computed(() => paginate(deviceTypes.value, catalogPagination.typesPage, catalogPagination.typesPageSize))
 const pagedProducts = computed(() => paginate(products.value, catalogPagination.productsPage, catalogPagination.productsPageSize))
 
@@ -276,6 +342,8 @@ async function load() {
   deviceTypes.value = await getDeviceTypes()
   companies.value = await getCompanies()
   suppliers.value = await getSuppliers()
+  locations.value = await getLocations()
+  users.value = await getUsers()
 }
 
 async function loadPurchases() {
@@ -322,6 +390,11 @@ function supplierLabel(item) {
   return meta ? `${item.name} (${meta})` : item.name
 }
 
+function locationLabel(item) {
+  const meta = [item.code, item.type].filter(Boolean).join(' / ')
+  return meta ? `${item.name} (${meta})` : item.name
+}
+
 function paginate(rows, page, pageSize) {
   const start = (page - 1) * pageSize
   return rows.slice(start, start + pageSize)
@@ -333,7 +406,7 @@ function openCreate() {
 }
 
 function addLine() {
-  form.items.push(defaultLine())
+  form.items.push({ ...defaultLine(), dept: form.dept || '' })
 }
 
 function removeLine(index) {
@@ -356,6 +429,12 @@ function selectProduct(row) {
   })
 }
 
+function syncHeaderDeptToLines(value) {
+  form.items.forEach(item => {
+    if (!item.dept) item.dept = value || ''
+  })
+}
+
 async function submit() {
   await createPurchase({ ...form, total_amount: totalAmount.value })
   createDialog.value = false
@@ -367,6 +446,7 @@ async function submit() {
 async function approve(row) {
   await approvePurchase(row)
   ElMessage.success('审批已通过，可进行验收')
+  await loadPurchases()
 }
 
 function openReceive(row) {
@@ -443,10 +523,14 @@ function editProduct(row) {
   Object.assign(productForm, row)
 }
 
+function resetProductForm() {
+  Object.assign(productForm, defaultProductForm())
+}
+
 async function saveProduct() {
   if (productForm.id) await updateProduct(productForm.id, productForm)
   else await createProduct(productForm)
-  Object.assign(productForm, defaultProductForm())
+  resetProductForm()
   ElMessage.success('产品档案已保存')
   await load()
 }
@@ -479,11 +563,20 @@ async function removeProduct(row) {
   margin-bottom: 12px;
 }
 
-.filter-row {
-  display: flex;
-  align-items: center;
+.filter-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) auto;
+  align-items: end;
+  justify-content: start;
   gap: 12px;
-  flex-wrap: wrap;
+}
+
+.filter-grid :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.filter-grid :deep(.el-date-editor) {
+  width: 100%;
 }
 
 .header-form {
@@ -530,6 +623,32 @@ async function removeProduct(row) {
 
 .product-form {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.product-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.number-with-unit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.number-with-unit span {
+  color: #64748b;
+  font-size: 13px;
+  text-align: center;
+}
+
+.product-form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .pagination-bar {
@@ -540,6 +659,7 @@ async function removeProduct(row) {
 
 @media (max-width: 980px) {
   .header-form,
+  .filter-grid,
   .catalog-grid,
   .product-form {
     grid-template-columns: 1fr;

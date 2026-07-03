@@ -40,7 +40,7 @@ class UserOut(BaseModel):
 
 class IdentityProviderSave(BaseModel):
     name: str
-    provider_type: str = Field(pattern="^(ldap|oidc|saml|feishu|wechat_work|local)$")
+    provider_type: str = Field(pattern="^(ldap|feishu)$")
     enabled: bool = True
     config: dict[str, Any] = Field(default_factory=dict)
 
@@ -76,6 +76,11 @@ class RolePermissionSave(BaseModel):
     resource: str
     action: str
     allowed: bool = True
+
+
+class UserPermissionUpdate(BaseModel):
+    role: str
+    status: str = "active"
 
 
 class RolePermissionOut(BaseModel):

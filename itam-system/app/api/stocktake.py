@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.models.asset import Asset
 from app.models.stocktake import StocktakeItem, StocktakeTask
+from app.services.notification_service import NotificationService
 
 
 router = APIRouter(prefix="/stocktake", tags=["Stocktake"])
@@ -72,6 +73,19 @@ def start_task(task_id: str, db: Session = Depends(get_db)):
         task.status = "进行中"
         db.commit()
         db.refresh(task)
+        NotificationService.send_event(
+            db,
+            "stocktake",
+            "盘点任务已开始",
+            [
+                f"任务名称：{task.name}",
+                f"任务编号：{task.id}",
+                f"盘点范围：{task.scope} / {task.target or '全部'}",
+                f"应盘资产：{len(task.items)} 台",
+                f"负责人：{task.owner or '-'}",
+                f"开始时间：{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}",
+            ],
+        )
     return serialize_task(task)
 
 

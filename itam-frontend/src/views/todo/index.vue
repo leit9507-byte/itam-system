@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">待办中心</h2>
-        <p class="page-subtitle">集中处理采购、验收、报废、离职回收和维修跟进事项</p>
+        <p class="page-subtitle">集中处理入职配置、采购、验收、报废、离职回收和维修跟进事项</p>
       </div>
       <el-button :loading="loading" @click="load">刷新</el-button>
     </div>
@@ -11,7 +11,7 @@
     <div class="metric-grid">
       <el-card shadow="never"><el-statistic title="全部待办" :value="todos.length" /></el-card>
       <el-card shadow="never"><el-statistic title="高优先级" :value="countByPriority('high')" /></el-card>
-      <el-card shadow="never"><el-statistic title="采购相关" :value="countByTypes(['purchase_approval', 'purchase_acceptance'])" /></el-card>
+      <el-card shadow="never"><el-statistic title="入职配置" :value="countByTypes(['onboarding_assign'])" /></el-card>
       <el-card shadow="never"><el-statistic title="资产回收/报废" :value="countByTypes(['scrap_approval', 'scrap_request', 'offboarding_reclaim'])" /></el-card>
     </div>
 
@@ -83,6 +83,7 @@ const filters = reactive({ keyword: '', type: '', priority: '' })
 const pagination = reactive({ page: 1, pageSize: 20 })
 
 const typeOptions = [
+  { label: '入职配置', value: 'onboarding_assign' },
   { label: '采购审批', value: 'purchase_approval' },
   { label: '采购验收', value: 'purchase_acceptance' },
   { label: '报废审批', value: 'scrap_approval' },

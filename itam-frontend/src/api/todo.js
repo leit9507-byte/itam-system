@@ -4,13 +4,14 @@ import { getRepairRecords } from './repair'
 import { getUsers } from './user'
 
 const inactiveStatuses = ['inactive', 'disabled', 'locked', 'resigned', 'left', 'offboarded', '离职', '停用', '禁用']
+const TODO_SOURCE_LIMIT = 500
 
 export async function getTodoItems() {
   const [purchaseResult, scrapResult, assetResult, repairResult, users] = await Promise.all([
-    getPurchases({ page_size: 0 }),
-    getScrapRequests({ status: '审批中', page_size: 0 }),
-    getAssets({ page_size: 0 }),
-    getRepairRecords({ status: '维修中', page_size: 0 }),
+    getPurchases({ page: 1, page_size: TODO_SOURCE_LIMIT }),
+    getScrapRequests({ status: '审批中', page: 1, page_size: TODO_SOURCE_LIMIT }),
+    getAssets({ page: 1, page_size: TODO_SOURCE_LIMIT }),
+    getRepairRecords({ status: '维修中', page: 1, page_size: TODO_SOURCE_LIMIT }),
     getUsers()
   ])
   const purchases = purchaseResult.list || []
@@ -18,14 +19,39 @@ export async function getTodoItems() {
   const assets = assetResult.list || []
   const repairs = repairResult.list || []
   const inactiveUserMap = buildInactiveUserMap(users || [])
+  const assignedUserIds = buildAssignedUserIds(assets)
 
   return [
+    ...buildOnboardingTodos(users || [], assignedUserIds),
     ...buildPurchaseTodos(purchases),
     ...buildScrapTodos(scraps),
     ...buildReadyScrapTodos(assets),
     ...buildOffboardingTodos(assets, inactiveUserMap),
     ...buildRepairTodos(repairs)
   ].sort((a, b) => priorityWeight(b.priority) - priorityWeight(a.priority) || dateValue(b.created_at) - dateValue(a.created_at))
+}
+
+function buildOnboardingTodos(users, assignedUserIds) {
+  return users
+    .filter(user => isActiveUser(user.status) && !['admin', 'auditor'].includes(user.role) && !assignedUserIds.has(user.user_id) && !assignedUserIds.has(user.username))
+    .map(user => ({
+      id: `onboarding-${user.user_id || user.username}`,
+      type: 'onboarding_assign',
+      type_label: '入职配置',
+      title: `${user.display_name || user.username} 待配置入职资产`,
+      description: `${user.dept_name || user.dept_id || '未设置部门'} / ${user.email || '未填写邮箱'} / 当前未绑定资产`,
+      owner: user.display_name || user.username,
+      priority: 'medium',
+      status: '待分配',
+      created_at: user.created_at || user.last_synced_at || '',
+      target_path: '/asset/list',
+      target_query: {
+        action: 'assign',
+        user_id: user.user_id,
+        username: user.username || '',
+        name: user.display_name || user.username || user.user_id
+      }
+    }))
 }
 
 function buildPurchaseTodos(purchases) {
@@ -149,6 +175,21 @@ function buildInactiveUserMap(users) {
     if (user.username) map.set(user.username, user)
   })
   return map
+}
+
+function buildAssignedUserIds(assets) {
+  const ids = new Set()
+  assets.forEach(asset => {
+    if (!['in_use', 'borrowed', 'out_stock'].includes(asset.status)) return
+    if (asset.owner_user_id) ids.add(asset.owner_user_id)
+    if (asset.owner) ids.add(asset.owner)
+    if (asset.owner_username) ids.add(asset.owner_username)
+  })
+  return ids
+}
+
+function isActiveUser(status) {
+  return String(status || '').toLowerCase() === 'active'
 }
 
 function priorityWeight(priority) {

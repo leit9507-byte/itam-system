@@ -12,6 +12,7 @@ const routes = [
     children: [
       { path: 'dashboard', name: 'Dashboard', component: () => import('../views/dashboard/index.vue'), meta: { title: '资产总览' } },
       { path: 'company', name: 'Company', component: () => import('../views/company/index.vue'), meta: { title: '公司管理' } },
+      { path: 'department', name: 'Department', component: () => import('../views/department/index.vue'), meta: { title: '部门管理' } },
       { path: 'asset/list', name: 'AssetList', component: () => import('../views/asset/list.vue'), meta: { title: '资产管理' } },
       { path: 'asset/detail/:id', name: 'AssetDetail', component: () => import('../views/asset/detail.vue'), meta: { title: '资产详情' } },
       { path: 'location', name: 'Location', component: () => import('../views/location/index.vue'), meta: { title: '位置管理' } },
@@ -25,7 +26,9 @@ const routes = [
       { path: 'lifecycle', name: 'Lifecycle', component: () => import('../views/lifecycle/index.vue'), meta: { title: '生命周期' } },
       { path: 'scrap', name: 'ScrapApproval', component: () => import('../views/scrap/index.vue'), meta: { title: '报废审批' } },
       { path: 'report', name: 'Report', component: () => import('../views/report/index.vue'), meta: { title: '报告中心' } },
-      { path: 'permission', name: 'Permission', component: () => import('../views/permission/index.vue'), meta: { title: '权限管理' } }
+      { path: 'permission', name: 'Permission', component: () => import('../views/permission/index.vue'), props: { mode: 'permission' }, meta: { title: '权限管理' } },
+      { path: 'personnel', name: 'Personnel', component: () => import('../views/permission/index.vue'), props: { mode: 'personnel' }, meta: { title: '人员管理' } },
+      { path: 'notification', name: 'Notification', component: () => import('../views/notification/index.vue'), meta: { title: '消息通知' } }
     ]
   }
 ]

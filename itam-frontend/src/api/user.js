@@ -20,6 +20,10 @@ export function deleteUser(userId) {
   return request.delete(`/users/${encodeURIComponent(userId)}`)
 }
 
+export function updateUserPermissions(userId, payload) {
+  return request.put(`/users/${encodeURIComponent(userId)}/permissions`, payload)
+}
+
 export function syncUsers(payload = {}) {
   return request.post('/users/sync', payload)
 }
@@ -46,4 +50,8 @@ export function testIdentityProvider(id) {
 
 export function getRolePermissions() {
   return request.get('/rbac/permissions')
+}
+
+export function saveRolePermissions(payload) {
+  return request.post('/rbac/permissions', payload)
 }

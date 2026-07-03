@@ -16,6 +16,7 @@ export const assetStatuses = [
 
 export const statusMap = Object.fromEntries(assetStatuses.map(item => [item.value, item]))
 export const editableAssetStatuses = assetStatuses.filter(item => !['pending_purchase', 'pending_acceptance', 'pending_scrap', 'scrapped'].includes(item.value))
+const DETAIL_CONTEXT_LIMIT = 500
 
 export const lifecycleActionMap = {
   CREATE: '资产建档',
@@ -30,10 +31,6 @@ export const lifecycleActionMap = {
   SCRAP_APPROVE: '报废审批通过',
   SCRAP_REJECT: '报废审批驳回'
 }
-
-const localLifecycles = {}
-const localInventoryRecords = []
-const scrapRequests = []
 
 export async function getAssets(params = {}) {
   const result = await request.get('/asset/list', {
@@ -149,15 +146,15 @@ export async function batchUpdateAssets(rows, payload) {
 export async function getAssetDetail(assetId) {
   const { list } = await getAssets({})
   const asset = list.find(item => item.asset_id === assetId) || list[0]
+  const lifecycleResult = await getLifecycleList({ page: 1, page_size: DETAIL_CONTEXT_LIMIT }).catch(() => ({ list: [] }))
+  const lifecycles = lifecycleResult.list.filter(item => item.asset_id === assetId)
   return {
     asset,
-    lifecycles: localLifecycles[assetId] || [
-      { type: '建档', status: asset?.status || 'in_stock', operator: '后端系统', time: asset?.created_at || '', description: '资产从后端接口加载' }
-    ],
+    lifecycles,
     usageRecords: [
       { user: asset?.owner_name || asset?.owner || '未分配', dept: asset?.dept_name || asset?.dept || '未绑定', from: asset?.created_at || '-', to: '至今' }
     ],
-    inventoryRecords: localInventoryRecords.filter(item => item.asset_id === assetId),
+    inventoryRecords: lifecycles.filter(item => item.category === 'daily_inventory').map(mapInventoryLifecycle),
     risks: buildAssetRisks(asset)
   }
 }
@@ -168,8 +165,9 @@ export async function getLifecycleList(params = {}) {
   return { list: rows.map(mapLifecycle), total }
 }
 
-export function getInventoryRecords() {
-  return Promise.resolve([...localInventoryRecords])
+export async function getInventoryRecords() {
+  const result = await getLifecycleList({ operation_type: 'daily_inventory', page: 1, page_size: DETAIL_CONTEXT_LIMIT })
+  return result.list.map(mapInventoryLifecycle)
 }
 
 export async function changeAssetStatus(assetId, status, payload = {}) {
@@ -181,7 +179,6 @@ export async function changeAssetStatus(assetId, status, payload = {}) {
     location: payload.location,
     remark: payload.remark || ''
   })
-  pushLifecycle(assetId, payload.action || '状态变更', status, payload.operator || '资产管理员', payload.remark || `状态更新为${statusMap[status]?.label || status}`)
   return mapBackendAsset(asset)
 }
 
@@ -195,7 +192,6 @@ export async function inboundAsset(assetId, payload = {}) {
     action: '入库',
     remark: payload.remark || '资产入库'
   })
-  localInventoryRecords.unshift(buildInventory(assetId, '入库', inboundAddress || asset.location || '未指定入库地址', payload.remark || '资产入库'))
   return asset
 }
 
@@ -210,10 +206,6 @@ export async function outboundAsset(assetId, payload = {}) {
     action: '出库',
     remark: payload.remark || (isPublicLocation ? `公用设备：${payload.location || ''}` : '资产出库')
   })
-  const target = isPublicLocation
-    ? `公用设备 / ${payload.location || asset.location || '未指定位置'}`
-    : `${payload.owner_name || asset.owner_name || asset.owner || '未指定'} / ${payload.dept_name || asset.dept_name || asset.dept || '未指定'}`
-  localInventoryRecords.unshift(buildInventory(assetId, '出库', target, payload.remark || (isPublicLocation ? '公用设备' : '资产出库')))
   return asset
 }
 
@@ -225,6 +217,8 @@ export async function getScrapRequests(params = {}) {
   const result = await request.get('/scrap/list', {
     params: {
       status: params.status || undefined,
+      created_from: params.created_from || undefined,
+      created_to: params.created_to || undefined,
       page: params.page || undefined,
       page_size: params.page_size ?? params.pageSize ?? undefined
     }
@@ -262,7 +256,6 @@ export async function addAcceptedAssets(product, serialNumbers = []) {
       location: product.warehouse || '待分配仓库'
     })
     created.push(mapBackendAsset(asset))
-    localInventoryRecords.unshift(buildInventory(asset.asset_id, '入库', product.warehouse || '待分配仓库', '采购验收入库'))
   }
   return created
 }
@@ -438,26 +431,16 @@ function groupBy(list, key, emptyLabel) {
   return Object.entries(map).map(([name, value]) => ({ name, value }))
 }
 
-function pushLifecycle(assetId, type, status, operator, description) {
-  localLifecycles[assetId] ||= []
-  localLifecycles[assetId].unshift({
-    type,
-    status,
-    operator,
-    time: new Date().toLocaleString('zh-CN', { hour12: false }),
-    description
-  })
-}
-
-function buildInventory(assetId, type, target, remark) {
+function mapInventoryLifecycle(row) {
+  const isInbound = row.to_status === 'in_stock'
   return {
-    id: `IO-${Date.now()}`,
-    asset_id: assetId,
-    type,
-    operator: '资产管理员',
-    target,
-    time: new Date().toLocaleString('zh-CN', { hour12: false }),
-    remark
+    id: row.id,
+    asset_id: row.asset_id,
+    type: isInbound ? '入库' : '出库',
+    operator: row.operator || '',
+    target: row.responsible_label && row.responsible_label !== '-' ? row.responsible_label : row.to_status_label || row.to_status || '-',
+    time: row.time,
+    remark: row.description || ''
   }
 }
 

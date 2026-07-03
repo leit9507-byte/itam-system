@@ -2,17 +2,17 @@
   <div class="page">
     <div class="page-header">
       <div>
-        <h2 class="page-title">权限与身份源</h2>
-        <p class="page-subtitle">统一管理本地账号、LDAP/OIDC/SAML 登录、账号锁定和 RBAC 权限</p>
+        <h2 class="page-title">{{ pageTitle }}</h2>
+        <p class="page-subtitle">{{ pageSubtitle }}</p>
       </div>
-      <div class="header-actions">
+      <div v-if="isPersonnelMode" class="header-actions">
         <el-button @click="openLocalUserDialog">新增本地账户</el-button>
         <el-button type="primary" @click="syncFromProvider">从身份源同步用户</el-button>
       </div>
     </div>
 
     <el-tabs v-model="activeTab">
-      <el-tab-pane label="用户目录" name="users">
+      <el-tab-pane v-if="isPersonnelMode" label="用户目录" name="users">
         <el-card shadow="never">
           <el-table :data="pagedUsers" border stripe>
             <el-table-column prop="display_name" label="姓名" min-width="130" />
@@ -35,11 +35,12 @@
             <el-table-column prop="status" label="状态" width="90">
               <template #default="{ row }"><el-tag :type="userStatusType(row.status)">{{ userStatusLabel(row.status) }}</el-tag></template>
             </el-table-column>
-            <el-table-column label="操作" width="230" fixed="right">
+            <el-table-column label="操作" width="300" fixed="right">
               <template #default="{ row }">
+                <el-button link type="primary" @click="openUserPermission(row)">配置权限</el-button>
                 <el-button v-if="row.status === 'active'" link type="primary" @click="goAssetAssign(row)">资产分配</el-button>
                 <el-button v-if="isInactiveUser(row.status)" link type="warning" @click="goAssetReclaim(row)">离职回收</el-button>
-                <el-button link type="danger" :disabled="row.source !== 'local' || row.username === 'admin'" @click="removeUser(row)">删除</el-button>
+                <el-button link type="danger" :disabled="row.source !== 'local' || row.username === 'admin' || isInactiveUser(row.status)" @click="removeUser(row)">标记离职</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -55,8 +56,197 @@
         </el-card>
       </el-tab-pane>
 
-      <el-tab-pane label="RBAC 权限" name="rbac">
+      <el-tab-pane v-if="isPersonnelMode" label="入职清单" name="onboarding">
         <el-card shadow="never">
+          <el-table :data="pagedOnboardingUsers" border stripe empty-text="暂无入职人员">
+            <el-table-column prop="display_name" label="姓名" min-width="130" />
+            <el-table-column prop="username" label="账号" min-width="130" />
+            <el-table-column prop="dept_name" label="部门" min-width="140">
+              <template #default="{ row }">{{ row.dept_name || row.dept_id || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="source" label="来源" width="100">
+              <template #default="{ row }"><el-tag>{{ row.source }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="created_at" label="入职/同步创建时间" min-width="180">
+              <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+            </el-table-column>
+            <el-table-column prop="last_synced_at" label="最近同步" min-width="180">
+              <template #default="{ row }">{{ formatDateTime(row.last_synced_at) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="150" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="goAssetAssign(row)">资产分配</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="pagination-bar">
+            <el-pagination
+              v-model:current-page="onboardingPagination.page"
+              v-model:page-size="onboardingPagination.pageSize"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="onboardingUsers.length"
+              layout="total, sizes, prev, pager, next, jumper"
+            />
+          </div>
+        </el-card>
+      </el-tab-pane>
+
+      <el-tab-pane v-if="isPersonnelMode" label="离职清单" name="offboarding">
+        <el-card shadow="never">
+          <el-table :data="pagedOffboardingUsers" border stripe empty-text="暂无离职人员">
+            <el-table-column prop="display_name" label="姓名" min-width="130" />
+            <el-table-column prop="username" label="账号" min-width="130" />
+            <el-table-column prop="dept_name" label="部门" min-width="140">
+              <template #default="{ row }">{{ row.dept_name || row.dept_id || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="source" label="来源" width="100">
+              <template #default="{ row }"><el-tag>{{ row.source }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="status" label="状态" width="90">
+              <template #default="{ row }"><el-tag :type="userStatusType(row.status)">{{ userStatusLabel(row.status) }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="last_synced_at" label="离职/同步更新时间" min-width="180">
+              <template #default="{ row }">{{ formatDateTime(row.last_synced_at || row.created_at) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="150" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="warning" @click="goAssetReclaim(row)">离职回收</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="pagination-bar">
+            <el-pagination
+              v-model:current-page="offboardingPagination.page"
+              v-model:page-size="offboardingPagination.pageSize"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="offboardingUsers.length"
+              layout="total, sizes, prev, pager, next, jumper"
+            />
+          </div>
+        </el-card>
+      </el-tab-pane>
+
+      <el-tab-pane v-if="!isPersonnelMode" label="用户权限配置" name="user-permissions">
+        <el-card shadow="never">
+          <div class="user-permission-picker">
+            <el-select
+              v-model="selectedUserId"
+              filterable
+              placeholder="选择要配置权限的用户"
+              class="user-select"
+              @change="selectPermissionUser"
+            >
+              <el-option
+                v-for="user in users"
+                :key="user.user_id"
+                :label="`${user.display_name || user.username} / ${user.username} / ${roleLabel(user.role)}`"
+                :value="user.user_id"
+              />
+            </el-select>
+            <el-button type="primary" :disabled="!selectedUserId" @click="openSelectedUserPermission">打开配置弹窗</el-button>
+          </div>
+
+          <el-empty v-if="!selectedPermissionUser" description="请选择一个用户后配置角色和权限" />
+
+          <template v-else>
+            <el-descriptions border :column="3" class="user-permission-summary">
+              <el-descriptions-item label="用户">{{ selectedPermissionUser.display_name || selectedPermissionUser.username }}</el-descriptions-item>
+              <el-descriptions-item label="账号">{{ selectedPermissionUser.username }}</el-descriptions-item>
+              <el-descriptions-item label="当前角色">{{ roleLabel(selectedPermissionUser.role) }}</el-descriptions-item>
+              <el-descriptions-item label="来源">{{ selectedPermissionUser.source }}</el-descriptions-item>
+              <el-descriptions-item label="状态">{{ userStatusLabel(selectedPermissionUser.status) }}</el-descriptions-item>
+              <el-descriptions-item label="部门">{{ selectedPermissionUser.dept_name || selectedPermissionUser.dept_id || '-' }}</el-descriptions-item>
+            </el-descriptions>
+
+            <el-form label-width="90px" class="user-permission-form">
+              <el-form-item label="角色">
+                <el-select v-model="selectedRole" filterable allow-create default-first-option style="width: 280px">
+                  <el-option v-for="role in roleOptions" :key="role.value" :label="role.label" :value="role.value" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="状态">
+                <el-select v-model="userPermissionDialog.status" style="width: 180px">
+                  <el-option label="在职" value="active" />
+                  <el-option label="停用" value="disabled" />
+                  <el-option label="离职" value="resigned" />
+                </el-select>
+              </el-form-item>
+              <el-form-item>
+                <el-button @click="resetPermissionDraft">重置权限</el-button>
+                <el-button type="primary" :loading="userPermissionDialog.saving" @click="saveUserPermissionConfig">保存用户权限</el-button>
+              </el-form-item>
+            </el-form>
+
+            <el-alert
+              v-if="selectedRole === 'admin'"
+              class="rbac-alert"
+              type="info"
+              show-icon
+              :closable="false"
+              title="admin 角色拥有全部权限。切换为其他角色后，可以编辑该角色权限。"
+            />
+
+            <el-table :data="permissionMatrixRows" border stripe>
+              <el-table-column prop="label" label="资源" min-width="160">
+                <template #default="{ row }">
+                  <strong>{{ row.label }}</strong>
+                  <div class="resource-key">{{ row.resource }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column v-for="action in permissionActions" :key="action.value" :label="action.label" width="130" align="center">
+                <template #default="{ row }">
+                  <el-switch
+                    :model-value="permissionAllowed(row.resource, action.value)"
+                    :disabled="selectedRole === 'admin'"
+                    @change="value => updatePermission(row.resource, action.value, value)"
+                  />
+                </template>
+              </el-table-column>
+            </el-table>
+          </template>
+        </el-card>
+      </el-tab-pane>
+
+      <el-tab-pane v-if="!isPersonnelMode" label="RBAC 权限" name="rbac">
+        <div class="rbac-toolbar">
+          <el-select v-model="selectedRole" filterable allow-create default-first-option placeholder="选择或输入角色" class="role-select">
+            <el-option v-for="role in roleOptions" :key="role.value" :label="role.label" :value="role.value" />
+          </el-select>
+          <el-button @click="resetPermissionDraft">重置</el-button>
+          <el-button type="primary" :loading="permissionSaving" :disabled="selectedRole === 'admin'" @click="saveSelectedRolePermissions">保存权限</el-button>
+        </div>
+
+        <el-alert
+          v-if="selectedRole === 'admin'"
+          class="rbac-alert"
+          type="info"
+          show-icon
+          :closable="false"
+          title="admin 为超级管理员角色，后端会直接放行所有资源，不需要配置权限。"
+        />
+
+        <el-card shadow="never">
+          <el-table :data="permissionMatrixRows" border stripe>
+            <el-table-column prop="label" label="资源" min-width="160">
+              <template #default="{ row }">
+                <strong>{{ row.label }}</strong>
+                <div class="resource-key">{{ row.resource }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column v-for="action in permissionActions" :key="action.value" :label="action.label" width="130" align="center">
+              <template #default="{ row }">
+                <el-switch
+                  :model-value="permissionAllowed(row.resource, action.value)"
+                  :disabled="selectedRole === 'admin'"
+                  @change="value => updatePermission(row.resource, action.value, value)"
+                />
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+
+        <el-card shadow="never" class="permission-detail-card">
+          <template #header>权限明细</template>
           <el-table :data="pagedPermissions" border stripe>
             <el-table-column prop="role" label="角色" width="130" />
             <el-table-column prop="resource" label="资源" width="150" />
@@ -77,33 +267,87 @@
         </el-card>
       </el-tab-pane>
 
-      <el-tab-pane label="身份源配置" name="providers">
+      <el-tab-pane v-if="!isPersonnelMode" label="身份源配置" name="providers">
         <div class="provider-grid">
           <el-card shadow="never">
             <template #header>新增/编辑身份源</template>
             <el-form :model="providerForm" label-width="110px">
-              <el-form-item label="名称"><el-input v-model="providerForm.name" placeholder="例如：公司 LDAP" /></el-form-item>
-              <el-form-item label="类型">
-                <el-select v-model="providerForm.provider_type" style="width: 100%">
-                  <el-option label="LDAP / AD" value="ldap" />
-                  <el-option label="OIDC" value="oidc" />
-                  <el-option label="SAML" value="saml" />
-                  <el-option label="飞书" value="feishu" />
-                  <el-option label="企业微信" value="wechat_work" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="启用"><el-switch v-model="providerForm.enabled" /></el-form-item>
-              <el-form-item label="连接配置">
-                <el-input v-model="providerConfigText" type="textarea" :rows="16" />
-              </el-form-item>
               <el-alert
-                v-if="providerForm.provider_type === 'ldap'"
                 class="config-help"
                 type="info"
                 show-icon
                 :closable="false"
-                title="OpenLDAP 常用 uid/cn/mail/ou；AD 常用 sAMAccountName/displayName/mail/department。若报 invalid attribute sAMAccountName，请把 username_attr 和 user_filter 一起改为 uid。"
+                title="按字段逐项填写即可。LDAP 用于账号登录和目录同步；飞书用于通讯录同步。"
               />
+              <el-form-item label="名称"><el-input v-model="providerForm.name" placeholder="例如：公司 LDAP 或 飞书通讯录" /></el-form-item>
+              <el-form-item label="类型">
+                <el-select v-model="providerForm.provider_type" style="width: 100%">
+                  <el-option label="LDAP / AD" value="ldap" />
+                  <el-option label="飞书" value="feishu" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="启用"><el-switch v-model="providerForm.enabled" /></el-form-item>
+
+              <template v-if="providerForm.provider_type === 'ldap'">
+                <el-divider content-position="left">连接信息</el-divider>
+                <el-form-item label="服务器地址" required><el-input v-model="providerConfig.host" placeholder="ldap://ldap.example.com 或 ldaps://ldap.example.com" /></el-form-item>
+                <el-form-item label="端口"><el-input v-model="providerConfig.port" placeholder="389 或 636；留空自动判断" /></el-form-item>
+                <el-form-item label="绑定账号" required><el-input v-model="providerConfig.bind_dn" placeholder="cn=admin,dc=example,dc=com" /></el-form-item>
+                <el-form-item label="绑定密码" required><el-input v-model="providerConfig.bind_password" type="password" show-password placeholder="服务账号密码" /></el-form-item>
+                <el-form-item label="搜索根 DN" required><el-input v-model="providerConfig.base_dn" placeholder="ou=people,dc=example,dc=com" /></el-form-item>
+                <el-form-item label="登录过滤器"><el-input v-model="providerConfig.user_filter" placeholder="(uid={username}) 或 (sAMAccountName={username})" /></el-form-item>
+                <el-form-item label="同步过滤器"><el-input v-model="providerConfig.sync_filter" placeholder="(objectClass=person)" /></el-form-item>
+
+                <el-divider content-position="left">字段映射</el-divider>
+                <el-form-item label="账号字段"><el-input v-model="providerConfig.username_attr" placeholder="OpenLDAP: uid；AD: sAMAccountName" /></el-form-item>
+                <el-form-item label="姓名字段"><el-input v-model="providerConfig.display_name_attr" placeholder="displayName 或 cn" /></el-form-item>
+                <el-form-item label="邮箱字段"><el-input v-model="providerConfig.email_attr" placeholder="mail" /></el-form-item>
+                <el-form-item label="部门编码字段"><el-input v-model="providerConfig.dept_id_attr" placeholder="departmentNumber，可留空" /></el-form-item>
+                <el-form-item label="部门名称字段"><el-input v-model="providerConfig.dept_name_attr" placeholder="department 或 ou，可留空" /></el-form-item>
+
+                <el-divider content-position="left">同步设置</el-divider>
+                <el-form-item label="默认角色">
+                  <el-select v-model="providerConfig.default_role" style="width: 100%">
+                    <el-option label="普通用户" value="user" />
+                    <el-option label="审计员" value="auditor" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="同步上限"><el-input v-model="providerConfig.sync_limit" placeholder="200" /></el-form-item>
+                <el-form-item label="测试账号"><el-input v-model="providerConfig.test_username" placeholder="保存后测试时尝试解析这个账号，可留空" /></el-form-item>
+                <el-alert
+                  class="config-help"
+                  type="info"
+                  show-icon
+                  :closable="false"
+                  title="OpenLDAP 常用 uid/cn/mail/ou；AD 常用 sAMAccountName/displayName/mail/department。登录过滤器中的 {username} 会自动替换为登录账号。"
+                />
+              </template>
+
+              <template v-else>
+                <el-divider content-position="left">飞书应用</el-divider>
+                <el-form-item label="App ID" required><el-input v-model="providerConfig.app_id" placeholder="cli_xxx" /></el-form-item>
+                <el-form-item label="App Secret" required><el-input v-model="providerConfig.app_secret" type="password" show-password placeholder="飞书应用凭证" /></el-form-item>
+                <el-form-item label="根部门 ID"><el-input v-model="providerConfig.root_department_id" placeholder="0 表示从根部门同步" /></el-form-item>
+                <el-form-item label="部门 ID 类型"><el-input v-model="providerConfig.department_id_type" placeholder="open_department_id" /></el-form-item>
+                <el-form-item label="用户 ID 类型"><el-input v-model="providerConfig.user_id_type" placeholder="user_id / open_id / union_id" /></el-form-item>
+                <el-form-item label="默认角色">
+                  <el-select v-model="providerConfig.default_role" style="width: 100%">
+                    <el-option label="普通用户" value="user" />
+                    <el-option label="审计员" value="auditor" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="同步用户上限"><el-input v-model="providerConfig.sync_limit" placeholder="200" /></el-form-item>
+                <el-form-item label="同步部门上限"><el-input v-model="providerConfig.department_limit" placeholder="200" /></el-form-item>
+                <el-form-item label="分页大小"><el-input v-model="providerConfig.page_size" placeholder="50" /></el-form-item>
+                <el-alert
+                  class="config-help"
+                  type="info"
+                  show-icon
+                  :closable="false"
+                  title="飞书仅用于通讯录同步。请在飞书开放平台给应用开通通讯录读取权限，并发布后再测试。"
+                />
+              </template>
+
               <el-form-item>
                 <el-button @click="resetProviderForm">清空</el-button>
                 <el-button type="primary" @click="saveProvider">保存配置</el-button>
@@ -115,7 +359,9 @@
             <template #header>已配置身份源</template>
             <el-table :data="pagedProviders" border>
               <el-table-column prop="name" label="名称" />
-              <el-table-column prop="provider_type" label="类型" width="110" />
+              <el-table-column label="类型" width="110">
+                <template #default="{ row }">{{ providerTypeLabel(row.provider_type) }}</template>
+              </el-table-column>
               <el-table-column prop="enabled" label="启用" width="80">
                 <template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '是' : '否' }}</el-tag></template>
               </el-table-column>
@@ -139,7 +385,7 @@
                 v-model:current-page="providerPagination.page"
                 v-model:page-size="providerPagination.pageSize"
                 :page-sizes="[10, 20, 50, 100]"
-                :total="providers.length"
+                :total="supportedProviders.length"
                 layout="total, sizes, prev, pager, next"
               />
             </div>
@@ -147,22 +393,19 @@
         </div>
       </el-tab-pane>
 
-      <el-tab-pane label="登录测试" name="login">
+      <el-tab-pane v-if="!isPersonnelMode" label="登录测试" name="login">
         <el-card shadow="never" class="login-card">
           <el-form :model="loginForm" label-width="100px">
             <el-form-item label="登录方式">
               <el-radio-group v-model="loginForm.provider">
                 <el-radio-button label="local">本地</el-radio-button>
                 <el-radio-button label="ldap">LDAP</el-radio-button>
-                <el-radio-button label="oidc">OIDC</el-radio-button>
-                <el-radio-button label="saml">SAML</el-radio-button>
               </el-radio-group>
             </el-form-item>
             <el-form-item label="账号"><el-input v-model="loginForm.username" /></el-form-item>
             <el-form-item label="密码"><el-input v-model="loginForm.password" type="password" show-password /></el-form-item>
             <el-form-item>
               <el-button type="primary" @click="submitLogin">账号登录</el-button>
-              <el-button @click="submitSso">SSO 跳转地址</el-button>
             </el-form-item>
           </el-form>
           <el-descriptions v-if="loginResult" title="登录结果" border :column="1">
@@ -203,6 +446,63 @@
         <el-button type="primary" @click="submitLocalUser">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="userPermissionDialog.visible" title="配置用户权限" width="900px">
+      <el-descriptions v-if="userPermissionDialog.user" border :column="2" class="user-permission-summary">
+        <el-descriptions-item label="用户">{{ userPermissionDialog.user.display_name || userPermissionDialog.user.username }}</el-descriptions-item>
+        <el-descriptions-item label="账号">{{ userPermissionDialog.user.username }}</el-descriptions-item>
+        <el-descriptions-item label="来源">{{ userPermissionDialog.user.source }}</el-descriptions-item>
+        <el-descriptions-item label="部门">{{ userPermissionDialog.user.dept_name || userPermissionDialog.user.dept_id || '-' }}</el-descriptions-item>
+      </el-descriptions>
+
+      <el-form label-width="90px" class="user-permission-form">
+        <el-form-item label="角色">
+          <el-select v-model="selectedRole" filterable allow-create default-first-option style="width: 280px">
+            <el-option v-for="role in roleOptions" :key="role.value" :label="role.label" :value="role.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="userPermissionDialog.status" style="width: 180px">
+            <el-option label="在职" value="active" />
+            <el-option label="停用" value="disabled" />
+            <el-option label="离职" value="resigned" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+
+      <el-alert
+        v-if="selectedRole === 'admin'"
+        class="rbac-alert"
+        type="info"
+        show-icon
+        :closable="false"
+        title="admin 角色拥有全部权限。切换为其他角色后，可以在下方编辑该角色权限。"
+      />
+
+      <el-table :data="permissionMatrixRows" border stripe>
+        <el-table-column prop="label" label="资源" min-width="160">
+          <template #default="{ row }">
+            <strong>{{ row.label }}</strong>
+            <div class="resource-key">{{ row.resource }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column v-for="action in permissionActions" :key="action.value" :label="action.label" width="130" align="center">
+          <template #default="{ row }">
+            <el-switch
+              :model-value="permissionAllowed(row.resource, action.value)"
+              :disabled="selectedRole === 'admin'"
+              @change="value => updatePermission(row.resource, action.value, value)"
+            />
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <template #footer>
+        <el-button @click="userPermissionDialog.visible = false">取消</el-button>
+        <el-button @click="resetPermissionDraft">重置权限</el-button>
+        <el-button type="primary" :loading="userPermissionDialog.saving" @click="saveUserPermissionConfig">保存用户权限</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -219,30 +519,79 @@ import {
   getRolePermissions,
   getUsers,
   login,
+  saveRolePermissions,
   saveUser,
-  startSso,
   syncUsers,
   testIdentityProvider,
-  updateIdentityProvider
+  updateIdentityProvider,
+  updateUserPermissions
 } from '../../api/user'
 
-const activeTab = ref('users')
+const props = defineProps({
+  mode: { type: String, default: 'permission' }
+})
+
 const router = useRouter()
 const store = useAppStore()
+const isPersonnelMode = computed(() => props.mode === 'personnel')
+const pageTitle = computed(() => (isPersonnelMode.value ? '人员管理' : '权限管理'))
+const pageSubtitle = computed(() =>
+  isPersonnelMode.value
+    ? '独立维护本地账号、身份源同步用户、账号状态和离职回收入口'
+    : '统一管理用户权限、RBAC 角色、LDAP/飞书身份源和登录测试'
+)
+const activeTab = ref(isPersonnelMode.value ? 'users' : 'user-permissions')
 const users = ref([])
 const providers = ref([])
 const permissions = ref([])
 const loginResult = ref(null)
-const providerConfigText = ref('')
+const selectedUserId = ref('')
+const selectedRole = ref('user')
+const permissionSaving = ref(false)
 const providerForm = reactive(defaultProviderForm())
+const providerConfig = reactive(defaultConfig())
 const loginForm = reactive({ provider: 'local', username: 'admin', password: 'admin' })
 const accountDialog = reactive({ visible: false, form: defaultLocalUserForm() })
+const userPermissionDialog = reactive({ visible: false, user: null, status: 'active', saving: false })
+const permissionDraft = reactive({})
 const userPagination = reactive({ page: 1, pageSize: 20 })
+const onboardingPagination = reactive({ page: 1, pageSize: 20 })
+const offboardingPagination = reactive({ page: 1, pageSize: 20 })
 const permissionPagination = reactive({ page: 1, pageSize: 20 })
 const providerPagination = reactive({ page: 1, pageSize: 20 })
 const pagedUsers = computed(() => paginate(users.value, userPagination))
+const onboardingUsers = computed(() => users.value.filter(user => user.status === 'active').sort((a, b) => dateValue(b.created_at) - dateValue(a.created_at)))
+const offboardingUsers = computed(() => users.value.filter(user => isInactiveUser(user.status)).sort((a, b) => dateValue(b.last_synced_at || b.created_at) - dateValue(a.last_synced_at || a.created_at)))
+const pagedOnboardingUsers = computed(() => paginate(onboardingUsers.value, onboardingPagination))
+const pagedOffboardingUsers = computed(() => paginate(offboardingUsers.value, offboardingPagination))
 const pagedPermissions = computed(() => paginate(permissions.value, permissionPagination))
-const pagedProviders = computed(() => paginate(providers.value, providerPagination))
+const supportedProviders = computed(() => providers.value.filter(item => ['ldap', 'feishu'].includes(item.provider_type)))
+const pagedProviders = computed(() => paginate(supportedProviders.value, providerPagination))
+const selectedPermissionUser = computed(() => users.value.find(user => user.user_id === selectedUserId.value) || null)
+const permissionActions = [
+  { label: '读取', value: 'read' },
+  { label: '写入', value: 'write' },
+  { label: '删除', value: 'delete' }
+]
+const resourceOptions = [
+  { label: '资产运营', resource: 'asset' },
+  { label: '采购管理', resource: 'purchase' },
+  { label: '维修管理', resource: 'repair' },
+  { label: '供应商管理', resource: 'supplier' },
+  { label: '产品目录', resource: 'catalog' },
+  { label: '审计中心', resource: 'audit' },
+  { label: '身份源/用户', resource: 'identity' },
+  { label: 'RBAC 权限', resource: 'rbac' },
+  { label: '附件文件', resource: 'file' },
+  { label: '报告中心', resource: 'report' }
+]
+const permissionMatrixRows = computed(() => resourceOptions)
+const roleOptions = computed(() => {
+  const roleSet = new Set(['user', 'auditor', 'admin'])
+  users.value.forEach(item => item.role && roleSet.add(item.role))
+  permissions.value.forEach(item => item.role && roleSet.add(item.role))
+  return Array.from(roleSet).map(role => ({ label: roleLabel(role), value: role }))
+})
 
 onMounted(async () => {
   await Promise.all([loadUsers(), loadProviders(), loadPermissions()])
@@ -253,13 +602,24 @@ watch(
   () => providerForm.provider_type,
   type => {
     if (!providerForm.id) {
-      providerConfigText.value = JSON.stringify(defaultConfig(type), null, 2)
+      setProviderConfig(defaultConfig(type))
     }
+  }
+)
+
+watch(
+  () => props.mode,
+  mode => {
+    activeTab.value = mode === 'personnel' ? 'users' : 'user-permissions'
   }
 )
 
 async function loadUsers() {
   users.value = await getUsers()
+  if (!selectedUserId.value && users.value.length) {
+    selectedUserId.value = users.value[0].user_id
+    selectPermissionUser(selectedUserId.value)
+  }
 }
 
 async function loadProviders() {
@@ -268,6 +628,55 @@ async function loadProviders() {
 
 async function loadPermissions() {
   permissions.value = await getRolePermissions()
+  resetPermissionDraft()
+}
+
+function roleLabel(role) {
+  return {
+    user: '普通用户',
+    auditor: '审计员',
+    admin: '管理员'
+  }[role] || role
+}
+
+function permissionKey(role, resource, action) {
+  return `${role}::${resource}::${action}`
+}
+
+function resetPermissionDraft() {
+  Object.keys(permissionDraft).forEach(key => delete permissionDraft[key])
+  permissions.value.forEach(item => {
+    permissionDraft[permissionKey(item.role, item.resource, item.action)] = Boolean(item.allowed)
+  })
+}
+
+function permissionAllowed(resource, action) {
+  if (selectedRole.value === 'admin') return true
+  return Boolean(permissionDraft[permissionKey(selectedRole.value, resource, action)])
+}
+
+function updatePermission(resource, action, allowed) {
+  permissionDraft[permissionKey(selectedRole.value, resource, action)] = allowed
+}
+
+async function saveSelectedRolePermissions() {
+  if (!selectedRole.value || selectedRole.value === 'admin') return
+  permissionSaving.value = true
+  try {
+    const payload = resourceOptions.flatMap(resource =>
+      permissionActions.map(action => ({
+        role: selectedRole.value,
+        resource: resource.resource,
+        action: action.value,
+        allowed: permissionAllowed(resource.resource, action.value)
+      }))
+    )
+    permissions.value = await saveRolePermissions(payload)
+    resetPermissionDraft()
+    ElMessage.success(`${roleLabel(selectedRole.value)}权限已保存`)
+  } finally {
+    permissionSaving.value = false
+  }
 }
 
 function defaultProviderForm() {
@@ -290,6 +699,62 @@ function defaultLocalUserForm() {
 function openLocalUserDialog() {
   Object.assign(accountDialog.form, defaultLocalUserForm())
   accountDialog.visible = true
+}
+
+function openUserPermission(row) {
+  selectedUserId.value = row.user_id
+  userPermissionDialog.user = row
+  userPermissionDialog.status = row.status || 'active'
+  selectedRole.value = row.role || 'user'
+  resetPermissionDraft()
+  userPermissionDialog.visible = true
+}
+
+function selectPermissionUser(userId) {
+  const user = users.value.find(item => item.user_id === userId)
+  if (!user) return
+  userPermissionDialog.user = user
+  userPermissionDialog.status = user.status || 'active'
+  selectedRole.value = user.role || 'user'
+  resetPermissionDraft()
+}
+
+function openSelectedUserPermission() {
+  const user = selectedPermissionUser.value
+  if (!user) return
+  openUserPermission(user)
+}
+
+async function saveUserPermissionConfig() {
+  if (!userPermissionDialog.user?.user_id) return
+  if (!selectedRole.value) {
+    ElMessage.warning('请选择或输入角色')
+    return
+  }
+  userPermissionDialog.saving = true
+  try {
+    if (selectedRole.value !== 'admin') {
+      const payload = resourceOptions.flatMap(resource =>
+        permissionActions.map(action => ({
+          role: selectedRole.value,
+          resource: resource.resource,
+          action: action.value,
+          allowed: permissionAllowed(resource.resource, action.value)
+        }))
+      )
+      permissions.value = await saveRolePermissions(payload)
+      resetPermissionDraft()
+    }
+    await updateUserPermissions(userPermissionDialog.user.user_id, {
+      role: selectedRole.value,
+      status: userPermissionDialog.status
+    })
+    userPermissionDialog.visible = false
+    ElMessage.success('用户权限已保存')
+    await Promise.all([loadUsers(), loadPermissions()])
+  } finally {
+    userPermissionDialog.saving = false
+  }
 }
 
 async function submitLocalUser() {
@@ -342,6 +807,18 @@ function goAssetReclaim(row) {
   router.push({ path: '/asset/list', query: { action: 'reclaim', user_id: row.user_id, username: row.username, name: row.display_name } })
 }
 
+function dateValue(value) {
+  const time = new Date(value || 0).getTime()
+  return Number.isFinite(time) ? time : 0
+}
+
+function formatDateTime(value) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
+
 async function removeUser(row) {
   if (row.source !== 'local') {
     ElMessage.warning('LDAP / 飞书同步账户不能手动删除，请通过身份源同步标记离职')
@@ -352,8 +829,8 @@ async function removeUser(row) {
     return
   }
   try {
-    await ElMessageBox.confirm(`确定删除账户“${row.display_name || row.username}”吗？`, '删除账户', {
-      confirmButtonText: '删除',
+    await ElMessageBox.confirm(`确定将账户“${row.display_name || row.username}”标记为离职吗？该用户会保留在目录中，名下资产将在待办中心生成离职回收事项。`, '标记离职', {
+      confirmButtonText: '标记离职',
       cancelButtonText: '取消',
       type: 'warning'
     })
@@ -361,7 +838,7 @@ async function removeUser(row) {
     return
   }
   await deleteUser(row.user_id)
-  ElMessage.success('账户已删除')
+  ElMessage.success('账户已标记离职，名下资产会进入离职回收待办')
   await loadUsers()
 }
 
@@ -369,32 +846,21 @@ function defaultConfig(type = 'ldap') {
   const samples = {
     ldap: {
       host: '',
-      port: null,
-      use_ssl: false,
-      start_tls: false,
-      tls_validate: false,
+      port: '',
       bind_dn: '',
       bind_password: '',
       base_dn: '',
       user_filter: '',
       sync_filter: '',
-      username_attr: '',
-      display_name_attr: '',
-      email_attr: '',
+      username_attr: 'uid',
+      display_name_attr: 'displayName',
+      email_attr: 'mail',
       dept_id_attr: '',
       dept_name_attr: '',
       default_role: 'user',
-      sync_limit: 200,
+      sync_limit: '200',
       test_username: ''
     },
-    oidc: {
-      issuer: '',
-      authorization_endpoint: '',
-      client_id: '',
-      redirect_uri: '',
-      scopes: ''
-    },
-    saml: { sso_url: '', entity_id: '' },
     feishu: {
       app_id: '',
       app_secret: '',
@@ -402,43 +868,65 @@ function defaultConfig(type = 'ldap') {
       department_id_type: 'open_department_id',
       user_id_type: 'user_id',
       default_role: 'user',
-      sync_limit: 200,
-      department_limit: 200,
-      page_size: 50
-    },
-    wechat_work: { corp_id: '', agent_id: '' }
+      sync_limit: '200',
+      department_limit: '200',
+      page_size: '50'
+    }
   }
-  return samples[type] || {}
+  return { ...(samples[type] || samples.ldap) }
 }
 
 function resetProviderForm() {
   Object.assign(providerForm, defaultProviderForm())
-  providerConfigText.value = JSON.stringify(defaultConfig(providerForm.provider_type), null, 2)
+  setProviderConfig(defaultConfig(providerForm.provider_type))
 }
 
 function editProvider(row) {
   Object.assign(providerForm, { id: row.id, name: row.name, provider_type: row.provider_type, enabled: row.enabled })
-  providerConfigText.value = JSON.stringify(row.config || defaultConfig(row.provider_type), null, 2)
+  setProviderConfig({ ...defaultConfig(row.provider_type), ...(row.config || {}) })
 }
 
 async function saveProvider() {
-  let config = {}
-  try {
-    config = JSON.parse(providerConfigText.value || '{}')
-  } catch {
-    ElMessage.error('连接配置必须是合法 JSON')
+  if (!providerForm.name.trim()) {
+    ElMessage.warning('请填写身份源名称')
+    return
+  }
+  if (providerForm.provider_type === 'ldap' && (!providerConfig.host || !providerConfig.bind_dn || !providerConfig.base_dn)) {
+    ElMessage.warning('请填写 LDAP 服务器地址、绑定账号和搜索根 DN')
+    return
+  }
+  if (providerForm.provider_type === 'feishu' && (!providerConfig.app_id || !providerConfig.app_secret)) {
+    ElMessage.warning('请填写飞书 App ID 和 App Secret')
     return
   }
   const payload = {
-    name: providerForm.name,
+    name: providerForm.name.trim(),
     provider_type: providerForm.provider_type,
     enabled: providerForm.enabled,
-    config
+    config: buildProviderConfig()
   }
   if (providerForm.id) await updateIdentityProvider(providerForm.id, payload)
   else await createIdentityProvider(payload)
   ElMessage.success('身份源配置已保存')
   await loadProviders()
+}
+
+function setProviderConfig(config) {
+  Object.keys(providerConfig).forEach(key => delete providerConfig[key])
+  Object.assign(providerConfig, config)
+}
+
+function buildProviderConfig() {
+  const config = {}
+  Object.entries(providerConfig).forEach(([key, value]) => {
+    if (value === '' || value == null) return
+    config[key] = ['port', 'sync_limit', 'department_limit', 'page_size'].includes(key) ? Number(value) : value
+  })
+  return config
+}
+
+function providerTypeLabel(type) {
+  return { ldap: 'LDAP / AD', feishu: '飞书' }[type] || type
 }
 
 async function testProvider(row) {
@@ -464,7 +952,7 @@ async function removeProvider(row) {
 }
 
 async function syncFromProvider(row = null) {
-  const provider = row?.id ? row : providers.value.find(item => item.enabled)
+  const provider = row?.id ? row : supportedProviders.value.find(item => item.enabled)
   if (!provider) {
     ElMessage.warning('请先配置并启用一个身份源')
     return
@@ -485,11 +973,6 @@ async function submitLogin() {
   await loadUsers()
 }
 
-async function submitSso() {
-  const result = await startSso(loginForm.provider)
-  ElMessage.success(result.message)
-}
-
 function paginate(rows, pagination) {
   const start = (pagination.page - 1) * pagination.pageSize
   return rows.slice(start, start + pagination.pageSize)
@@ -508,6 +991,59 @@ function paginate(rows, pagination) {
   display: grid;
   grid-template-columns: minmax(400px, 0.9fr) minmax(520px, 1.1fr);
   gap: 16px;
+}
+
+.rbac-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.role-select {
+  width: 240px;
+}
+
+.rbac-alert {
+  margin-bottom: 12px;
+}
+
+.resource-key {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.permission-detail-card {
+  margin-top: 16px;
+}
+
+.user-permission-summary {
+  margin-bottom: 16px;
+}
+
+.user-permission-picker {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.user-select {
+  width: min(520px, 100%);
+}
+
+.user-permission-form {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.user-permission-form :deep(.el-form-item) {
+  margin-bottom: 0;
 }
 
 .config-help {

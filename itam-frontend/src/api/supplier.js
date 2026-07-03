@@ -1,7 +1,9 @@
 import request from '../utils/request'
 
+const SUPPLIER_LOOKUP_LIMIT = 500
+
 export async function getSuppliers(filters = {}) {
-  const result = await getSuppliersPaged({ ...filters, page_size: 0 })
+  const result = await getSuppliersPaged({ ...filters, page: 1, page_size: SUPPLIER_LOOKUP_LIMIT })
   return result.list
 }
 

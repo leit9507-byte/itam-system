@@ -16,6 +16,7 @@
           clearable
           @change="refresh"
         />
+        <el-button @click="openFaultTypeDialog">故障类型设置</el-button>
         <el-button type="primary" @click="load">刷新</el-button>
       </div>
     </div>
@@ -86,22 +87,51 @@
         />
       </div>
     </el-card>
+
+    <el-dialog v-model="faultTypeDialog.visible" title="故障类型设置" width="760px">
+      <div class="fault-type-form">
+        <el-input v-model="faultTypeDialog.form.name" placeholder="故障类型，例如：无法开机" />
+        <el-input v-model="faultTypeDialog.form.description" placeholder="说明，可选" />
+        <el-select v-model="faultTypeDialog.form.enabled" style="width: 120px">
+          <el-option label="启用" value="启用" />
+          <el-option label="停用" value="停用" />
+        </el-select>
+        <el-button type="primary" @click="saveFaultType">保存</el-button>
+      </div>
+      <el-table :data="faultTypes" border stripe>
+        <el-table-column prop="name" label="故障类型" min-width="160" />
+        <el-table-column prop="description" label="说明" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="enabled" label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.enabled === '启用' ? 'success' : 'info'">{{ row.enabled }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="130" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="editFaultType(row)">编辑</el-button>
+            <el-button link type="danger" @click="removeFaultType(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import * as echarts from 'echarts'
-import { finishRepairRecord, getRepairDashboard, getRepairRecords } from '../../api/repair'
+import { deleteRepairFaultType, finishRepairRecord, getRepairDashboard, getRepairFaultTypes, getRepairRecords, saveRepairFaultType } from '../../api/repair'
 
 const records = ref([])
 const trendRef = ref(null)
 const faultRef = ref(null)
 const charts = []
+const faultTypes = ref([])
 const filters = reactive({ keyword: '', status: '', dateRange: defaultDateRange() })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const dashboard = reactive({ total: 0, inProgress: 0, completed: 0, totalCost: 0, avgCost: 0, topFaults: [], costTrend: [] })
+const faultTypeDialog = reactive({ visible: false, form: defaultFaultTypeForm() })
 
 onMounted(load)
 onUnmounted(() => charts.forEach(chart => chart.dispose()))
@@ -111,6 +141,7 @@ async function load() {
   records.value = result.list
   pagination.total = result.total
   Object.assign(dashboard, await getRepairDashboard(filters))
+  faultTypes.value = await getRepairFaultTypes()
   await nextTick()
   renderCharts()
 }
@@ -163,6 +194,38 @@ async function finish(row) {
   await load()
 }
 
+function openFaultTypeDialog() {
+  faultTypeDialog.form = defaultFaultTypeForm()
+  faultTypeDialog.visible = true
+}
+
+function editFaultType(row) {
+  faultTypeDialog.form = { ...row }
+}
+
+async function saveFaultType() {
+  if (!faultTypeDialog.form.name.trim()) {
+    ElMessage.warning('请填写故障类型名称')
+    return
+  }
+  await saveRepairFaultType(faultTypeDialog.form)
+  ElMessage.success('故障类型已保存')
+  faultTypeDialog.form = defaultFaultTypeForm()
+  faultTypes.value = await getRepairFaultTypes()
+}
+
+async function removeFaultType(row) {
+  await ElMessageBox.confirm(`确认删除故障类型“${row.name}”？已有维修记录不会受影响。`, '删除故障类型', { type: 'warning' })
+  await deleteRepairFaultType(row.id)
+  ElMessage.success('故障类型已删除')
+  if (faultTypeDialog.form.id === row.id) faultTypeDialog.form = defaultFaultTypeForm()
+  faultTypes.value = await getRepairFaultTypes()
+}
+
+function defaultFaultTypeForm() {
+  return { id: null, name: '', description: '', enabled: '启用' }
+}
+
 function defaultDateRange() {
   const end = new Date()
   const start = new Date()
@@ -208,6 +271,13 @@ function defaultDateRange() {
   margin-top: 14px;
 }
 
+.fault-type-form {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(180px, 1.2fr) 120px auto;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
 @media (max-width: 1200px) {
   .repair-metrics,
   .chart-grid {
@@ -217,7 +287,8 @@ function defaultDateRange() {
 
 @media (max-width: 760px) {
   .repair-metrics,
-  .chart-grid {
+  .chart-grid,
+  .fault-type-form {
     grid-template-columns: 1fr;
   }
 }

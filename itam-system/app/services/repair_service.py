@@ -4,12 +4,55 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.asset import Asset
-from app.models.repair import RepairRecord
+from app.models.repair import RepairFaultType, RepairRecord
 from app.schemas.repair import RepairCreate, RepairFinish
 from app.services.lifecycle_service import LifecycleService
 
 
 class RepairService:
+    default_fault_types = ["无法开机", "屏幕损坏", "电池故障", "主板故障", "网络异常", "系统故障", "外壳/结构损坏"]
+
+    @staticmethod
+    def ensure_fault_types(db: Session) -> None:
+        if db.query(RepairFaultType).first():
+            return
+        for name in RepairService.default_fault_types:
+            db.add(RepairFaultType(name=name, description="", enabled="启用"))
+        db.commit()
+
+    @staticmethod
+    def list_fault_types(db: Session) -> list[RepairFaultType]:
+        RepairService.ensure_fault_types(db)
+        return db.query(RepairFaultType).order_by(RepairFaultType.enabled.desc(), RepairFaultType.id.asc()).all()
+
+    @staticmethod
+    def save_fault_type(db: Session, payload, fault_type_id: int | None = None) -> RepairFaultType:
+        RepairService.ensure_fault_types(db)
+        name = payload.name.strip()
+        if not name:
+            raise ValueError("fault type name is required")
+        row = db.get(RepairFaultType, fault_type_id) if fault_type_id else None
+        existed = db.query(RepairFaultType).filter(RepairFaultType.name == name).first()
+        if existed and (not row or existed.id != row.id):
+            raise ValueError("fault type already exists")
+        if not row:
+            row = RepairFaultType()
+            db.add(row)
+        row.name = name
+        row.description = payload.description or ""
+        row.enabled = payload.enabled or "启用"
+        db.commit()
+        db.refresh(row)
+        return row
+
+    @staticmethod
+    def delete_fault_type(db: Session, fault_type_id: int) -> None:
+        row = db.get(RepairFaultType, fault_type_id)
+        if not row:
+            raise ValueError("fault type not found")
+        db.delete(row)
+        db.commit()
+
     @staticmethod
     def list_records(
         db: Session,

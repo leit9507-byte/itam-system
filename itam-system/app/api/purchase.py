@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import operator_from_request
 from app.schemas.asset import AssetOut
-from app.schemas.purchase import PurchaseAcceptanceReceive, PurchaseCreate, PurchaseOut, PurchaseReceive
+from app.schemas.purchase import PurchaseAcceptanceReceive, PurchaseApprove, PurchaseCreate, PurchaseOut, PurchaseReceive
 from app.services.purchase_service import PurchaseService
 
 
@@ -33,6 +33,14 @@ def list_purchases(
 @router.post("/create", response_model=PurchaseOut)
 def create_purchase(payload: PurchaseCreate, db: Session = Depends(get_db)):
     return PurchaseService.create_purchase(db, payload)
+
+
+@router.post("/{purchase_no}/approve", response_model=PurchaseOut)
+def approve_purchase(request: Request, purchase_no: str, payload: PurchaseApprove | None = None, db: Session = Depends(get_db)):
+    try:
+        return PurchaseService.approve_purchase(db, purchase_no, operator_from_request(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/receive")

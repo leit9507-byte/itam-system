@@ -40,10 +40,8 @@ export async function createPurchase(payload) {
   return mapBackendPurchase(row)
 }
 
-export function approvePurchase(row) {
-  row.status = 'pending_acceptance'
-  row.status_label = '待验收'
-  return Promise.resolve(row)
+export async function approvePurchase(row) {
+  return mapBackendPurchase(await request.post(`/purchase/${encodeURIComponent(row.purchase_no)}/approve`, {}))
 }
 
 export async function acceptPurchase(purchaseNo, acceptances) {

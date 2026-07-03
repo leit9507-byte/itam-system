@@ -8,7 +8,7 @@
       <el-space>
         <el-button :icon="Setting" @click="openRules">规则设置</el-button>
         <el-button :icon="Document" @click="router.push('/report')">生成报告</el-button>
-        <el-button type="primary" :icon="Refresh" :loading="loading" @click="handleRun">立即审计</el-button>
+        <el-button type="primary" :icon="Refresh" :loading="loading" @click="handleRun(true)">立即审计</el-button>
       </el-space>
     </div>
 
@@ -73,8 +73,8 @@
           <el-table-column prop="audit_scope" label="审计对象" width="100">
             <template #default="{ row }">{{ scopeLabel(row.audit_scope) }}</template>
           </el-table-column>
-          <el-table-column prop="scope_category" label="设备类型" width="130">
-            <template #default="{ row }">{{ row.scope_category || '全部' }}</template>
+          <el-table-column prop="scope_category" label="设备类型" width="150">
+            <template #default="{ row }">{{ categoryLabel(row.scope_category) }}</template>
           </el-table-column>
           <el-table-column label="阈值" width="140">
             <template #default="{ row }">{{ ruleThreshold(row) }}</template>
@@ -152,15 +152,15 @@
         <el-table-column prop="severity" label="等级" width="90">
           <template #default="{ row }"><el-tag :type="severityType(row.severity)">{{ severityLabel(row.severity) }}</el-tag></template>
         </el-table-column>
-        <el-table-column prop="decision" label="合规判断" width="130">
-          <template #default="{ row }"><el-tag :type="decisionType(row.decision)">{{ decisionLabel(row.decision) }}</el-tag></template>
+        <el-table-column prop="decision" label="答复状态" width="130">
+          <template #default="{ row }"><el-tag :type="answerStatusType(row)">{{ answerStatusLabel(row) }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="response_reason" label="统一答复说明" min-width="240">
           <template #default="{ row }"><span class="reason-text">{{ row.response_reason || '待填写' }}</span></template>
         </el-table-column>
         <el-table-column label="操作" width="130" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="openResponse(row)">统一答复</el-button>
+            <el-button type="primary" link @click="openResponse(row)">{{ isAnswered(row) ? '查看/修改' : '统一答复' }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -177,8 +177,8 @@
         <el-table-column prop="price" label="金额" width="130">
           <template #default="{ row }">￥{{ formatValue(row.price) }}</template>
         </el-table-column>
-        <el-table-column prop="decision" label="合规判断" width="130">
-          <template #default="{ row }"><el-tag :type="decisionType(row.decision)">{{ decisionLabel(row.decision) }}</el-tag></template>
+        <el-table-column prop="decision" label="答复状态" width="130">
+          <template #default="{ row }"><el-tag :type="answerStatusType(row)">{{ answerStatusLabel(row) }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="response_reason" label="正常理由/处理说明" min-width="220">
           <template #default="{ row }"><span class="reason-text">{{ row.response_reason || '待填写' }}</span></template>
@@ -186,7 +186,7 @@
         <el-table-column prop="message" label="说明" min-width="280" />
         <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="openResponse(row)">答复</el-button>
+            <el-button type="primary" link @click="openResponse(row)">{{ isAnswered(row) ? '查看/修改' : '答复' }}</el-button>
             <el-button type="primary" link @click="router.push(`/asset/detail/${row.asset_id}`)">详情</el-button>
           </template>
         </el-table-column>
@@ -212,10 +212,18 @@
     <el-drawer v-model="rulesDrawer.visible" title="审计规则设置" size="900px">
       <div class="rule-help">
         <strong>规则说明：</strong>
-        人员审计用于检查人员配置标准、离职回收和借用回收；资产审计用于检查采购价值和闲置复用。
+        人员审计用于检查人员配置标准、离职回收和借用回收；设备类型可多选，多选后按这些类型合并统计。
+      </div>
+      <div class="drawer-actions">
+        <el-button type="primary" :icon="Plus" @click="addPersonCountRule">新增人员数量规则</el-button>
       </div>
       <el-table :data="pagedDrawerRules" border>
-        <el-table-column prop="name" label="规则" min-width="170" />
+        <el-table-column prop="name" label="规则" min-width="210">
+          <template #default="{ row }">
+            <el-input v-if="!isBuiltinRule(row.rule_code)" v-model="row.name" size="small" maxlength="40" />
+            <span v-else>{{ row.name }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="audit_scope" label="对象" width="90">
           <template #default="{ row }">{{ scopeLabel(row.audit_scope) }}</template>
         </el-table-column>
@@ -231,10 +239,19 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column label="设备类型" min-width="150">
+        <el-table-column label="设备类型" min-width="220">
           <template #default="{ row }">
-            <el-select v-model="row.scope_category" clearable filterable size="small" placeholder="全部">
-              <el-option label="全部" value="" />
+            <el-select
+              :model-value="categorySelection(row)"
+              multiple
+              collapse-tags
+              collapse-tags-tooltip
+              clearable
+              filterable
+              size="small"
+              placeholder="全部设备类型"
+              @change="value => setCategorySelection(row, value)"
+            >
               <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
             </el-select>
           </template>
@@ -328,7 +345,7 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Document, Refresh, Setting } from '@element-plus/icons-vue'
+import { Document, Plus, Refresh, Setting } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import { getAuditRules, runAudit, saveAuditResponse, saveAuditRules } from '../../api/audit'
 import { getDeviceTypes } from '../../api/product'
@@ -345,6 +362,14 @@ const scoreRef = ref(null)
 const idleRef = ref(null)
 const charts = []
 const rulesDrawer = reactive({ visible: false, saving: false, rules: [] })
+const builtinRuleCodes = new Set([
+  'USER_ASSET_COUNT_LIMIT',
+  'OFFBOARDING_ASSET_NOT_RETURNED',
+  'BORROWED_ASSET_NOT_RETURNED',
+  'SINGLE_OWNER_VALUE_LIMIT',
+  'HIGH_VALUE_PURCHASE',
+  'ASSET_IDLE_OVER_90_DAYS'
+])
 const rulePagination = reactive({ page: 1, pageSize: 10 })
 const resultPagination = reactive({ page: 1, pageSize: 20 })
 const drawerRulePagination = reactive({ page: 1, pageSize: 20 })
@@ -393,7 +418,7 @@ const pagedPersonRows = computed(() => paginate(filteredPersonRows.value, result
 const pagedAssetRows = computed(() => paginate(filteredAssetRows.value, resultPagination))
 
 onMounted(async () => {
-  await Promise.all([loadCategories(), handleRun()])
+  await Promise.all([loadCategories(), handleRun(false)])
 })
 onUnmounted(() => charts.forEach(chart => chart.dispose()))
 
@@ -402,15 +427,15 @@ async function loadCategories() {
   categories.value = rows.map(item => item.name)
 }
 
-async function handleRun() {
+async function handleRun(notify = false) {
   loading.value = true
   try {
-    result.value = await runAudit()
+    result.value = await runAudit({ notify })
     rulePagination.page = 1
     resultPagination.page = 1
     await nextTick()
     renderCharts()
-    ElMessage.success('资产审计已完成')
+    ElMessage.success(notify ? '资产审计已完成，风险通知已按配置发送' : '资产审计已完成')
   } finally {
     loading.value = false
   }
@@ -428,13 +453,28 @@ async function openRules() {
   rulesDrawer.visible = true
 }
 
+function addPersonCountRule() {
+  rulesDrawer.rules.unshift({
+    rule_code: `CUSTOM_PERSON_COUNT_${Date.now()}`,
+    name: '人员跨品类数量审计',
+    severity: 'medium',
+    enabled: true,
+    scope_category: '',
+    threshold_value: 5,
+    threshold_days: null,
+    audit_scope: 'person',
+    description: '按责任人统计全部品类资产数量，超过阈值时命中。'
+  })
+  drawerRulePagination.page = 1
+}
+
 async function saveRules() {
   rulesDrawer.saving = true
   try {
     await saveAuditRules(rulesDrawer.rules)
     rulesDrawer.visible = false
     ElMessage.success('规则已保存')
-    await handleRun()
+    await handleRun(false)
   } finally {
     rulesDrawer.saving = false
   }
@@ -527,14 +567,14 @@ async function submitResponse() {
     })
     responseDrawer.visible = false
     ElMessage.success('审计答复已保存')
-    await handleRun()
+    await handleRun(false)
   } finally {
     responseDrawer.saving = false
   }
 }
 
 function usesValueThreshold(ruleCode) {
-  return ['USER_ASSET_COUNT_LIMIT', 'HIGH_VALUE_PURCHASE', 'SINGLE_OWNER_VALUE_LIMIT'].includes(ruleCode)
+  return isCustomPersonCountRule(ruleCode) || ['USER_ASSET_COUNT_LIMIT', 'HIGH_VALUE_PURCHASE', 'SINGLE_OWNER_VALUE_LIMIT'].includes(ruleCode)
 }
 
 function usesDayThreshold(ruleCode) {
@@ -543,9 +583,28 @@ function usesDayThreshold(ruleCode) {
 
 function ruleThreshold(row) {
   if (usesDayThreshold(row.rule_code)) return `${row.threshold_days || 0} 天`
-  if (row.rule_code === 'USER_ASSET_COUNT_LIMIT') return `${row.threshold_value || 0} 台`
+  if (row.rule_code === 'USER_ASSET_COUNT_LIMIT' || isCustomPersonCountRule(row.rule_code)) return `${row.threshold_value || 0} 台`
   if (row.threshold_value) return `￥${formatValue(row.threshold_value)}`
   return '-'
+}
+
+function categorySelection(row) {
+  return String(row.scope_category || '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean)
+}
+
+function setCategorySelection(row, value) {
+  row.scope_category = Array.isArray(value) ? value.join(',') : ''
+}
+
+function categoryLabel(value) {
+  const items = String(value || '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean)
+  return items.length ? items.join('、') : '全部设备类型'
 }
 
 function focusRule(rule) {
@@ -588,6 +647,26 @@ function decisionLabel(value) {
 
 function decisionType(value) {
   return value === 'accepted' ? 'success' : value === 'non_compliant' ? 'danger' : 'info'
+}
+
+function isAnswered(row) {
+  return Boolean(row?.response_reason || (row?.decision && row.decision !== 'pending'))
+}
+
+function answerStatusLabel(row) {
+  return isAnswered(row) ? '已答复' : '待答复'
+}
+
+function answerStatusType(row) {
+  return isAnswered(row) ? 'success' : 'info'
+}
+
+function isBuiltinRule(ruleCode) {
+  return builtinRuleCodes.has(ruleCode)
+}
+
+function isCustomPersonCountRule(ruleCode) {
+  return String(ruleCode || '').startsWith('CUSTOM_PERSON_COUNT_')
 }
 
 function paginate(rows, pagination) {
@@ -757,6 +836,12 @@ function paginate(rows, pagination) {
   background: #eff6ff;
   color: #1e3a8a;
   line-height: 1.7;
+}
+
+.drawer-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
 }
 
 .rule-number {

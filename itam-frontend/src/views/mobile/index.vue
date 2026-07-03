@@ -5,10 +5,13 @@
         <span class="eyebrow">ITAM Mobile</span>
         <h1>移动扫码作业</h1>
       </div>
-      <el-tag type="success">在线</el-tag>
+      <div class="header-status">
+        <el-tag type="success">在线</el-tag>
+        <small>{{ logs.length }} 条记录</small>
+      </div>
     </header>
 
-    <section class="mode-grid">
+    <section class="mode-strip">
       <button v-for="item in modes" :key="item.value" type="button" class="mode-card" :class="{ active: mode === item.value }" @click="selectMode(item.value)">
         <el-icon><component :is="item.icon" /></el-icon>
         <span>{{ item.label }}</span>
@@ -45,9 +48,12 @@
         </el-input>
         <div class="scan-actions">
           <el-button type="primary" :icon="Camera" @click="scanCode">扫码</el-button>
-          <el-button @click="fillExample">示例</el-button>
+          <el-button :icon="Refresh" @click="resetAsset">清空</el-button>
         </div>
-        <p class="tip">支持二维码内容：ITAM-ASSET:ITAM-000001，或直接使用资产编号。</p>
+        <div class="quick-codes">
+          <button v-for="item in recentCodes" :key="item" type="button" @click="quickLoad(item)">{{ item }}</button>
+        </div>
+        <p class="tip">支持 ITAM-ASSET:ITAM-000001、资产编号、序列号或资产详情链接。</p>
       </div>
     </el-card>
 
@@ -70,6 +76,10 @@
         <span>部门：{{ asset.dept_name || asset.dept || '未绑定' }}</span>
         <span>位置：{{ asset.location || asset.warehouse || '-' }}</span>
       </div>
+      <div class="asset-actions">
+        <el-button plain @click="copyAssetId">复制编号</el-button>
+        <el-button plain @click="router.push(`/asset/detail/${asset.asset_id}`)">查看详情</el-button>
+      </div>
     </el-card>
 
     <el-card v-if="asset" shadow="never" class="form-card">
@@ -83,24 +93,33 @@
             <el-segmented v-model="form.stocktake_result" :options="['正常', '盘盈', '盘亏', '位置不符', '状态不符']" />
           </el-form-item>
           <el-form-item label="实际位置">
-            <el-input v-model="form.location" placeholder="例如：上海IT仓 / 工位 A-12" />
+            <el-select v-model="form.location" filterable clearable allow-create default-first-option placeholder="选择或填写实际位置" style="width: 100%">
+              <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
+            </el-select>
           </el-form-item>
         </template>
 
         <template v-if="mode === 'inbound'">
-          <el-form-item label="入库仓库">
-            <el-input v-model="form.location" placeholder="例如：上海IT仓" />
+          <el-form-item label="入库地址">
+            <el-select v-model="form.location" filterable clearable allow-create default-first-option placeholder="选择或填写入库地址" style="width: 100%">
+              <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
+            </el-select>
           </el-form-item>
         </template>
 
         <template v-if="mode === 'outbound'">
+          <el-form-item label="出库对象">
+            <el-segmented v-model="form.outboundTarget" :options="outboundTargetOptions" @change="changeOutboundTarget" />
+          </el-form-item>
           <el-form-item label="领用人">
-            <el-select v-model="form.owner_user_id" filterable remote clearable reserve-keyword :remote-method="searchUsers" placeholder="搜索姓名/账号" @change="selectUser">
+            <el-select v-model="form.owner_user_id" :disabled="form.outboundTarget === 'location'" filterable remote clearable reserve-keyword :remote-method="searchUsers" placeholder="搜索姓名/账号" @change="selectUser">
               <el-option v-for="user in filteredUsers" :key="user.user_id" :label="`${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`" :value="user.user_id" />
             </el-select>
           </el-form-item>
-          <el-form-item label="使用位置">
-            <el-input v-model="form.location" placeholder="例如：研发中心 5F" />
+          <el-form-item :label="form.outboundTarget === 'location' ? '公用位置' : '使用位置'">
+            <el-select v-model="form.location" filterable clearable allow-create default-first-option placeholder="选择或填写位置" style="width: 100%">
+              <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
+            </el-select>
           </el-form-item>
         </template>
 
@@ -108,8 +127,10 @@
           <el-form-item label="维修日期">
             <el-date-picker v-model="form.repair_time" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
           </el-form-item>
-          <el-form-item label="故障原因">
-            <el-input v-model="form.fault_reason" placeholder="例如：无法开机、屏幕损坏" />
+          <el-form-item label="故障类型">
+            <el-select v-model="form.fault_reason" filterable clearable allow-create default-first-option placeholder="选择或输入故障类型" style="width: 100%">
+              <el-option v-for="item in activeFaultTypes" :key="item.id || item.name" :label="item.name" :value="item.name" />
+            </el-select>
           </el-form-item>
           <el-form-item label="维修费用">
             <el-input-number v-model="form.repair_cost" :min="0" :precision="2" style="width: 100%" />
@@ -119,11 +140,30 @@
           </el-form-item>
         </template>
 
+        <template v-if="mode === 'scrap'">
+          <el-form-item label="处置方式">
+            <el-select v-model="form.disposal_method" style="width: 100%">
+              <el-option label="环保回收" value="环保回收" />
+              <el-option label="供应商回收" value="供应商回收" />
+              <el-option label="内部拆件" value="内部拆件" />
+              <el-option label="销毁处理" value="销毁处理" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="预计残值">
+            <el-input-number v-model="form.estimated_residual_value" :min="0" :precision="2" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="报废原因">
+            <el-input v-model="form.scrap_reason" type="textarea" :rows="3" placeholder="说明报废原因" />
+          </el-form-item>
+        </template>
+
         <el-form-item label="备注">
           <el-input v-model="form.remark" type="textarea" :rows="3" placeholder="补充说明" />
         </el-form-item>
       </el-form>
-      <el-button type="primary" size="large" class="submit-btn" :loading="submitting" @click="submitWork">{{ currentMode.submitText }}</el-button>
+      <div class="sticky-submit">
+        <el-button type="primary" size="large" class="submit-btn" :loading="submitting" @click="submitWork">{{ currentMode.submitText }}</el-button>
+      </div>
     </el-card>
 
     <el-card shadow="never" class="log-card">
@@ -147,18 +187,26 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Box, Camera, CircleCheck, Search, Setting } from '@element-plus/icons-vue'
-import { createRepairRecord } from '../../api/repair'
-import { getAssets, inboundAsset, outboundAsset } from '../../api/asset'
+import { Box, Camera, CircleCheck, Delete, Refresh, Search, Setting } from '@element-plus/icons-vue'
+import { createRepairRecord, getRepairFaultTypes } from '../../api/repair'
+import { createScrapRequest, getAssets, inboundAsset, outboundAsset } from '../../api/asset'
+import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
 import { getStocktakeTasks, startStocktakeTask, submitStocktakeItem } from '../../api/stocktake'
 
+const router = useRouter()
 const modes = [
   { value: 'stocktake', label: '扫码盘点', hint: '执行后台任务', icon: Search, formTitle: '盘点确认', submitText: '提交盘点' },
   { value: 'inbound', label: '扫码入库', hint: '归还/验收入库', icon: Box, formTitle: '入库信息', submitText: '确认入库' },
   { value: 'outbound', label: '扫码出库', hint: '关联领用人', icon: CircleCheck, formTitle: '出库信息', submitText: '确认出库' },
-  { value: 'repair', label: '扫码维修', hint: '创建今日维修', icon: Setting, formTitle: '维修信息', submitText: '创建维修' }
+  { value: 'repair', label: '扫码维修', hint: '创建今日维修', icon: Setting, formTitle: '维修信息', submitText: '创建维修' },
+  { value: 'scrap', label: '扫码报废', hint: '提交审批申请', icon: Delete, formTitle: '报废申请', submitText: '提交报废' }
+]
+const outboundTargetOptions = [
+  { label: '人员', value: 'user' },
+  { label: '位置', value: 'location' }
 ]
 
 const mode = ref('stocktake')
@@ -167,16 +215,28 @@ const asset = ref(null)
 const submitting = ref(false)
 const users = ref([])
 const filteredUsers = ref([])
+const locations = ref([])
+const faultTypes = ref([])
 const logs = ref([])
 const stocktakeTasks = ref([])
 const form = reactive(defaultForm())
 
 const currentMode = computed(() => modes.find(item => item.value === mode.value) || modes[0])
 const selectedTask = computed(() => stocktakeTasks.value.find(task => task.id === form.task_id))
+const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
+const activeFaultTypes = computed(() => faultTypes.value.filter(item => item.enabled !== '停用'))
+const recentCodes = computed(() => [...new Set(logs.value.map(item => item.asset_id).filter(Boolean))].slice(0, 4))
 
 onMounted(async () => {
   logs.value = JSON.parse(localStorage.getItem('itam_mobile_logs') || '[]')
-  users.value = await getUsers().catch(() => [])
+  const [userRows, locationRows, faultRows] = await Promise.all([
+    getUsers().catch(() => []),
+    getLocations().catch(() => []),
+    getRepairFaultTypes().catch(() => [])
+  ])
+  users.value = userRows
+  locations.value = locationRows
+  faultTypes.value = faultRows
   filteredUsers.value = users.value.slice(0, 20)
   await loadStocktakeTasks()
 })
@@ -190,10 +250,14 @@ function defaultForm() {
     owner_name: '',
     dept_id: '',
     dept_name: '',
+    outboundTarget: 'user',
     repair_time: new Date().toISOString().slice(0, 10),
     fault_reason: '',
     repair_cost: 0,
     vendor: '',
+    disposal_method: '环保回收',
+    estimated_residual_value: 0,
+    scrap_reason: '',
     remark: ''
   }
 }
@@ -218,6 +282,11 @@ function selectMode(value) {
 
 function fillExample() {
   assetCode.value = 'ITAM-000001'
+  loadAsset()
+}
+
+function quickLoad(code) {
+  assetCode.value = code
   loadAsset()
 }
 
@@ -319,6 +388,26 @@ function selectUser(userId) {
   form.dept_name = user?.dept_name || ''
 }
 
+function changeOutboundTarget(value) {
+  if (value === 'location') {
+    form.owner_user_id = ''
+    form.owner_name = ''
+    form.dept_id = ''
+    form.dept_name = ''
+  }
+}
+
+function locationLabel(item) {
+  const meta = [item.code, item.type].filter(Boolean).join(' / ')
+  return meta ? `${item.name} (${meta})` : item.name
+}
+
+async function copyAssetId() {
+  if (!asset.value?.asset_id) return
+  await navigator.clipboard?.writeText(asset.value.asset_id).catch(() => null)
+  ElMessage.success('资产编号已复制')
+}
+
 async function submitWork() {
   if (!asset.value) return ElMessage.warning('请先扫码选择资产')
   submitting.value = true
@@ -327,6 +416,7 @@ async function submitWork() {
     if (mode.value === 'inbound') await submitInbound()
     if (mode.value === 'outbound') await submitOutbound()
     if (mode.value === 'repair') await submitRepair()
+    if (mode.value === 'scrap') await submitScrap()
     resetAsset()
   } finally {
     submitting.value = false
@@ -354,8 +444,10 @@ async function submitInbound() {
 }
 
 async function submitOutbound() {
-  if (!form.owner_user_id) return ElMessage.warning('请选择领用人')
+  if (form.outboundTarget === 'user' && !form.owner_user_id) return ElMessage.warning('请选择领用人')
+  if (form.outboundTarget === 'location' && !form.location) return ElMessage.warning('请选择公用位置')
   const updated = await outboundAsset(asset.value.asset_id, {
+    outboundTarget: form.outboundTarget,
     owner_user_id: form.owner_user_id,
     owner_name: form.owner_name,
     dept_id: form.dept_id,
@@ -368,10 +460,23 @@ async function submitOutbound() {
 }
 
 async function submitRepair() {
-  if (!form.fault_reason) return ElMessage.warning('请填写故障原因')
+  if (!form.fault_reason) return ElMessage.warning('请选择故障类型')
   await createRepairRecord(asset.value, { repair_time: form.repair_time, fault_reason: form.fault_reason, repair_cost: form.repair_cost, vendor: form.vendor, remark: form.remark || '移动端扫码报修' })
   addLog('扫码维修', form.fault_reason)
   ElMessage.success('维修单已创建')
+}
+
+async function submitScrap() {
+  if (!form.scrap_reason.trim()) return ElMessage.warning('请填写报废原因')
+  await createScrapRequest(asset.value.asset_id, {
+    applicant: asset.value.dept_name || asset.value.dept || '移动端扫码',
+    disposal_method: form.disposal_method,
+    estimated_residual_value: form.estimated_residual_value,
+    reason: form.scrap_reason,
+    operator: '移动端扫码'
+  })
+  addLog('扫码报废', form.scrap_reason)
+  ElMessage.success('报废申请已提交审批')
 }
 
 function addLog(action, remark) {
@@ -397,21 +502,178 @@ function statusType(value) {
 </script>
 
 <style scoped>
-.mobile-page { min-height: 100vh; padding: 14px; display: grid; gap: 12px; background: #f4f7f6; }
-.mobile-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 2px; }
-.mobile-header h1 { margin: 4px 0 0; font-size: 24px; }
-.eyebrow, .tip, .asset-main span, .asset-meta, .log-item small { color: #64748b; }
-.mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.mode-card { min-height: 104px; padding: 14px; border: 1px solid #d9e2df; border-radius: 8px; background: #fff; text-align: left; display: grid; gap: 6px; }
-.mode-card.active { border-color: #0f766e; box-shadow: 0 8px 24px rgba(15, 118, 110, 0.14); }
-.mode-card .el-icon { font-size: 22px; color: #0f766e; }
-.mode-card span { font-weight: 700; }
-.card-header, .scan-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-.scan-box, .asset-main, .asset-meta, .log-list, .log-item { display: grid; gap: 10px; }
-.asset-main { gap: 4px; margin-bottom: 10px; }
-.asset-main strong { font-size: 20px; }
-.asset-meta { gap: 6px; font-size: 13px; }
-.submit-btn { width: 100%; }
-.log-item { gap: 3px; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; }
-@media (min-width: 760px) { .mobile-page { max-width: 560px; margin: 0 auto; } }
+.mobile-page {
+  min-height: 100vh;
+  padding: 14px 12px 22px;
+  display: grid;
+  gap: 12px;
+  background: #f4f7fb;
+}
+
+.mobile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 2px 2px;
+}
+
+.mobile-header h1 {
+  margin: 4px 0 0;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.header-status {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+  padding-top: 4px;
+}
+
+.header-status small,
+.eyebrow,
+.tip,
+.asset-main span,
+.asset-meta,
+.log-item small {
+  color: #64748b;
+}
+
+.mode-strip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 2px 2px 8px;
+  scroll-snap-type: x proximity;
+}
+
+.mode-strip::-webkit-scrollbar,
+.quick-codes::-webkit-scrollbar {
+  display: none;
+}
+
+.mode-card {
+  flex: 0 0 132px;
+  min-height: 98px;
+  padding: 13px;
+  border: 1px solid #d9e2df;
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+  display: grid;
+  gap: 6px;
+  scroll-snap-align: start;
+}
+
+.mode-card.active {
+  border-color: #0f766e;
+  box-shadow: 0 8px 24px rgba(15, 118, 110, 0.14);
+}
+
+.mode-card .el-icon {
+  font-size: 22px;
+  color: #0f766e;
+}
+
+.mode-card span {
+  font-weight: 700;
+}
+
+.card-header,
+.scan-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.scan-actions {
+  flex-shrink: 0;
+}
+
+.scan-box,
+.asset-main,
+.asset-meta,
+.log-list,
+.log-item {
+  display: grid;
+  gap: 10px;
+}
+
+.quick-codes {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.quick-codes .el-button {
+  flex: 0 0 auto;
+}
+
+.asset-main {
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.asset-main strong {
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.asset-meta {
+  gap: 6px;
+  font-size: 13px;
+}
+
+.asset-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sticky-submit {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding-top: 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), #fff 38%);
+}
+
+.submit-btn {
+  width: 100%;
+}
+
+.log-item {
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+:deep(.el-card) {
+  border-radius: 8px;
+}
+
+:deep(.el-form-item) {
+  margin-bottom: 14px;
+}
+
+:deep(.el-segmented) {
+  width: 100%;
+}
+
+:deep(.el-segmented__item) {
+  flex: 1;
+}
+
+@media (min-width: 760px) {
+  .mobile-page {
+    max-width: 560px;
+    margin: 0 auto;
+  }
+}
 </style>

@@ -17,6 +17,7 @@ from app.models.asset import Asset
 from app.models.user import UserDirectory
 from app.schemas.asset import AssetBatchImport, AssetCreate, AssetImportRow, AssetTextImport, AssetUpdate
 from app.services.lifecycle_service import LifecycleService
+from app.services.notification_service import NotificationService
 from app.services.supplier_service import SupplierService
 
 
@@ -635,7 +636,83 @@ class AssetService:
         LifecycleService.record(db, asset.asset_id, "STATUS_CHANGE", from_status, to_status, operator, lifecycle_remark)
         db.commit()
         db.refresh(asset)
+        AssetService.notify_status_change(db, asset, from_status, to_status, operator, previous_user, previous_owner_user_id, user)
         return AssetService.to_out(asset, user)
+
+    @staticmethod
+    def notify_status_change(
+        db: Session,
+        asset: Asset,
+        from_status: str | None,
+        to_status: str,
+        operator: str,
+        previous_user: UserDirectory | None = None,
+        previous_owner_user_id: str | None = None,
+        current_user: UserDirectory | None = None,
+    ) -> None:
+        now_text = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        if to_status == "in_stock":
+            NotificationService.send_event(
+                db,
+                "inbound",
+                "资产入库完成",
+                [
+                    f"资产名称：{AssetService.asset_display_name(asset)}",
+                    f"资产编号：{asset.asset_id}",
+                    f"状态变更：{AssetService.status_label(from_status)} -> {AssetService.status_label(to_status)}",
+                    f"入库位置：{asset.location or '-'}",
+                    f"原责任人：{AssetService.user_label(previous_user, previous_owner_user_id)}",
+                    f"操作人：{operator}",
+                    f"操作时间：{now_text}",
+                ],
+            )
+        elif to_status in {"in_use", "borrowed", "out_stock"}:
+            owner_label = AssetService.user_label(current_user, asset.owner_user_id)
+            owner_key = "公用设备位置" if to_status == "out_stock" and not AssetService.normalize_blank(asset.owner_user_id) else AssetService.outbound_owner_key(to_status)
+            NotificationService.send_event(
+                db,
+                "outbound",
+                "资产出库完成",
+                [
+                    f"资产名称：{AssetService.asset_display_name(asset)}",
+                    f"资产编号：{asset.asset_id}",
+                    f"状态变更：{AssetService.status_label(from_status)} -> {AssetService.status_label(to_status)}",
+                    f"{owner_key}：{asset.location if owner_key == '公用设备位置' else owner_label}",
+                    f"所属部门：{current_user.dept_name or current_user.dept_id if current_user else asset.dept_id or '-'}",
+                    f"使用位置：{asset.location or '-'}",
+                    f"操作人：{operator}",
+                    f"操作时间：{now_text}",
+                ],
+            )
+
+    @staticmethod
+    def asset_display_name(asset: Asset) -> str:
+        parts = [asset.name, asset.brand, asset.model]
+        return " / ".join([str(part).strip() for part in parts if part]) or asset.asset_id
+
+    @staticmethod
+    def status_label(value: str | None) -> str:
+        return {
+            "pending_purchase": "待采购",
+            "pending_acceptance": "待验收",
+            "in_stock": "在库",
+            "in_use": "在用",
+            "idle": "闲置",
+            "borrowed": "借出",
+            "repair": "维修中",
+            "out_stock": "已出库",
+            "ready_scrap": "待报废",
+            "pending_scrap": "已提交报废审批",
+            "scrapped": "已报废",
+        }.get(value or "", value or "-")
+
+    @staticmethod
+    def outbound_owner_key(to_status: str) -> str:
+        return {
+            "in_use": "领用人",
+            "borrowed": "借用人",
+            "out_stock": "出库责任人",
+        }.get(to_status, "责任人")
 
     @staticmethod
     def user_label(user: UserDirectory | None, fallback: str | None) -> str:

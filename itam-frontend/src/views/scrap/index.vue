@@ -15,6 +15,30 @@
       <el-card shadow="never"><el-statistic title="预计残值" :value="totalResidual" prefix="¥" /></el-card>
     </div>
 
+    <el-card shadow="never" class="filter-card">
+      <div class="filter-grid">
+        <el-form-item label="申请时间">
+          <el-date-picker
+            v-model="filters.createdRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            @change="refresh"
+          />
+        </el-form-item>
+        <el-form-item label="审批状态">
+          <el-select v-model="filters.status" clearable placeholder="全部状态" @change="refresh">
+            <el-option label="审批中" value="审批中" />
+            <el-option label="已通过" value="已通过" />
+            <el-option label="已驳回" value="已驳回" />
+          </el-select>
+        </el-form-item>
+        <el-button @click="resetFilters">重置</el-button>
+      </div>
+    </el-card>
+
     <el-card shadow="never">
       <el-table :data="requests" border stripe>
         <el-table-column prop="request_no" label="流程单号" width="140" />
@@ -88,15 +112,22 @@ import { approveScrapRequest, getScrapRequests, rejectScrapRequest } from '../..
 const requests = ref([])
 const allRequests = ref([])
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const filters = reactive({ createdRange: [], status: '' })
+const SCRAP_SUMMARY_LIMIT = 500
 
 const totalResidual = computed(() => allRequests.value.reduce((sum, item) => sum + Number(item.estimated_residual_value || 0), 0))
 
 onMounted(load)
 
 async function load() {
+  const params = {
+    status: filters.status || '',
+    created_from: filters.createdRange?.[0] || '',
+    created_to: filters.createdRange?.[1] || ''
+  }
   const [paged, all] = await Promise.all([
-    getScrapRequests({ page: pagination.page, page_size: pagination.pageSize }),
-    getScrapRequests({ page_size: 0 })
+    getScrapRequests({ ...params, page: pagination.page, page_size: pagination.pageSize }),
+    getScrapRequests({ ...params, page: 1, page_size: SCRAP_SUMMARY_LIMIT })
   ])
   requests.value = paged.list
   pagination.total = paged.total
@@ -110,6 +141,18 @@ function countByStatus(status) {
 function handlePageSizeChange() {
   pagination.page = 1
   load()
+}
+
+function refresh() {
+  pagination.page = 1
+  load()
+}
+
+async function resetFilters() {
+  filters.createdRange = []
+  filters.status = ''
+  pagination.page = 1
+  await load()
 }
 
 async function approve(row) {
@@ -144,9 +187,36 @@ function statusType(status) {
   font-size: 12px;
 }
 
+.filter-card {
+  margin-bottom: 12px;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(160px, 200px) auto;
+  align-items: end;
+  justify-content: start;
+  gap: 12px;
+}
+
+.filter-grid :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.filter-grid :deep(.el-date-editor),
+.filter-grid :deep(.el-select) {
+  width: 100%;
+}
+
 .pagination-bar {
   display: flex;
   justify-content: flex-end;
   margin-top: 14px;
+}
+
+@media (max-width: 980px) {
+  .filter-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -7,9 +7,11 @@ from app.schemas.user import (
     IdentityProviderSave,
     LoginRequest,
     LoginResponse,
+    RolePermissionSave,
     RolePermissionOut,
     SyncUsersRequest,
     SyncUsersResponse,
+    UserPermissionUpdate,
     UserOut,
     UserUpsert,
 )
@@ -41,10 +43,17 @@ def start_sso(provider_type: str, db: Session = Depends(get_db)):
 
 
 @router.get("/auth/callback/{provider_type}", response_model=LoginResponse)
-def sso_callback(provider_type: str, username: str, email: str | None = None, db: Session = Depends(get_db)):
-    if provider_type not in {"oidc", "saml"}:
-        raise HTTPException(status_code=400, detail="unsupported provider callback")
-    return SsoService.callback_login(db, provider_type, username, email)
+def sso_callback(provider_type: str, code: str | None = None, state: str | None = None, db: Session = Depends(get_db)):
+    try:
+        if provider_type == "oidc":
+            if not code:
+                raise ValueError("OIDC callback requires authorization code")
+            return SsoService.oidc_callback_login(db, code, state)
+        if provider_type == "saml":
+            raise ValueError("SAML callback requires signed assertion validation and is not enabled yet")
+        raise ValueError("unsupported provider callback")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def db_provider_hint(provider_type: str, db: Session) -> dict:
@@ -85,8 +94,18 @@ def save_user(payload: UserUpsert, db: Session = Depends(get_db)):
 @router.delete("/users/{user_id}")
 def delete_user(user_id: str, db: Session = Depends(get_db)):
     try:
-        IdentityService.delete_local_user(db, user_id)
-        return {"message": "user deleted"}
+        user = IdentityService.delete_local_user(db, user_id)
+        return {"message": "user marked resigned", "user": user}
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 404 if message == "user not found" else 400
+        raise HTTPException(status_code=status_code, detail=message) from exc
+
+
+@router.put("/users/{user_id}/permissions", response_model=UserOut)
+def update_user_permissions(user_id: str, payload: UserPermissionUpdate, db: Session = Depends(get_db)):
+    try:
+        return IdentityService.update_user_permissions(db, user_id, payload)
     except ValueError as exc:
         message = str(exc)
         status_code = 404 if message == "user not found" else 400
@@ -110,6 +129,14 @@ def list_providers(db: Session = Depends(get_db)):
 @router.get("/rbac/permissions", response_model=list[RolePermissionOut])
 def list_permissions(db: Session = Depends(get_db)):
     return IdentityService.list_permissions(db)
+
+
+@router.post("/rbac/permissions", response_model=list[RolePermissionOut])
+def save_permissions(payload: list[RolePermissionSave], db: Session = Depends(get_db)):
+    try:
+        return IdentityService.save_permissions(db, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/identity/providers", response_model=IdentityProviderOut)

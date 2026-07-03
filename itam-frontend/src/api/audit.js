@@ -17,6 +17,7 @@ const severityLabels = {
   medium: '中',
   low: '低'
 }
+const AUDIT_CONTEXT_LIMIT = 1000
 
 export function getAuditRules() {
   return request.get('/audit/rules')
@@ -34,12 +35,12 @@ export function saveAuditResponse(payload) {
   return request.post('/audit/responses', payload)
 }
 
-export async function runAudit() {
+export async function runAudit(options = {}) {
   const [{ list: assets }, purchaseResult, users, backend, rules, responses] = await Promise.all([
-    getAssets({}),
-    getPurchases({ page_size: 0 }).catch(() => ({ list: [] })),
+    getAssets({ page: 1, page_size: AUDIT_CONTEXT_LIMIT }),
+    getPurchases({ page: 1, page_size: AUDIT_CONTEXT_LIMIT }).catch(() => ({ list: [] })),
     getUsers().catch(() => []),
-    request.post('/audit/run', { users: [] }).catch(() => null),
+    request.post('/audit/run', { users: [], notify: Boolean(options.notify) }).catch(() => null),
     getAuditRules().catch(() => []),
     getAuditResponses().catch(() => [])
   ])
@@ -84,7 +85,7 @@ export function getReports() {
 }
 
 export async function generateReport() {
-  const result = await request.post('/audit/run', { users: [] })
+  const result = await request.post('/audit/run', { users: [], notify: false })
   const html = await request.get('/audit/report', { responseType: 'text' })
   return {
     id: `AR-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}`,
@@ -152,10 +153,14 @@ function buildPersonRisks(assets, users, violations, rules) {
       .filter(asset => offboardedUsers.some(user => user.user_id === asset.owner_user_id) && ['in_use', 'borrowed', 'out_stock'].includes(asset.status))
       .map(item => item.asset_id)
   )
+  const customCountRisks = (rules || [])
+    .filter(rule => isCustomPersonCountRule(rule.rule_code))
+    .map(rule => riskCard(rule.rule_code, rule.name || '人员跨品类数量审计', 'person', violations, assets, rules, rule.scope_category ? `按 ${rule.scope_category.replaceAll(',', '、')} 数量阈值核对人员配置` : '按全部设备类型统计人员名下资产数量'))
   return [
     riskCard('USER_ASSET_COUNT_LIMIT', '人员资产超数量配置', 'person', violations, assets, rules, '按设备类型和数量阈值核对个人配置标准'),
     riskCard('OFFBOARDING_ASSET_NOT_RETURNED', '离职没有回收', 'person', violations, assets.filter(asset => offboardedAssetIds.has(asset.asset_id)), rules, '联动离职状态，发起资产回收入库'),
-    riskCard('BORROWED_ASSET_NOT_RETURNED', '借用没有回收', 'person', violations, assets.filter(asset => asset.status === 'borrowed'), rules, '跟踪借用周期，超期提醒并回收')
+    riskCard('BORROWED_ASSET_NOT_RETURNED', '借用没有回收', 'person', violations, assets.filter(asset => asset.status === 'borrowed'), rules, '跟踪借用周期，超期提醒并回收'),
+    ...customCountRisks
   ]
 }
 
@@ -264,7 +269,12 @@ function scoreFromRisks(risks, violations) {
 }
 
 function inferScope(rule) {
+  if (isCustomPersonCountRule(rule)) return 'person'
   return ['USER_ASSET_COUNT_LIMIT', 'OFFBOARDING_ASSET_NOT_RETURNED', 'BORROWED_ASSET_NOT_RETURNED', 'SINGLE_OWNER_VALUE_LIMIT'].includes(rule) ? 'person' : 'asset'
+}
+
+function isCustomPersonCountRule(rule) {
+  return String(rule || '').startsWith('CUSTOM_PERSON_COUNT_')
 }
 
 function isInactiveUser(status) {

@@ -9,10 +9,21 @@ from app.services.lifecycle_service import LifecycleService
 
 class ScrapService:
     @staticmethod
-    def list_requests(db: Session, page: int = 1, page_size: int = 0, status: str | None = None) -> dict:
+    def list_requests(
+        db: Session,
+        page: int = 1,
+        page_size: int = 0,
+        status: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+    ) -> dict:
         query = db.query(ScrapRequest)
         if status:
             query = query.filter(ScrapRequest.status == status)
+        if created_from:
+            query = query.filter(ScrapRequest.created_at >= created_from)
+        if created_to:
+            query = query.filter(ScrapRequest.created_at <= created_to)
         total = query.count()
         query = query.order_by(ScrapRequest.id.desc())
         if page_size and page_size > 0:

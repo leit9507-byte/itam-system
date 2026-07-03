@@ -3,21 +3,40 @@
     <div class="header-left">
       <el-button class="collapse-button" :icon="store.collapsed ? Expand : Fold" circle @click="store.toggleSidebar()" />
       <div class="title-block">
-        <h1>{{ route.meta.title || 'ITAM Dashboard' }}</h1>
+        <h1>{{ pageTitle }}</h1>
         <p>企业 IT 资产全生命周期管理后台</p>
       </div>
     </div>
 
     <div class="header-right">
-      <el-tag class="status-tag" type="success" effect="light">
-        <span class="status-dot status-ok" />前端运行中
-      </el-tag>
-      <el-tag class="status-tag" :type="backendOnline ? 'success' : 'danger'" effect="light">
-        <span class="status-dot" :class="backendOnline ? 'status-ok' : 'status-error'" />{{ backendLabel }}
-      </el-tag>
-      <el-tag class="status-tag" type="info" effect="light">容器部署</el-tag>
-      <span class="today">{{ today }}</span>
-      <el-divider direction="vertical" />
+      <el-input v-model="keyword" class="global-search" placeholder="搜索资产、编号、序列号..." clearable @keyup.enter="goSearch">
+        <template #suffix><el-icon><Search /></el-icon></template>
+      </el-input>
+      <el-popover placement="bottom-end" width="380" trigger="click" @show="loadPendingTodos">
+        <template #reference>
+          <button class="notify-button" type="button" :title="todoCount ? `${todoCount} 个待处理事项` : '暂无待处理事项'">
+            <el-icon><Bell /></el-icon>
+            <span v-if="todoCount">{{ displayTodoCount }}</span>
+          </button>
+        </template>
+        <div class="notify-panel">
+          <div class="notify-panel-head">
+            <strong>待处理事项</strong>
+            <el-button link type="primary" :loading="todoLoading" @click="loadPendingTodos">刷新</el-button>
+          </div>
+          <el-empty v-if="!todoLoading && !pendingTodos.length" description="暂无需要处理的事项" :image-size="72" />
+          <div v-else class="notify-list">
+            <button v-for="item in topPendingTodos" :key="item.id" type="button" class="notify-row" @click="goTodo(item)">
+              <el-tag :type="priorityType(item.priority)" size="small">{{ priorityLabel(item.priority) }}</el-tag>
+              <div>
+                <strong>{{ item.title }}</strong>
+                <span>{{ item.type_label }} / {{ item.status }}</span>
+              </div>
+            </button>
+          </div>
+          <el-button v-if="pendingTodos.length" class="notify-more" type="primary" plain @click="router.push('/todo')">查看全部 {{ pendingTodos.length }} 项</el-button>
+        </div>
+      </el-popover>
 
       <el-dropdown trigger="click" @command="handleUserCommand">
         <button class="user-trigger">
@@ -41,11 +60,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDown, Expand, Fold } from '@element-plus/icons-vue'
+import { ArrowDown, Bell, Expand, Fold, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useAppStore } from '../store'
+import { getTodoItems } from '../api/todo'
 import request from '../utils/request'
 
 const route = useRoute()
@@ -53,6 +73,10 @@ const router = useRouter()
 const store = useAppStore()
 const backendOnline = ref(false)
 const backendLabel = ref('后端检测中')
+const keyword = ref('')
+const pendingTodos = ref([])
+const todoLoading = ref(false)
+let todoTimer = null
 
 const today = new Intl.DateTimeFormat('zh-CN', {
   year: 'numeric',
@@ -72,6 +96,10 @@ const roleLabel = computed(() => {
 })
 
 const avatarText = computed(() => (store.user.name || 'U').slice(0, 1).toUpperCase())
+const pageTitle = computed(() => (route.path === '/dashboard' ? '资产管理系统' : route.meta.title || 'ITAM Dashboard'))
+const todoCount = computed(() => pendingTodos.value.length)
+const displayTodoCount = computed(() => (todoCount.value > 99 ? '99+' : todoCount.value))
+const topPendingTodos = computed(() => pendingTodos.value.slice(0, 5))
 
 onMounted(async () => {
   try {
@@ -82,6 +110,12 @@ onMounted(async () => {
     backendOnline.value = false
     backendLabel.value = '后端未连接'
   }
+  await loadPendingTodos()
+  todoTimer = window.setInterval(loadPendingTodos, 60000)
+})
+
+onUnmounted(() => {
+  if (todoTimer) window.clearInterval(todoTimer)
 })
 
 function handleUserCommand(command) {
@@ -94,6 +128,34 @@ function handleUserCommand(command) {
     router.push('/permission')
   }
 }
+
+function goSearch() {
+  const value = keyword.value.trim()
+  router.push({ path: '/asset/list', query: value ? { keyword: value } : {} })
+}
+
+async function loadPendingTodos() {
+  todoLoading.value = true
+  try {
+    pendingTodos.value = await getTodoItems()
+  } catch {
+    pendingTodos.value = []
+  } finally {
+    todoLoading.value = false
+  }
+}
+
+function goTodo(item) {
+  router.push({ path: item.target_path || '/todo', query: item.target_query || {} })
+}
+
+function priorityLabel(priority) {
+  return { high: '高', medium: '中', low: '低' }[priority] || '待办'
+}
+
+function priorityType(priority) {
+  return { high: 'danger', medium: 'warning', low: 'info' }[priority] || 'info'
+}
 </script>
 
 <style scoped>
@@ -102,10 +164,11 @@ function handleUserCommand(command) {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  height: 64px;
+  height: 76px;
   min-width: 0;
   border-bottom: 1px solid var(--line);
   background: #fff;
+  box-shadow: 0 6px 18px rgba(22, 44, 82, 0.06);
 }
 
 .header-left,
@@ -136,46 +199,116 @@ h1 {
   overflow: hidden;
   margin: 0;
   color: var(--text);
-  font-size: 18px;
+  font-size: 26px;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 p {
-  overflow: hidden;
-  margin: 3px 0 0;
-  color: var(--muted);
+  display: none;
+}
+
+.global-search {
+  width: 360px;
+}
+
+:deep(.global-search .el-input__wrapper) {
+  min-height: 44px;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px #dbe4f3 inset;
+}
+
+.notify-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 50%;
+  background: #f2f7ff;
+  color: #0f4ea8;
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.notify-button span {
+  position: absolute;
+  top: -4px;
+  right: -2px;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #ff3347;
+  color: #fff;
   font-size: 12px;
+  font-weight: 800;
+}
+
+.notify-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.notify-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notify-panel-head strong {
+  color: var(--text);
+}
+
+.notify-list {
+  display: grid;
+  gap: 8px;
+}
+
+.notify-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notify-row:hover {
+  border-color: #93c5fd;
+  background: #f8fbff;
+}
+
+.notify-row strong,
+.notify-row span {
+  display: block;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.status-tag {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.status-dot {
-  width: 7px;
-  height: 7px;
-  margin-right: 6px;
-  border-radius: 50%;
-}
-
-.status-ok {
-  background: #16a34a;
-}
-
-.status-error {
-  background: #dc2626;
-}
-
-.today {
-  flex-shrink: 0;
-  color: var(--muted);
+.notify-row strong {
+  color: var(--text);
   font-size: 13px;
+}
+
+.notify-row span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.notify-more {
+  width: 100%;
 }
 
 .user-trigger {
@@ -189,7 +322,7 @@ p {
 
 .avatar {
   flex-shrink: 0;
-  background: var(--primary);
+  background: linear-gradient(135deg, #0c4da2, #2478ff);
 }
 
 .user-block {
@@ -210,9 +343,12 @@ p {
 }
 
 @media (max-width: 1060px) {
-  .today,
   .user-block {
     display: none;
+  }
+
+  .global-search {
+    width: 260px;
   }
 }
 
@@ -234,6 +370,10 @@ p {
   .header-right {
     justify-content: flex-start;
     flex-wrap: wrap;
+  }
+
+  .global-search {
+    width: 100%;
   }
 }
 </style>

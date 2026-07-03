@@ -21,7 +21,10 @@ class RuleEngine:
         assets = self.db.query(Asset).all()
         rules = self._rules_by_code()
         violations: list[dict] = []
-        violations.extend(self._user_asset_count_limit(assets, rules["USER_ASSET_COUNT_LIMIT"]))
+        violations.extend(self._user_asset_count_limit(assets, rules["USER_ASSET_COUNT_LIMIT"], "USER_ASSET_COUNT_LIMIT"))
+        for code, rule in rules.items():
+            if code.startswith("CUSTOM_PERSON_COUNT_"):
+                violations.extend(self._user_asset_count_limit(assets, rule, code))
         violations.extend(self._offboarding_assets_not_returned(assets, rules["OFFBOARDING_ASSET_NOT_RETURNED"]))
         violations.extend(self._borrowed_assets_not_returned(assets, rules["BORROWED_ASSET_NOT_RETURNED"]))
         violations.extend(self._single_owner_value_limit(assets, rules["SINGLE_OWNER_VALUE_LIMIT"]))
@@ -90,6 +93,9 @@ class RuleEngine:
         for item in self.db.query(AuditRule).all():
             code = legacy_aliases.get(item.rule_code, item.rule_code)
             base = rules.get(code, {})
+            audit_scope = base.get("audit_scope", "asset")
+            if code.startswith("CUSTOM_PERSON_COUNT_"):
+                audit_scope = "person"
             rules[code] = {
                 "name": item.name or base.get("name", code),
                 "severity": item.severity or base.get("severity", "medium"),
@@ -97,14 +103,17 @@ class RuleEngine:
                 "scope_category": item.scope_category or "",
                 "threshold_value": item.threshold_value if item.threshold_value is not None else base.get("threshold_value"),
                 "threshold_days": item.threshold_days if item.threshold_days is not None else base.get("threshold_days"),
-                "audit_scope": base.get("audit_scope", "asset"),
+                "audit_scope": audit_scope,
             }
         return rules
 
     def _category_assets(self, assets: list[Asset], category: str | None) -> list[Asset]:
         if not category:
             return assets
-        return [asset for asset in assets if asset.category == category]
+        categories = {item.strip() for item in str(category).split(",") if item.strip()}
+        if not categories:
+            return assets
+        return [asset for asset in assets if asset.category in categories]
 
     def _violation(self, asset: Asset, rule_code: str, rule: dict, message: str, target_type: str = "asset") -> dict:
         return {
@@ -128,7 +137,7 @@ class RuleEngine:
         )
         return last_event.timestamp if last_event else asset.created_at
 
-    def _user_asset_count_limit(self, assets: list[Asset], rule: dict) -> list[dict]:
+    def _user_asset_count_limit(self, assets: list[Asset], rule: dict, rule_code: str) -> list[dict]:
         if not rule.get("enabled"):
             return []
         threshold = int(rule.get("threshold_value") or self.settings.max_assets_per_user)
@@ -141,12 +150,12 @@ class RuleEngine:
             user_assets = list(group)
             if len(user_assets) <= threshold:
                 continue
-            scope_text = f"{scope_category} " if scope_category else ""
+            scope_text = f"{scope_category.replace(',', '、')} " if scope_category else "全部"
             for asset in user_assets:
                 violations.append(
                     self._violation(
                         asset,
-                        "USER_ASSET_COUNT_LIMIT",
+                        rule_code,
                         rule,
                         f"人员 {owner} 名下{scope_text}资产数量 {len(user_assets)} 超过阈值 {threshold}",
                         "person",

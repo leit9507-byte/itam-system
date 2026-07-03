@@ -20,3 +20,13 @@ class RepairRecord(Base):
     finish_time = Column(DateTime, nullable=True)
     remark = Column(String(512), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class RepairFaultType(Base):
+    __tablename__ = "repair_fault_types"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String(128), unique=True, nullable=False, index=True)
+    description = Column(String(255), nullable=True)
+    enabled = Column(String(16), default="启用", nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

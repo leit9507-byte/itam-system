@@ -5,11 +5,41 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import operator_from_request
-from app.schemas.repair import RepairCreate, RepairFinish, RepairOut
+from app.schemas.repair import RepairCreate, RepairFaultTypeOut, RepairFaultTypeSave, RepairFinish, RepairOut
 from app.services.repair_service import RepairService
 
 
 router = APIRouter(prefix="/repair", tags=["Repair"])
+
+
+@router.get("/fault-types", response_model=list[RepairFaultTypeOut])
+def list_fault_types(db: Session = Depends(get_db)):
+    return RepairService.list_fault_types(db)
+
+
+@router.post("/fault-types", response_model=RepairFaultTypeOut)
+def create_fault_type(payload: RepairFaultTypeSave, db: Session = Depends(get_db)):
+    try:
+        return RepairService.save_fault_type(db, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/fault-types/{fault_type_id}", response_model=RepairFaultTypeOut)
+def update_fault_type(fault_type_id: int, payload: RepairFaultTypeSave, db: Session = Depends(get_db)):
+    try:
+        return RepairService.save_fault_type(db, payload, fault_type_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/fault-types/{fault_type_id}")
+def delete_fault_type(fault_type_id: int, db: Session = Depends(get_db)):
+    try:
+        RepairService.delete_fault_type(db, fault_type_id)
+        return {"message": "fault type deleted"}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/list")

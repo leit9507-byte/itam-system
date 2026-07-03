@@ -50,6 +50,10 @@ def ensure_compatible_schema(engine) -> None:
         columns = {column["name"] for column in inspector.get_columns("lifecycles")}
         add_column(engine, columns, "lifecycles", "remark", "TEXT NULL")
 
+    if "notification_settings" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("notification_settings")}
+        add_column(engine, columns, "notification_settings", "event_types", "JSON NULL")
+
 
 def add_column(engine, columns: set[str], table: str, column: str, definition: str) -> None:
     if column in columns:

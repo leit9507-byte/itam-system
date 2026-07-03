@@ -108,6 +108,22 @@ class PurchaseService:
         return {"purchase": purchase, "assets": created_assets}
 
     @staticmethod
+    def approve_purchase(db: Session, purchase_no: str, operator: str = "system") -> Purchase:
+        purchase = db.query(Purchase).filter(Purchase.purchase_no == purchase_no).first()
+        if not purchase:
+            raise ValueError("purchase not found")
+        if purchase.status == "received":
+            raise ValueError("received purchase cannot be approved again")
+        if purchase.status == "pending_acceptance":
+            return purchase
+        if purchase.status != "created":
+            raise ValueError(f"purchase status cannot be approved: {purchase.status}")
+        purchase.status = "pending_acceptance"
+        db.commit()
+        db.refresh(purchase)
+        return purchase
+
+    @staticmethod
     def accept_purchase(db: Session, purchase_no: str, payload: PurchaseAcceptanceReceive) -> dict:
         purchase = db.query(Purchase).filter(Purchase.purchase_no == purchase_no).first()
         if not purchase:

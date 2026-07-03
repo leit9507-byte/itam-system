@@ -61,16 +61,51 @@ class SsoService:
         return f"{config.get('authorization_endpoint', config.get('issuer', '').rstrip('/') + '/authorize')}?{urlencode(params)}"
 
     @staticmethod
-    def callback_login(db: Session, provider_type: str, username: str, email: str | None = None) -> dict:
+    def oidc_callback_login(db: Session, code: str, state: str | None = None) -> dict:
+        provider = (
+            db.query(IdentityProviderConfig)
+            .filter(IdentityProviderConfig.provider_type == "oidc", IdentityProviderConfig.enabled.is_(True))
+            .order_by(IdentityProviderConfig.id.desc())
+            .first()
+        )
+        if not provider:
+            raise ValueError("OIDC provider is not configured")
+        config = provider.config or {}
+        expected_state = config.get("state") or "itam"
+        if state and state != expected_state:
+            raise ValueError("OIDC state mismatch")
+
+        for key in ("token_endpoint", "userinfo_endpoint", "client_id", "client_secret"):
+            if not config.get(key):
+                raise ValueError(f"OIDC provider missing {key}")
+
+        token_payload = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": config.get("redirect_uri", "http://127.0.0.1:8000/auth/callback/oidc"),
+            "client_id": config["client_id"],
+            "client_secret": config["client_secret"],
+        }
+        token_data = SsoService.post_form(config["token_endpoint"], token_payload)
+        access_token = token_data.get("access_token")
+        if not access_token:
+            raise ValueError("OIDC token response missing access_token")
+
+        userinfo = SsoService.get_json(config["userinfo_endpoint"], {"Authorization": f"Bearer {access_token}"})
+        subject = userinfo.get("sub")
+        username = userinfo.get("preferred_username") or userinfo.get("email") or subject
+        if not subject or not username:
+            raise ValueError("OIDC userinfo missing subject or username")
+
         user, _ = IdentityService.upsert_user(
             db,
             UserUpsert(
                 username=username,
-                display_name=username,
-                email=email,
-                role="user",
-                source=provider_type,
-                external_id=f"{provider_type}:{username}",
+                display_name=userinfo.get("name") or username,
+                email=userinfo.get("email"),
+                role=config.get("default_role", "user"),
+                source="oidc",
+                external_id=f"oidc:{subject}",
             ),
         )
         from app.core.auth import create_access_token
@@ -82,6 +117,25 @@ class SsoService:
             "expires_in": get_settings().jwt_expire_minutes * 60,
             "user": user,
         }
+
+    @staticmethod
+    def post_form(url: str, payload: dict) -> dict:
+        data = urlencode(payload).encode()
+        request = Request(url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"})
+        try:
+            with urlopen(request, timeout=10) as response:
+                return json.loads(response.read().decode())
+        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise ValueError(f"OIDC token request failed: {exc}") from exc
+
+    @staticmethod
+    def get_json(url: str, headers: dict | None = None) -> dict:
+        request = Request(url, headers={"Accept": "application/json", **(headers or {})})
+        try:
+            with urlopen(request, timeout=10) as response:
+                return json.loads(response.read().decode())
+        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise ValueError(f"OIDC userinfo request failed: {exc}") from exc
 
 
 class LdapClient:

@@ -1,3 +1,5 @@
+import logging
+import secrets
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -6,12 +8,15 @@ from sqlalchemy.orm import Session
 from app.core.auth import create_access_token, hash_password, verify_password
 from app.core.config import get_settings
 from app.models.user import IdentityProviderConfig, RolePermission, UserDirectory
-from app.schemas.user import IdentityProviderSave, UserUpsert
+from app.schemas.user import IdentityProviderSave, RolePermissionSave, UserPermissionUpdate, UserUpsert
 
 
 class IdentityService:
+    _generated_seed_passwords: dict[str, str] = {}
+
     @staticmethod
     def ensure_seed(db: Session) -> None:
+        settings = get_settings()
         if not db.query(UserDirectory).first():
             seed_users = [
                 UserUpsert(
@@ -23,30 +28,33 @@ class IdentityService:
                     dept_name="IT Department",
                     role="admin",
                     source="local",
-                    password="admin",
-                ),
-                UserUpsert(
-                    user_id="U-AUDITOR",
-                    username="auditor",
-                    display_name="Audit User",
-                    email="auditor@example.com",
-                    dept_id="AUDIT",
-                    dept_name="Audit Department",
-                    role="auditor",
-                    source="local",
-                    password="auditor",
+                    password=IdentityService.seed_password("admin", settings.initial_admin_password),
                 ),
             ]
+            if settings.initial_auditor_password:
+                seed_users.append(
+                    UserUpsert(
+                        user_id="U-AUDITOR",
+                        username="auditor",
+                        display_name="Audit User",
+                        email="auditor@example.com",
+                        dept_id="AUDIT",
+                        dept_name="Audit Department",
+                        role="auditor",
+                        source="local",
+                        password=settings.initial_auditor_password,
+                    )
+                )
             for item in seed_users:
                 IdentityService.upsert_user(db, item, commit=False)
 
         IdentityService.remove_mock_providers(db)
         admin = db.query(UserDirectory).filter(UserDirectory.username == "admin").first()
-        if admin and not admin.password_hash:
-            admin.password_hash = hash_password("admin")
+        if admin and (not admin.password_hash or verify_password("admin", admin.password_hash)):
+            admin.password_hash = hash_password(IdentityService.seed_password("admin", settings.initial_admin_password))
         auditor = db.query(UserDirectory).filter(UserDirectory.username == "auditor").first()
-        if auditor and not auditor.password_hash:
-            auditor.password_hash = hash_password("auditor")
+        if auditor and (not auditor.password_hash or verify_password("auditor", auditor.password_hash)):
+            auditor.password_hash = hash_password(IdentityService.seed_password("auditor", settings.initial_auditor_password))
         for role, resource, actions in [
             ("user", "asset", ["read"]),
             ("user", "catalog", ["read"]),
@@ -70,6 +78,16 @@ class IdentityService:
                 if not existed:
                     db.add(RolePermission(role=role, resource=resource, action=action, allowed=True))
         db.commit()
+
+    @staticmethod
+    def seed_password(username: str, configured: str | None) -> str:
+        if configured:
+            return configured
+        if username not in IdentityService._generated_seed_passwords:
+            password = secrets.token_urlsafe(18)
+            IdentityService._generated_seed_passwords[username] = password
+            logging.warning("Generated temporary password for seed user '%s': %s", username, password)
+        return IdentityService._generated_seed_passwords[username]
 
     @staticmethod
     def list_users(db: Session) -> list[UserDirectory]:
@@ -124,7 +142,7 @@ class IdentityService:
         return user
 
     @staticmethod
-    def delete_local_user(db: Session, user_id: str) -> None:
+    def delete_local_user(db: Session, user_id: str) -> UserDirectory:
         IdentityService.ensure_seed(db)
         user = db.get(UserDirectory, user_id)
         if not user:
@@ -137,8 +155,41 @@ class IdentityService:
             admin_count = db.query(UserDirectory).filter(UserDirectory.source == "local", UserDirectory.role == "admin").count()
             if admin_count <= 1:
                 raise ValueError("cannot delete the last local admin user")
-        db.delete(user)
+        user.status = "resigned"
+        user.last_synced_at = datetime.utcnow()
         db.commit()
+        db.refresh(user)
+        return user
+
+    @staticmethod
+    def update_user_permissions(db: Session, user_id: str, payload: UserPermissionUpdate) -> UserDirectory:
+        IdentityService.ensure_seed(db)
+        user = db.get(UserDirectory, user_id)
+        if not user:
+            raise ValueError("user not found")
+
+        next_role = payload.role.strip()
+        next_status = payload.status.strip()
+        if not next_role:
+            raise ValueError("role is required")
+        if not next_status:
+            raise ValueError("status is required")
+
+        if user.role == "admin" and next_role != "admin":
+            admin_count = db.query(UserDirectory).filter(UserDirectory.role == "admin", UserDirectory.status == "active").count()
+            if admin_count <= 1:
+                raise ValueError("cannot remove the last active admin role")
+        if user.role == "admin" and next_status != "active":
+            active_admin_count = db.query(UserDirectory).filter(UserDirectory.role == "admin", UserDirectory.status == "active").count()
+            if active_admin_count <= 1:
+                raise ValueError("cannot disable the last active admin user")
+
+        user.role = next_role
+        user.status = next_status
+        user.last_synced_at = datetime.utcnow()
+        db.commit()
+        db.refresh(user)
+        return user
 
     @staticmethod
     def authenticate(db: Session, username: str, password: str, provider: str = "local") -> dict:
@@ -159,6 +210,8 @@ class IdentityService:
         now = datetime.utcnow()
         if not user:
             raise ValueError("invalid credentials")
+        if user.status != "active":
+            raise PermissionError("user is not active")
         if user.locked_until and user.locked_until > now:
             raise PermissionError(f"account locked until {user.locked_until.isoformat()}")
         if provider == "local" and not verify_password(password, user.password_hash):
@@ -180,6 +233,31 @@ class IdentityService:
     def list_permissions(db: Session) -> list[RolePermission]:
         IdentityService.ensure_seed(db)
         return db.query(RolePermission).order_by(RolePermission.role, RolePermission.resource, RolePermission.action).all()
+
+    @staticmethod
+    def save_permissions(db: Session, payload: list[RolePermissionSave]) -> list[RolePermission]:
+        IdentityService.ensure_seed(db)
+        for item in payload:
+            role = item.role.strip()
+            resource = item.resource.strip()
+            action = item.action.strip()
+            if not role or not resource or not action:
+                raise ValueError("role, resource and action are required")
+            permission = (
+                db.query(RolePermission)
+                .filter(
+                    RolePermission.role == role,
+                    RolePermission.resource == resource,
+                    RolePermission.action == action,
+                )
+                .first()
+            )
+            if not permission:
+                permission = RolePermission(role=role, resource=resource, action=action)
+                db.add(permission)
+            permission.allowed = item.allowed
+        db.commit()
+        return IdentityService.list_permissions(db)
 
     @staticmethod
     def list_providers(db: Session) -> list[IdentityProviderConfig]:
@@ -218,11 +296,7 @@ class IdentityService:
 
         required = {
             "ldap": ["host", "base_dn"],
-            "oidc": ["issuer", "client_id"],
-            "saml": ["sso_url", "entity_id"],
-            "feishu": ["app_id"],
-            "wechat_work": ["corp_id"],
-            "local": [],
+            "feishu": ["app_id", "app_secret"],
         }.get(provider.provider_type, [])
         missing = [key for key in required if not (provider.config or {}).get(key)]
         if missing:
@@ -282,9 +356,9 @@ class IdentityService:
             created += 1 if was_created else 0
             updated += 0 if was_created else 1
             synced.append(user)
-        if source == "ldap" and len(payloads) < sync_limit:
-            active_ldap_users = db.query(UserDirectory).filter(UserDirectory.source == "ldap", UserDirectory.status == "active").all()
-            for user in active_ldap_users:
+        if source in {"ldap", "feishu"} and len(payloads) < sync_limit:
+            active_source_users = db.query(UserDirectory).filter(UserDirectory.source == source, UserDirectory.status == "active").all()
+            for user in active_source_users:
                 if user.external_id in synced_external_ids or user.username in synced_usernames:
                     continue
                 user.status = "resigned"

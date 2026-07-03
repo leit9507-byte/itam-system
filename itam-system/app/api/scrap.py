@@ -1,3 +1,5 @@
+from datetime import date, datetime, time
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -23,8 +25,17 @@ class ScrapApprovePayload(BaseModel):
 
 
 @router.get("/list")
-def list_scrap_requests(page: int = 1, page_size: int = 20, status: str | None = None, db: Session = Depends(get_db)):
-    return ScrapService.list_requests(db, page, page_size, status)
+def list_scrap_requests(
+    page: int = 1,
+    page_size: int = 20,
+    status: str | None = None,
+    created_from: date | None = None,
+    created_to: date | None = None,
+    db: Session = Depends(get_db),
+):
+    start = datetime.combine(created_from, time.min) if created_from else None
+    end = datetime.combine(created_to, time.max) if created_to else None
+    return ScrapService.list_requests(db, page, page_size, status, start, end)
 
 
 @router.post("/{asset_id}/create")

@@ -1,8 +1,11 @@
-import { getAssets } from './asset'
+import { getAssets, getLifecycleList } from './asset'
 import { getPurchases } from './purchase'
 import { getProducts } from './product'
 import { getRepairDashboard } from './repair'
+import { getStocktakeDashboard, getStocktakeTasks } from './stocktake'
+import { getTodoItems } from './todo'
 
+const DASHBOARD_SOURCE_LIMIT = 1000
 const categoryNames = ['笔记本电脑', '台式机', 'Mac设备', '显示器', '服务器', '存储设备', '网络设备', '软件授权', '其他']
 const lifecycleNames = {
   pending_purchase: '待采购',
@@ -17,11 +20,24 @@ const lifecycleNames = {
 }
 
 export async function getEnterpriseDashboard(filters = {}) {
-  const [{ list: allAssets }, purchaseResult, products, repairDashboard] = await Promise.all([
-    getAssets({}),
-    getPurchases({ page_size: 0 }).catch(() => ({ list: [] })),
+  const [
+    { list: allAssets },
+    purchaseResult,
+    products,
+    repairDashboard,
+    stocktakeDashboard,
+    stocktakeTasks,
+    todoItems,
+    lifecycleResult
+  ] = await Promise.all([
+    getAssets({ page: 1, page_size: DASHBOARD_SOURCE_LIMIT }),
+    getPurchases({ page: 1, page_size: DASHBOARD_SOURCE_LIMIT }).catch(() => ({ list: [] })),
     getProducts().catch(() => []),
-    getRepairDashboard(filters).catch(() => ({ total: 0, inProgress: 0, totalCost: 0, topFaults: [] }))
+    getRepairDashboard(filters).catch(() => ({ total: 0, inProgress: 0, totalCost: 0, topFaults: [] })),
+    getStocktakeDashboard(filters).catch(() => ({ completionRate: 0, metrics: [], abnormalItems: [] })),
+    getStocktakeTasks(filters).catch(() => []),
+    getTodoItems().catch(() => []),
+    getLifecycleList({ page: 1, page_size: 20 }).catch(() => ({ list: [] }))
   ])
   const purchases = purchaseResult.list || []
 
@@ -41,21 +57,27 @@ export async function getEnterpriseDashboard(filters = {}) {
 
   return {
     metrics: [
-      metric('资产总数', total, '项', '', compare(total, Math.max(0, total - thisMonthAssets)), monthTrendFromAssets(assets, 'count'), 'primary'),
+      metric('资产总数', total, '项', '', compare(thisMonthAssets, previousMonthAssets), monthTrendFromAssets(assets, 'count'), 'primary'),
       metric('资产原值', originalValue, '', '¥', compare(sumAssetsByMonth(allAssets, 0), sumAssetsByMonth(allAssets, 1)), monthTrendFromAssets(assets, 'value'), 'success'),
       metric('资产净值', netValue, '', '¥', '按原值估算', monthTrendFromAssets(assets, 'net'), 'warning'),
       metric('在用资产', inUse, '项', '', compare(inUse, countStatus(allAssets, 'in_use')), statusTrend(assets, 'in_use'), 'success'),
       metric('闲置资产', idle, '项', '', compare(idle, countStatus(allAssets, 'idle')), statusTrend(assets, 'idle'), 'warning'),
       metric('维修中资产', repair, '项', '', compare(repair, countStatus(allAssets, 'repair')), statusTrend(assets, 'repair'), 'danger'),
       metric('本月新增资产', thisMonthAssets, '项', '', compare(thisMonthAssets, previousMonthAssets), monthTrendFromAssets(allAssets, 'count'), 'primary'),
-      metric('即将退役资产', retirementSoon, '项', '', compare(retirementSoon, allRetirementSoonAssets.length), retirementTrend(assets, products), 'danger')
+      metric('即将过保资产', retirementSoon, '项', '', compare(retirementSoon, allRetirementSoonAssets.length), retirementTrend(assets, products), 'danger')
     ],
     categoryDistribution: buildCategoryDistribution(assets),
     departmentDistribution: buildDepartmentDistribution(assets),
     purchaseTrend: buildPurchaseTrend(purchases, filters.dateRange),
     lifecycleDistribution: buildLifecycleDistribution(assets, purchases),
     retirementSoonAssets,
-    maintenance: buildMaintenance(repairDashboard, assets)
+    maintenance: buildMaintenance(repairDashboard, assets),
+    todoItems,
+    recentRecords: buildRecentRecords(lifecycleResult.list || [], assets),
+    stocktakeProgress: buildStocktakeProgress(stocktakeDashboard, stocktakeTasks),
+    nextStocktakeDate: buildNextStocktakeDate(stocktakeTasks),
+    operationLogs: buildOperationLogs(lifecycleResult.list || []),
+    warrantyRows: buildWarrantyRows(retirementSoonAssets)
   }
 }
 
@@ -128,10 +150,9 @@ function buildRetirementSoonAssets(assets, products) {
   deadline.setDate(deadline.getDate() + 180)
   return assets
     .map(asset => {
-      const years = resolveRetirementYears(asset, products)
-      if (!years || !asset.purchase_date || ['scrapped'].includes(asset.status)) return null
-      const retirementDate = addYears(asset.purchase_date, years)
-      if (!retirementDate) return null
+      const expireDate = resolveWarrantyExpireDate(asset)
+      const retirementDate = expireDate || resolveRetirementDate(asset, products)
+      if (!retirementDate || ['scrapped'].includes(asset.status)) return null
       const days = Math.ceil((retirementDate.getTime() - now.getTime()) / 86400000)
       if (days > 180) return null
       return {
@@ -139,13 +160,25 @@ function buildRetirementSoonAssets(assets, products) {
         name: asset.name,
         brand: asset.brand,
         model: asset.model,
-        retirement_years: years,
         retirement_date: retirementDate.toISOString().slice(0, 10),
         days_remaining: days,
         overdue: days < 0
       }
     })
     .filter(Boolean)
+    .sort((a, b) => a.days_remaining - b.days_remaining)
+}
+
+function resolveWarrantyExpireDate(asset) {
+  if (!asset.warranty_expire_date) return null
+  const date = new Date(asset.warranty_expire_date)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function resolveRetirementDate(asset, products) {
+  const years = resolveRetirementYears(asset, products)
+  if (!years || !asset.purchase_date) return null
+  return addYears(asset.purchase_date, years)
 }
 
 function resolveRetirementYears(asset, products) {
@@ -198,7 +231,7 @@ function normalizeCategory(category = '') {
 function buildDepartmentDistribution(assets) {
   const map = {}
   assets.forEach(asset => {
-    const name = normalizeDepartment(asset.dept || asset.dept_id || asset.location)
+    const name = normalizeDepartment(asset.dept_name || asset.dept || asset.dept_id || asset.location)
     map[name] = (map[name] || 0) + 1
   })
   return Object.entries(map)
@@ -265,6 +298,68 @@ function buildMaintenance(repairDashboard, assets) {
   }
 }
 
+function buildRecentRecords(lifecycles, assets) {
+  const assetMap = Object.fromEntries(assets.map(asset => [asset.asset_id, asset]))
+  return lifecycles
+    .filter(item => item.category === 'daily_inventory' || ['in_stock', 'in_use', 'borrowed', 'out_stock'].includes(item.to_status))
+    .slice(0, 6)
+    .map(item => {
+      const asset = assetMap[item.asset_id] || {}
+      const action = item.to_status === 'in_stock' ? '归还' : '领用'
+      return {
+        user: item.responsible_label && item.responsible_label !== '-' ? item.responsible_label : item.operator || asset.owner_name || '-',
+        asset: asset.name || item.asset_name || item.asset_id || '-',
+        type: asset.category || '-',
+        time: shortDate(item.time_value || item.time),
+        action
+      }
+    })
+}
+
+function buildStocktakeProgress(stocktakeDashboard, tasks) {
+  const total = Number(stocktakeDashboard.metrics?.find(item => item.label === '盘点任务')?.value || tasks.length || 0)
+  const done = tasks.filter(item => ['已完成', 'finished', 'completed'].includes(item.status)).length
+  const doing = tasks.filter(item => ['进行中', 'running', 'in_progress'].includes(item.status)).length
+  const pending = Math.max(total - done - doing, 0)
+  return {
+    total,
+    done,
+    doing,
+    pending,
+    rate: Number(stocktakeDashboard.completionRate || (total ? Math.round((done / total) * 100) : 0))
+  }
+}
+
+function buildNextStocktakeDate(tasks) {
+  const candidates = tasks
+    .map(item => item.plan_date || item.start_date || item.created_at)
+    .map(value => new Date(value))
+    .filter(date => !Number.isNaN(date.getTime()) && date >= new Date())
+    .sort((a, b) => a - b)
+  if (candidates.length) return candidates[0].toISOString().slice(0, 10)
+  const date = new Date()
+  date.setMonth(date.getMonth() + 1)
+  date.setDate(1)
+  return date.toISOString().slice(0, 10)
+}
+
+function buildOperationLogs(lifecycles) {
+  return lifecycles.slice(0, 6).map(item => ({
+    text: `${item.operator || '系统'} ${item.type_label || item.type || '更新'} ${item.asset_id || ''}`.trim(),
+    time: formatLogTime(item.time_value || item.time)
+  }))
+}
+
+function buildWarrantyRows(retirementSoonAssets) {
+  return retirementSoonAssets.slice(0, 6).map(item => ({
+    name: item.name,
+    type: '硬件维保',
+    date: item.retirement_date,
+    days: Math.max(Number(item.days_remaining || 0), 0),
+    status: item.overdue ? '已过保' : item.days_remaining <= 30 ? '即将到期' : '正常'
+  }))
+}
+
 function filterByDateRange(rows, dateRange, key) {
   if (!dateRange?.length) return rows
   return rows.filter(item => inDateRange(item[key], dateRange))
@@ -278,4 +373,21 @@ function inDateRange(value, dateRange) {
   const end = new Date(dateRange[1])
   end.setHours(23, 59, 59, 999)
   return date >= start && date <= end
+}
+
+function shortDate(value) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10)
+  return date.toISOString().slice(0, 10)
+}
+
+function formatLogTime(value) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  const now = new Date()
+  const sameDay = date.toDateString() === now.toDateString()
+  if (sameDay) return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return date.toISOString().slice(0, 10)
 }

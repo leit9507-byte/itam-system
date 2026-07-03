@@ -32,6 +32,10 @@ class PurchaseReceive(BaseModel):
     operator: str = "system"
 
 
+class PurchaseApprove(BaseModel):
+    operator: str = "system"
+
+
 class AcceptedAssetCreate(BaseModel):
     sn: Optional[str] = None
     name: Optional[str] = None

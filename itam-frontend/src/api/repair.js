@@ -1,5 +1,7 @@
 import request from '../utils/request'
 
+const REPAIR_DASHBOARD_LIMIT = 500
+
 export async function createRepairRecord(asset, payload) {
   return mapRepair(
     await request.post('/repair/create', {
@@ -20,6 +22,19 @@ export async function createRepairRecords(assets, payload) {
     rows.push(await createRepairRecord(asset, payload))
   }
   return rows
+}
+
+export function getRepairFaultTypes() {
+  return request.get('/repair/fault-types')
+}
+
+export function saveRepairFaultType(payload) {
+  if (payload.id) return request.put(`/repair/fault-types/${payload.id}`, payload)
+  return request.post('/repair/fault-types', payload)
+}
+
+export function deleteRepairFaultType(id) {
+  return request.delete(`/repair/fault-types/${id}`)
 }
 
 export async function getRepairRecords(filters = {}) {
@@ -49,7 +64,7 @@ export async function finishRepairRecord(recordId, payload = {}) {
 }
 
 export async function getRepairDashboard(filters = {}) {
-  const { list: rows } = await getRepairRecords({ ...filters, page_size: 0 })
+  const { list: rows } = await getRepairRecords({ ...filters, page: 1, page_size: REPAIR_DASHBOARD_LIMIT })
   const inProgress = rows.filter(item => item.status === '维修中')
   const completed = rows.filter(item => item.status === '已完成')
   const totalCost = rows.reduce((sum, item) => sum + Number(item.repair_cost || 0), 0)

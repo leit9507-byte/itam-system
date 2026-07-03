@@ -136,6 +136,10 @@
 
     <el-dialog v-model="batchEdit.visible" title="批量编辑资产" width="960px">
       <el-alert :title="`本次将更新 ${selected.length} 个资产；未勾选的字段不会覆盖原资产信息。`" type="info" show-icon :closable="false" />
+      <div class="batch-edit-toolbar">
+        <span>已勾选 {{ batchEditSelectedCount }} 个字段</span>
+        <el-button text type="primary" :disabled="!batchEditSelectedCount" @click="resetBatchEditFields">清空勾选</el-button>
+      </div>
       <el-form :model="batchEdit.form" label-width="118px" class="batch-form">
         <div class="batch-edit-grid">
           <el-checkbox v-model="batchEdit.fields.name">资产名称</el-checkbox>
@@ -205,7 +209,7 @@
       </el-form>
       <template #footer>
         <el-button @click="batchEdit.visible = false">取消</el-button>
-        <el-button type="primary" @click="submitBatchEdit">确认批量更新</el-button>
+        <el-button type="primary" :disabled="!batchEditSelectedCount" @click="submitBatchEdit">确认批量更新</el-button>
       </template>
     </el-dialog>
 
@@ -221,33 +225,21 @@
           <el-form-item label="备注"><el-input v-model="batch.form.remark" type="textarea" :rows="3" placeholder="例如：归还入库、调拨回库" /></el-form-item>
         </template>
         <template v-if="batch.type === 'outbound'">
-          <el-form-item label="出库对象">
-            <el-radio-group v-model="batch.form.outboundTarget" @change="changeOutboundTarget">
-              <el-radio-button label="user">人员</el-radio-button>
-              <el-radio-button label="location">位置</el-radio-button>
-            </el-radio-group>
-          </el-form-item>
           <el-form-item label="出库类型">
-            <el-select v-model="batch.form.toStatus" :disabled="batch.form.outboundTarget === 'location'" style="width: 100%">
+            <el-select v-model="batch.form.toStatus" style="width: 100%">
               <el-option label="领用在用" value="in_use" />
               <el-option label="借出" value="borrowed" />
               <el-option label="已出库" value="out_stock" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="batch.form.outboundTarget === 'user'" label="领用人" required>
+          <el-form-item label="领用人" required>
             <el-select v-model="batch.form.owner_user_id" filterable remote reserve-keyword style="width: 100%" placeholder="搜索用户姓名/账号/部门" :remote-method="searchUsers" @change="fillUserToForm(batch.form, $event)">
               <el-option v-for="user in filteredUsers" :key="user.user_id" :label="userLabel(user)" :value="user.user_id" />
             </el-select>
           </el-form-item>
-          <el-form-item v-if="batch.form.outboundTarget === 'user'" label="部门"><el-input v-model="batch.form.dept_id" disabled /></el-form-item>
-          <el-form-item v-if="batch.form.outboundTarget === 'location'" label="出库位置" required>
-            <el-select v-model="batch.form.location" filterable clearable allow-create default-first-option style="width: 100%" placeholder="选择或填写公用设备位置">
-              <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
-            </el-select>
-          </el-form-item>
-          <el-form-item v-else label="位置"><el-input v-model="batch.form.location" /></el-form-item>
+          <el-form-item label="部门"><el-input v-model="batch.form.dept_id" disabled /></el-form-item>
           <el-form-item label="意图说明">
-            <el-input v-model="batch.form.remark" type="textarea" :rows="3" :placeholder="batch.form.outboundTarget === 'location' ? '例如：公用设备，放置在会议室供团队共用' : ''" />
+            <el-input v-model="batch.form.remark" type="textarea" :rows="3" placeholder="例如：入职资产分配、临时借用、项目领用" />
           </el-form-item>
         </template>
         <template v-if="batch.type === 'scrap'">
@@ -283,7 +275,9 @@
           <el-date-picker v-model="repairDialog.form.repair_time" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
         </el-form-item>
         <el-form-item label="故障原因" required>
-          <el-input v-model="repairDialog.form.fault_reason" type="textarea" :rows="4" placeholder="例如：无法开机、屏幕损坏、主板故障" />
+          <el-select v-model="repairDialog.form.fault_reason" filterable clearable allow-create default-first-option placeholder="选择或输入故障类型" style="width: 100%">
+            <el-option v-for="item in activeFaultTypes" :key="item.id || item.name" :label="item.name" :value="item.name" />
+          </el-select>
         </el-form-item>
         <el-form-item label="维修费用" required>
           <el-input-number v-model="repairDialog.form.repair_cost" :min="0" :precision="2" style="width: 100%" />
@@ -348,7 +342,7 @@ import { assetStatuses, batchUpdateAssets, createScrapRequest, downloadAssetImpo
 import { getCompanies } from '../../api/company'
 import { getLocations } from '../../api/location'
 import { getDeviceTypes } from '../../api/product'
-import { createRepairRecords } from '../../api/repair'
+import { createRepairRecords, getRepairFaultTypes } from '../../api/repair'
 import { getSuppliers } from '../../api/supplier'
 import { getUsers } from '../../api/user'
 
@@ -362,6 +356,7 @@ const users = ref([])
 const filteredUsers = ref([])
 const suppliers = ref([])
 const locations = ref([])
+const faultTypes = ref([])
 const filters = reactive({ keyword: '', status: '', category: '', company: '', supplier: '' })
 const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 const batch = reactive({ visible: false, type: 'inbound', assets: [], form: defaultBatchForm() })
@@ -376,11 +371,13 @@ const unassignedStatuses = ['pending_purchase', 'pending_acceptance', 'in_stock'
 const batchTitle = computed(() => ({ inbound: '批量入库', outbound: '批量出库', scrap: '批量申请报废' }[batch.type]))
 const realCompanies = computed(() => companies.value.filter(item => !item.virtual && item.name !== '未设置公司'))
 const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
+const activeFaultTypes = computed(() => faultTypes.value.filter(item => item.enabled !== '停用'))
+const batchEditSelectedCount = computed(() => Object.values(batchEdit.fields).filter(Boolean).length)
 const canConfirmImport = computed(() => importDialog.preview?.valid > 0 && !importDialog.preview.errors.length)
 
 onMounted(async () => {
   applyWorkflowQuery()
-  await Promise.all([loadAssets(), loadUsers(), loadTypes(), loadSuppliers(), loadCompanies(), loadLocations()])
+  await Promise.all([loadAssets(), loadUsers(), loadTypes(), loadSuppliers(), loadCompanies(), loadLocations(), loadFaultTypes()])
 })
 
 async function loadAssets() {
@@ -420,6 +417,10 @@ async function loadSuppliers() {
 
 async function loadLocations() {
   locations.value = await getLocations()
+}
+
+async function loadFaultTypes() {
+  faultTypes.value = await getRepairFaultTypes()
 }
 
 function queryValue(value) {
@@ -586,7 +587,6 @@ function fillUserToForm(form, userId) {
   form.owner_name = user?.display_name || ''
   form.dept_id = user?.dept_id || user?.dept_name || ''
   form.dept_name = user?.dept_name || user?.dept_id || ''
-  if (!form.location && user?.dept_name) form.location = user.dept_name
 }
 
 function canInbound(row) {
@@ -646,6 +646,10 @@ function openBatchEdit() {
   batchEdit.visible = true
 }
 
+function resetBatchEditFields() {
+  batchEdit.fields = defaultBatchEditFields()
+}
+
 async function submitBatchEdit() {
   const payload = {}
   Object.keys(batchEdit.fields).forEach(key => {
@@ -692,7 +696,7 @@ async function submitRepair() {
     return
   }
   if (!repairDialog.form.fault_reason.trim()) {
-    ElMessage.warning('请填写故障原因')
+    ElMessage.warning('请选择故障类型')
     return
   }
   await createRepairRecords(repairDialog.assets, repairDialog.form)
@@ -709,7 +713,8 @@ function openBatch(type) {
   batch.assets = target
   Object.assign(batch.form, defaultBatchForm())
   if (type === 'outbound') {
-    changeOutboundTarget(batch.form.outboundTarget)
+    batch.form.outboundTarget = 'user'
+    batch.form.location = ''
     applyAssignUserToBatch()
   }
   if (type === 'inbound') applyReclaimRemarkToBatch()
@@ -774,21 +779,6 @@ function validateBatchAssets(type, rows) {
     return false
   }
   return true
-}
-
-function changeOutboundTarget(value) {
-  if (value === 'location') {
-    batch.form.toStatus = 'out_stock'
-    batch.form.owner_user_id = ''
-    batch.form.owner_name = ''
-    batch.form.dept_id = ''
-    batch.form.dept_name = ''
-    if (!batch.form.remark) batch.form.remark = '公用设备'
-  }
-  if (value === 'user' && batch.form.toStatus === 'out_stock') {
-    batch.form.toStatus = 'in_use'
-    if (batch.form.remark === '公用设备') batch.form.remark = ''
-  }
 }
 
 function locationLabel(item) {
@@ -887,20 +877,13 @@ async function submitBatch() {
     }
   }
   if (batch.type === 'outbound') {
-    if (batch.form.outboundTarget === 'user' && !batch.form.owner_user_id) {
+    if (!batch.form.owner_user_id) {
       ElMessage.warning('请选择领用人')
       return
     }
-    if (batch.form.outboundTarget === 'location' && !batch.form.location) {
-      ElMessage.warning('请选择或填写出库位置')
-      return
-    }
-    if (batch.form.outboundTarget === 'location') {
-      batch.form.toStatus = 'out_stock'
-      batch.form.owner_user_id = ''
-      batch.form.dept_id = ''
-      if (!batch.form.remark) batch.form.remark = '公用设备'
-    }
+    batch.form.outboundTarget = 'user'
+    batch.form.location = ''
+    batch.form.warehouse = ''
   }
   for (const asset of batch.assets) {
     if (batch.type === 'inbound') await inboundAsset(asset.asset_id, batch.form)
@@ -1003,6 +986,19 @@ function resolveDatePicker() { return resolveComponent('ElDatePicker') }
 .import-result,
 .repair-form {
   margin-top: 16px;
+}
+
+.batch-edit-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 13px;
 }
 
 .batch-edit-grid {

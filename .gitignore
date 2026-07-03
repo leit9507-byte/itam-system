@@ -16,6 +16,7 @@ __pycache__/
 # Local database and generated reports
 *.db
 audit_report.html
+artifacts/
 
 # Local env files
 .env

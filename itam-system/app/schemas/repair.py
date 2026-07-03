@@ -21,6 +21,22 @@ class RepairFinish(BaseModel):
     remark: Optional[str] = None
 
 
+class RepairFaultTypeSave(BaseModel):
+    name: str
+    description: Optional[str] = None
+    enabled: str = "启用"
+
+
+class RepairFaultTypeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    description: Optional[str] = None
+    enabled: str
+    created_at: datetime
+
+
 class RepairOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

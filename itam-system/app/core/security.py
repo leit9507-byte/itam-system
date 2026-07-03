@@ -28,6 +28,7 @@ RESOURCE_PREFIXES = {
     "/audit": "audit",
     "/users": "identity",
     "/identity": "identity",
+    "/notification": "identity",
     "/rbac": "rbac",
     "/files": "file",
     "/reports": "report",

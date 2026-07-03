@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -9,6 +11,7 @@ from app.models.audit_response import AuditResponse
 from app.models.audit_rule import AuditRule
 from app.reports.generator import AuditReportGenerator
 from app.services.audit_engine import AuditEngine
+from app.services.notification_service import NotificationService
 
 
 router = APIRouter(prefix="/audit", tags=["Audit"])
@@ -16,6 +19,7 @@ router = APIRouter(prefix="/audit", tags=["Audit"])
 
 class AuditRunRequest(BaseModel):
     users: list[dict] = []
+    notify: bool = False
 
 
 class AuditRulePayload(BaseModel):
@@ -118,15 +122,31 @@ def serialize_rule(rule: AuditRule, fallback: dict | None = None) -> dict:
     return {
         "id": rule.id,
         "rule_code": rule.rule_code,
-        "name": fallback.get("name") or rule.name,
+        "name": rule.name or fallback.get("name") or rule.rule_code,
         "severity": rule.severity,
         "enabled": rule.enabled,
         "scope_category": rule.scope_category or "",
         "threshold_value": rule.threshold_value,
         "threshold_days": rule.threshold_days,
-        "audit_scope": fallback.get("audit_scope", "asset"),
+        "audit_scope": fallback.get("audit_scope") or infer_rule_scope(rule.rule_code),
         "description": fallback.get("description", ""),
     }
+
+
+def infer_rule_scope(rule_code: str) -> str:
+    if rule_code.startswith("CUSTOM_PERSON_COUNT_"):
+        return "person"
+    defaults = {item["rule_code"]: item for item in default_rules()}
+    return defaults.get(rule_code, {}).get("audit_scope", "asset")
+
+
+def custom_rule_fallback(rule: AuditRule) -> dict:
+    if rule.rule_code.startswith("CUSTOM_PERSON_COUNT_"):
+        return {
+            "audit_scope": "person",
+            "description": "按责任人统计全部设备类型或多个指定设备类型的资产数量，超过阈值时命中。",
+        }
+    return {"audit_scope": infer_rule_scope(rule.rule_code)}
 
 
 def serialize_response(row: AuditResponse) -> dict:
@@ -158,6 +178,13 @@ def list_audit_rules(db: Session = Depends(get_db)):
             rows.append(serialize_rule(saved, item))
         else:
             rows.append(item)
+    default_codes = {item["rule_code"] for item in default_rules()}
+    custom_rows = [
+        serialize_rule(item, custom_rule_fallback(item))
+        for item in persisted.values()
+        if item.rule_code not in default_codes
+    ]
+    rows.extend(sorted(custom_rows, key=lambda item: item["id"] or 0))
     if changed:
         db.commit()
     return rows
@@ -209,6 +236,23 @@ def run_audit(payload: AuditRunRequest | None = None, db: Session = Depends(get_
     global last_report_path
     result = AuditEngine(db).run(users=payload.users if payload else [])
     last_report_path = AuditReportGenerator().generate(result)
+    violations = result.get("violations") or []
+    if payload and payload.notify and violations:
+        summary = result.get("audit_summary") or {}
+        NotificationService.send_event(
+            db,
+            "risk",
+            "审计发现风险",
+            [
+                f"风险总数：{len(violations)} 条",
+                f"风险评分：{result.get('risk_score', 0)}",
+                f"人员风险：{summary.get('person', 0)} 条",
+                f"资产风险：{summary.get('asset', 0)} 条",
+                f"高风险：{len([item for item in violations if item.get('severity') == 'high'])} 条",
+                "处理建议：请进入审计中心查看明细并分派整改",
+                f"审计时间：{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}",
+            ],
+        )
     return result
 
 

@@ -15,6 +15,8 @@ class Settings(BaseModel):
     login_lock_threshold: int = int(os.getenv("LOGIN_LOCK_THRESHOLD", "5"))
     login_lock_minutes: int = int(os.getenv("LOGIN_LOCK_MINUTES", "15"))
     upload_dir: str = os.getenv("UPLOAD_DIR", "uploads")
+    initial_admin_password: str | None = os.getenv("INITIAL_ADMIN_PASSWORD")
+    initial_auditor_password: str | None = os.getenv("INITIAL_AUDITOR_PASSWORD")
 
 
 @lru_cache
