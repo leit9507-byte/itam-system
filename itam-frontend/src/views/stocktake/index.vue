@@ -188,9 +188,21 @@
             <el-tag :type="itemResultType(row.result)">{{ row.result }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="review_status" label="复核状态" width="120">
+          <template #default="{ row }">
+            <el-tag :type="reviewStatusType(row.review_status)">{{ row.review_status || '无需复核' }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="170">
           <template #default="{ row }">
             {{ row.remark || '-' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="异常处理" width="210" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="warning" :disabled="row.result === '正常'" @click="reportLocationException(row)">上报</el-button>
+            <el-button link type="success" :disabled="row.review_status !== '待复核'" @click="reviewItem(row, '已确认')">确认</el-button>
+            <el-button link type="danger" :disabled="row.review_status !== '待复核'" @click="reviewItem(row, '已驳回')">驳回</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -216,6 +228,8 @@ import {
   buildStocktakeDashboard,
   finishStocktakeTask,
   getStocktakeTasks,
+  reportStocktakeException,
+  reviewStocktakeItem,
   startStocktakeTask,
   submitStocktakeItem
 } from '../../api/stocktake'
@@ -360,7 +374,10 @@ async function confirmScannedItem(row) {
       actual_location: row.book_location || '',
       result: '正常',
       checker: '扫码确认',
-      remark: row.checked_at ? '重新扫码确认' : '扫码确认'
+      remark: row.checked_at ? '重新扫码确认' : '扫码确认',
+      scan_raw: quickForm.code,
+      parsed_code: parseAssetCode(quickForm.code),
+      client_source: 'desktop'
     })
     applySavedItem(currentTask.value.id, saved)
     ElMessage.success(`${row.asset_id} 已扫码确认`)
@@ -377,6 +394,41 @@ async function registerQuickItem() {
   if (!row) return ElMessage.error('该资产不在当前盘点任务范围内')
   await confirmScannedItem(row)
   quickForm.code = ''
+}
+
+async function reportLocationException(row) {
+  const value = await ElMessageBox.prompt('请输入发现的位置或异常说明', '异常上报', {
+    inputValue: row.actual_location || row.book_location || '',
+    confirmButtonText: '上报',
+    cancelButtonText: '取消',
+    inputPlaceholder: '例如：上海办公区 A-08'
+  }).then(result => result.value).catch(() => '')
+  if (!value) return
+  const saved = await reportStocktakeException(currentTask.value.id, row.asset_id, {
+    actual_location: value,
+    result: '位置不符',
+    reporter: '资产管理员',
+    remark: `异常上报：${value}`,
+    client_source: 'desktop'
+  })
+  applySavedItem(currentTask.value.id, saved)
+  ElMessage.success('异常已上报，等待复核')
+}
+
+async function reviewItem(row, status) {
+  const note = await ElMessageBox.prompt('填写复核意见', '盘点异常复核', {
+    inputValue: status === '已确认' ? '异常确认' : '异常驳回，需重新核对',
+    confirmButtonText: status,
+    cancelButtonText: '取消'
+  }).then(result => result.value).catch(() => '')
+  if (!note) return
+  const saved = await reviewStocktakeItem(currentTask.value.id, row.asset_id, {
+    review_status: status,
+    reviewer: '资产管理员',
+    review_note: note
+  })
+  applySavedItem(currentTask.value.id, saved)
+  ElMessage.success(`复核已${status === '已确认' ? '确认' : '驳回'}`)
 }
 
 function applySavedItem(taskId, saved) {
@@ -456,6 +508,13 @@ function itemResultType(result) {
   if (result === '未盘') return 'info'
   if (result === '盘亏') return 'danger'
   return 'warning'
+}
+
+function reviewStatusType(status) {
+  if (status === '已确认') return 'success'
+  if (status === '已驳回') return 'danger'
+  if (status === '待复核') return 'warning'
+  return 'info'
 }
 
 function tagType(tone) {

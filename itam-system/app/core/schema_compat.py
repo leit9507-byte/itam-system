@@ -56,6 +56,13 @@ def ensure_compatible_schema(engine) -> None:
         columns = {column["name"] for column in inspector.get_columns("notification_settings")}
         add_column(engine, columns, "notification_settings", "event_types", "JSON NULL")
 
+    if "stocktake_items" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("stocktake_items")}
+        add_column(engine, columns, "stocktake_items", "review_status", "VARCHAR(32) DEFAULT '无需复核' NOT NULL")
+        add_column(engine, columns, "stocktake_items", "review_note", "TEXT NULL")
+        add_column(engine, columns, "stocktake_items", "reviewed_by", "VARCHAR(128) NULL")
+        add_column(engine, columns, "stocktake_items", "reviewed_at", "DATETIME NULL")
+
 
 def add_column(engine, columns: set[str], table: str, column: str, definition: str) -> None:
     if column in columns:

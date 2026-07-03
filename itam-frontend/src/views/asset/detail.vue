@@ -53,6 +53,26 @@
           <template #header>生命周期时间轴</template>
           <Timeline :items="detail.lifecycles" />
         </el-card>
+
+        <el-card shadow="never">
+          <template #header>字段变更历史</template>
+          <el-table :data="pagedChanges" border empty-text="暂无字段变更记录">
+            <el-table-column prop="field_label" label="字段" width="120" />
+            <el-table-column prop="old_value" label="修改前" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="new_value" label="修改后" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="operator" label="操作人" width="110" />
+            <el-table-column prop="created_at" label="时间" width="170" />
+          </el-table>
+          <div class="pagination-bar">
+            <el-pagination
+              v-model:current-page="changePagination.page"
+              v-model:page-size="changePagination.pageSize"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="detail.changes.length"
+              layout="total, sizes, prev, pager, next"
+            />
+          </div>
+        </el-card>
       </div>
 
       <div class="page">
@@ -142,16 +162,18 @@ import { getAssetDetail, statusMap } from '../../api/asset'
 import { downloadAssetFile, listAssetFiles, loadAssetQrCode, uploadAssetFile } from '../../api/file'
 
 const route = useRoute()
-const detail = reactive({ asset: null, lifecycles: [], usageRecords: [], inventoryRecords: [], risks: [] })
+const detail = reactive({ asset: null, lifecycles: [], changes: [], usageRecords: [], inventoryRecords: [], risks: [] })
 const attachments = ref([])
 const qrUrl = ref('')
 const attachmentPagination = reactive({ page: 1, pageSize: 10 })
 const inventoryPagination = reactive({ page: 1, pageSize: 10 })
+const changePagination = reactive({ page: 1, pageSize: 10 })
 
 const ownerName = computed(() => detail.asset?.owner_name || detail.asset?.owner_username || detail.asset?.owner || '未分配')
 const deptName = computed(() => detail.asset?.dept_name || detail.asset?.dept || '未绑定')
 const pagedAttachments = computed(() => paginate(attachments.value, attachmentPagination))
 const pagedInventoryRecords = computed(() => paginate(detail.inventoryRecords, inventoryPagination))
+const pagedChanges = computed(() => paginate(detail.changes, changePagination))
 
 const warrantyTag = computed(() => {
   const value = detail.asset?.warranty_expire_date

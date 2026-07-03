@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.models.asset import Asset
-from app.models.stocktake import StocktakeItem, StocktakeTask
+from app.models.stocktake import StocktakeItem, StocktakeScanLog, StocktakeTask
+from app.services.audit_log_service import AuditLogService
 from app.services.notification_service import NotificationService
 
 
@@ -25,6 +26,25 @@ class StocktakeItemSubmit(BaseModel):
     result: str = "正常"
     checker: str | None = None
     remark: str | None = None
+    scan_raw: str | None = None
+    parsed_code: str | None = None
+    client_source: str | None = None
+
+
+class StocktakeExceptionSubmit(BaseModel):
+    actual_location: str | None = None
+    result: str = "位置不符"
+    reporter: str | None = None
+    remark: str | None = None
+    scan_raw: str | None = None
+    parsed_code: str | None = None
+    client_source: str | None = None
+
+
+class StocktakeReviewSubmit(BaseModel):
+    review_status: str = "已确认"
+    reviewer: str | None = None
+    review_note: str | None = None
 
 
 @router.get("/tasks")
@@ -102,7 +122,54 @@ def submit_item(task_id: str, asset_id: str, payload: StocktakeItemSubmit, db: S
     item.checker = payload.checker or task.owner
     item.checked_at = datetime.utcnow()
     item.remark = payload.remark or ""
+    item.review_status = "无需复核" if item.result == "正常" else "待复核"
+    record_scan_log(db, task.id, item.asset_id, payload.scan_raw, payload.parsed_code or asset_id, item.result, payload.client_source, item.checker, "扫码登记")
+    AuditLogService.record_operation(db, "stocktake", "scan_submit", item.checker or "system", "stocktake_item", item.asset_id, f"{task.id} 扫码登记 {item.asset_id}")
     refresh_task_status(task)
+    db.commit()
+    db.refresh(task)
+    return serialize_item(item)
+
+
+@router.post("/tasks/{task_id}/items/{asset_id}/exception")
+def report_exception(task_id: str, asset_id: str, payload: StocktakeExceptionSubmit, db: Session = Depends(get_db)):
+    task = get_task(db, task_id)
+    item = next((row for row in task.items if row.asset_id == asset_id or row.sn == asset_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="该资产不在当前盘点任务范围内")
+    if task.status == "待开始":
+        task.status = "进行中"
+    item.actual_location = payload.actual_location or ""
+    item.result = payload.result if payload.result in {"盘盈", "盘亏", "位置不符", "状态不符"} else "位置不符"
+    item.checker = payload.reporter or task.owner
+    item.checked_at = datetime.utcnow()
+    item.remark = payload.remark or "异常上报，等待复核"
+    item.review_status = "待复核"
+    item.review_note = ""
+    item.reviewed_by = ""
+    item.reviewed_at = None
+    record_scan_log(db, task.id, item.asset_id, payload.scan_raw, payload.parsed_code or asset_id, item.result, payload.client_source, item.checker, item.remark)
+    AuditLogService.record_operation(db, "stocktake", "exception_report", item.checker or "system", "stocktake_item", item.asset_id, f"{task.id} 异常上报 {item.asset_id}", item.remark)
+    refresh_task_status(task)
+    db.commit()
+    db.refresh(task)
+    return serialize_item(item)
+
+
+@router.post("/tasks/{task_id}/items/{asset_id}/review")
+def review_exception(task_id: str, asset_id: str, payload: StocktakeReviewSubmit, db: Session = Depends(get_db)):
+    task = get_task(db, task_id)
+    item = next((row for row in task.items if row.asset_id == asset_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="该资产不在当前盘点任务范围内")
+    if item.result == "正常":
+        item.review_status = "无需复核"
+    else:
+        item.review_status = payload.review_status if payload.review_status in {"已确认", "已驳回", "待复核"} else "已确认"
+    item.review_note = payload.review_note or ""
+    item.reviewed_by = payload.reviewer or task.owner or "资产管理员"
+    item.reviewed_at = datetime.utcnow()
+    AuditLogService.record_operation(db, "stocktake", "exception_review", item.reviewed_by, "stocktake_item", item.asset_id, f"{task.id} 复核 {item.asset_id}: {item.review_status}", item.review_note)
     db.commit()
     db.refresh(task)
     return serialize_item(item)
@@ -118,10 +185,31 @@ def finish_task(task_id: str, db: Session = Depends(get_db)):
             item.checker = task.owner or "资产管理员"
             item.checked_at = datetime.utcnow()
             item.remark = item.remark or "完成盘点时未扫描确认，自动标记为盘亏"
+            item.review_status = "待复核"
     task.status = "已完成"
     db.commit()
     db.refresh(task)
     return serialize_task(task)
+
+
+@router.get("/tasks/{task_id}/scan-logs")
+def list_scan_logs(task_id: str, db: Session = Depends(get_db)):
+    rows = db.query(StocktakeScanLog).filter(StocktakeScanLog.task_id == task_id).order_by(StocktakeScanLog.created_at.desc()).limit(500).all()
+    return [
+        {
+            "id": row.id,
+            "task_id": row.task_id,
+            "asset_id": row.asset_id or "",
+            "scan_raw": row.scan_raw or "",
+            "parsed_code": row.parsed_code or "",
+            "result": row.result or "",
+            "client_source": row.client_source or "",
+            "operator": row.operator or "",
+            "message": row.message or "",
+            "created_at": row.created_at.isoformat(sep=" ", timespec="seconds") if row.created_at else "",
+        }
+        for row in rows
+    ]
 
 
 def scoped_assets(db: Session, scope: str, target: str | None):
@@ -147,6 +235,21 @@ def refresh_task_status(task: StocktakeTask) -> None:
     checked = len([item for item in task.items if item.result != "未盘"])
     if task.status != "已完成" and total and checked == total:
         task.status = "待确认"
+
+
+def record_scan_log(db: Session, task_id: str, asset_id: str | None, scan_raw: str | None, parsed_code: str | None, result: str, client_source: str | None, operator: str | None, message: str | None) -> None:
+    db.add(
+        StocktakeScanLog(
+            task_id=task_id,
+            asset_id=asset_id,
+            scan_raw=scan_raw or "",
+            parsed_code=parsed_code or "",
+            result=result,
+            client_source=client_source or "",
+            operator=operator or "",
+            message=message or "",
+        )
+    )
 
 
 def serialize_task(task: StocktakeTask) -> dict:
@@ -179,4 +282,8 @@ def serialize_item(item: StocktakeItem) -> dict:
         "checker": item.checker or "",
         "checked_at": item.checked_at.isoformat(sep=" ", timespec="seconds") if item.checked_at else "",
         "remark": item.remark or "",
+        "review_status": item.review_status or "无需复核",
+        "review_note": item.review_note or "",
+        "reviewed_by": item.reviewed_by or "",
+        "reviewed_at": item.reviewed_at.isoformat(sep=" ", timespec="seconds") if item.reviewed_at else "",
     }

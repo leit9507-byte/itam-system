@@ -1,4 +1,5 @@
 from app.models.asset import Asset
+from app.models.audit_log import AssetChangeLog, OperationAuditLog
 from app.models.audit_response import AuditResponse
 from app.models.audit_rule import AuditRule
 from app.models.lifecycle import Lifecycle
@@ -8,11 +9,13 @@ from app.models.purchase import Purchase, PurchaseItem
 from app.models.repair import RepairFaultType, RepairRecord
 from app.models.product import DeviceType, ProductCatalog
 from app.models.supplier import Supplier
-from app.models.stocktake import StocktakeItem, StocktakeTask
+from app.models.stocktake import StocktakeItem, StocktakeScanLog, StocktakeTask
 from app.models.user import IdentityProviderConfig, RolePermission, UserDirectory
 
 __all__ = [
     "Asset",
+    "AssetChangeLog",
+    "OperationAuditLog",
     "AuditResponse",
     "AuditRule",
     "Lifecycle",
@@ -26,6 +29,7 @@ __all__ = [
     "ProductCatalog",
     "Supplier",
     "StocktakeItem",
+    "StocktakeScanLog",
     "StocktakeTask",
     "IdentityProviderConfig",
     "RolePermission",

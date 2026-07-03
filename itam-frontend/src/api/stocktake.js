@@ -58,6 +58,18 @@ export function submitStocktakeItem(taskId, assetId, payload) {
   return request.post(`/stocktake/tasks/${taskId}/items/${assetId}`, payload)
 }
 
+export function reportStocktakeException(taskId, assetId, payload) {
+  return request.post(`/stocktake/tasks/${taskId}/items/${assetId}/exception`, payload)
+}
+
+export function reviewStocktakeItem(taskId, assetId, payload) {
+  return request.post(`/stocktake/tasks/${taskId}/items/${assetId}/review`, payload)
+}
+
+export function getStocktakeScanLogs(taskId) {
+  return request.get(`/stocktake/tasks/${taskId}/scan-logs`)
+}
+
 export function finishStocktakeTask(taskId) {
   return request.post(`/stocktake/tasks/${taskId}/finish`)
 }

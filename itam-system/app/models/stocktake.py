@@ -36,5 +36,24 @@ class StocktakeItem(Base):
     checker = Column(String(128), nullable=True)
     checked_at = Column(DateTime, nullable=True)
     remark = Column(Text, nullable=True)
+    review_status = Column(String(32), nullable=False, default="无需复核", index=True)
+    review_note = Column(Text, nullable=True)
+    reviewed_by = Column(String(128), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
 
     task = relationship("StocktakeTask", back_populates="items")
+
+
+class StocktakeScanLog(Base):
+    __tablename__ = "stocktake_scan_logs"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    task_id = Column(String(64), nullable=False, index=True)
+    asset_id = Column(String(64), nullable=True, index=True)
+    scan_raw = Column(Text, nullable=True)
+    parsed_code = Column(String(128), nullable=True, index=True)
+    result = Column(String(32), nullable=True, index=True)
+    client_source = Column(String(64), nullable=True, index=True)
+    operator = Column(String(128), nullable=True, index=True)
+    message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)

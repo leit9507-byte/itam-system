@@ -153,16 +153,22 @@ export async function getAssetDetail(assetId) {
   const { list } = await getAssets({})
   const asset = list.find(item => item.asset_id === assetId) || list[0]
   const lifecycleResult = await getLifecycleList({ page: 1, page_size: DETAIL_CONTEXT_LIMIT }).catch(() => ({ list: [] }))
+  const changes = await getAssetChanges(assetId).catch(() => [])
   const lifecycles = lifecycleResult.list.filter(item => item.asset_id === assetId)
   return {
     asset,
     lifecycles,
+    changes,
     usageRecords: [
       { user: asset?.owner_name || asset?.owner || '未分配', dept: asset?.dept_name || asset?.dept || '未绑定', from: asset?.created_at || '-', to: '至今' }
     ],
     inventoryRecords: lifecycles.filter(item => item.category === 'daily_inventory').map(mapInventoryLifecycle),
     risks: buildAssetRisks(asset)
   }
+}
+
+export function getAssetChanges(assetId) {
+  return request.get(`/asset/${assetId}/changes`)
 }
 
 export async function getLifecycleList(params = {}) {

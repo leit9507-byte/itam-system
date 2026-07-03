@@ -484,7 +484,10 @@ async function submitStocktake() {
     actual_location: currentStocktakeItem.value.book_location || '',
     result: '正常',
     checker: '移动端扫码',
-    remark: form.remark
+    remark: form.remark,
+    scan_raw: assetCode.value,
+    parsed_code: parseAssetCode(assetCode.value),
+    client_source: isFeishuClient() ? 'feishu_mobile' : 'mobile_browser'
   })
   applyStocktakeItem(saved)
   addLog('扫码盘点', `${selectedTask.value.id} / 正常`)

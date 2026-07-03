@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.models.asset import Asset
 from app.models.audit_response import AuditResponse
+from app.models.audit_log import AssetChangeLog
 from app.models.file import AssetAttachment
 from app.models.lifecycle import Lifecycle
 from app.models.repair import RepairRecord
@@ -22,6 +23,7 @@ from app.models.scrap import ScrapRequest
 from app.models.stocktake import StocktakeItem
 from app.models.user import UserDirectory
 from app.schemas.asset import AssetBatchImport, AssetCreate, AssetImportRow, AssetTextImport, AssetUpdate
+from app.services.audit_log_service import AuditLogService
 from app.services.lifecycle_service import LifecycleService
 from app.services.notification_service import NotificationService
 from app.services.supplier_service import SupplierService
@@ -57,6 +59,28 @@ class AssetService:
         "spec",
         "remark",
     ]
+    CHANGE_FIELD_LABELS = {
+        "asset_id": "资产ID",
+        "asset_no": "资产编号",
+        "company": "所属公司",
+        "name": "资产名称",
+        "category": "设备类型",
+        "brand": "品牌",
+        "model": "型号",
+        "sn": "序列号",
+        "config": "规格配置",
+        "purchase_price": "采购价格",
+        "purchase_date": "采购日期",
+        "purchase_approval_no": "采购审批单号",
+        "purchase_supplier_name": "采购供应商",
+        "warranty_expire_date": "质保到期",
+        "warranty_months": "质保月数",
+        "status": "状态",
+        "owner_user_id": "责任人",
+        "dept_id": "部门",
+        "location": "位置",
+        "remark": "备注",
+    }
 
     @staticmethod
     def normalize_company(value: str | None) -> str | None:
@@ -658,6 +682,7 @@ class AssetService:
 
         data = payload.model_dump(exclude_unset=True)
         new_asset_id = AssetService.normalize_blank(data.pop("asset_id", None))
+        original_values = AssetService.snapshot_asset(asset)
         if new_asset_id and new_asset_id != asset_id:
             AssetService.rename_asset_id(db, asset, asset_id, new_asset_id, operator)
         old_status = asset.status
@@ -676,10 +701,63 @@ class AssetService:
             AssetService.validate_status_owner(asset, status_changed=asset.status != old_status)
         SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
 
+        AssetService.record_asset_field_changes(db, asset, original_values, operator, source="asset_update")
+        AuditLogService.record_operation(
+            db,
+            module="asset",
+            action="update",
+            target_type="asset",
+            target_id=asset.asset_id,
+            operator=operator,
+            summary=f"更新资产 {asset.asset_id}",
+        )
         LifecycleService.record(db, asset.asset_id, "ASSET_UPDATE", old_status, asset.status, operator)
         db.commit()
         db.refresh(asset)
         return AssetService.to_out(asset)
+
+    @staticmethod
+    def snapshot_asset(asset: Asset) -> dict:
+        return {field: getattr(asset, field, None) for field in AssetService.CHANGE_FIELD_LABELS if hasattr(asset, field)}
+
+    @staticmethod
+    def record_asset_field_changes(db: Session, asset: Asset, original: dict, operator: str, source: str) -> None:
+        for field, old_value in original.items():
+            new_value = getattr(asset, field, None)
+            AuditLogService.record_asset_change(
+                db,
+                asset.asset_id,
+                field,
+                old_value,
+                new_value,
+                operator,
+                AssetService.CHANGE_FIELD_LABELS.get(field, field),
+                source,
+            )
+
+    @staticmethod
+    def list_asset_changes(db: Session, asset_id: str, limit: int = 200) -> list[dict]:
+        rows = (
+            db.query(AssetChangeLog)
+            .filter(AssetChangeLog.asset_id == asset_id)
+            .order_by(AssetChangeLog.created_at.desc(), AssetChangeLog.id.desc())
+            .limit(min(max(limit, 1), 500))
+            .all()
+        )
+        return [
+            {
+                "id": row.id,
+                "asset_id": row.asset_id,
+                "field_name": row.field_name,
+                "field_label": row.field_label or row.field_name,
+                "old_value": row.old_value or "",
+                "new_value": row.new_value or "",
+                "operator": row.operator,
+                "source": row.source,
+                "created_at": row.created_at.isoformat(sep=" ", timespec="seconds") if row.created_at else "",
+            }
+            for row in rows
+        ]
 
     @staticmethod
     def rename_asset_id(db: Session, asset: Asset, old_asset_id: str, new_asset_id: str, operator: str) -> None:

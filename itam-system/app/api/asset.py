@@ -37,6 +37,11 @@ def asset_summary(db: Session = Depends(get_db)):
     return AssetService.asset_summary(db)
 
 
+@router.get("/{asset_id}/changes")
+def asset_changes(asset_id: str, limit: int = 200, db: Session = Depends(get_db)):
+    return AssetService.list_asset_changes(db, asset_id, limit)
+
+
 @router.put("/{asset_id}", response_model=AssetOut)
 def update_asset(asset_id: str, payload: AssetUpdate, request: Request, db: Session = Depends(get_db)):
     try:
