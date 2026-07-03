@@ -115,6 +115,7 @@ export async function updateAsset(assetId, payload) {
   const warrantyExpireDate = warrantyYears && payload.purchase_date ? addYears(payload.purchase_date, warrantyYears) : payload.warranty_expire_date
   const row = await request.put(`/asset/${assetId}`, {
     asset_id: payload.asset_id,
+    asset_no: payload.asset_no || '',
     name: payload.name,
     company: payload.company || '',
     category: payload.category,
@@ -123,7 +124,6 @@ export async function updateAsset(assetId, payload) {
     sn: payload.sn,
     config: {
       spec: payload.spec || '',
-      warehouse: payload.warehouse || '',
       retirement_years: payload.retirement_years === '' || payload.retirement_years == null ? null : Number(payload.retirement_years)
     },
     purchase_price: Number(payload.price || payload.purchase_price || 0),
@@ -135,7 +135,7 @@ export async function updateAsset(assetId, payload) {
     status: payload.status,
     owner_user_id: payload.owner_user_id || '',
     dept_id: payload.dept_id || '',
-    location: payload.location || payload.warehouse || '',
+    location: payload.location || '',
     remark: payload.remark || ''
   })
   return mapBackendAsset(row)
@@ -249,8 +249,8 @@ export async function addAcceptedAssets(product, serialNumbers = []) {
       category: product.category,
       brand: product.brand,
       model: product.model,
-      sn,
-      config: { spec: product.spec, warehouse: product.warehouse, retirement_years: product.retirement_years || null },
+    sn,
+      config: { spec: product.spec, retirement_years: product.retirement_years || null },
       purchase_price: Number(product.unit_price || 0),
       purchase_date: dateToApi(product.purchase_date),
       purchase_approval_no: product.purchase_no || product.approval_no || '',
@@ -297,6 +297,7 @@ function mapBackendAsset(row) {
   const retirementYears = config.retirement_years || ''
   return {
     asset_id: row.asset_id,
+    asset_no: row.asset_no || '',
     config,
     company: row.company || '',
     name: row.name,
@@ -325,7 +326,6 @@ function mapBackendAsset(row) {
     location: row.location || '',
     remark: row.remark || '',
     sn: row.sn || '',
-    warehouse: config.warehouse || row.location || '',
     created_at: formatDate(row.created_at)
   }
 }

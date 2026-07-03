@@ -20,9 +20,9 @@ router = APIRouter(prefix="/reports", tags=["Reports"])
 def export_assets_csv(db: Session = Depends(get_db)):
     output = StringIO()
     writer = csv.writer(output)
-    writer.writerow(["asset_id", "name", "category", "brand", "model", "sn", "status", "owner_user_id", "dept_id", "location", "purchase_price"])
+    writer.writerow(["asset_id", "asset_no", "name", "category", "brand", "model", "sn", "status", "owner_user_id", "dept_id", "location", "purchase_price"])
     for asset in db.query(Asset).order_by(Asset.asset_id.asc()).all():
-        writer.writerow([asset.asset_id, asset.name, asset.category, asset.brand, asset.model, asset.sn, asset.status, asset.owner_user_id, asset.dept_id, asset.location, asset.purchase_price])
+        writer.writerow([asset.asset_id, asset.asset_no, asset.name, asset.category, asset.brand, asset.model, asset.sn, asset.status, asset.owner_user_id, asset.dept_id, asset.location, asset.purchase_price])
     return PlainTextResponse(output.getvalue(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": "attachment; filename=assets.csv"})
 
 

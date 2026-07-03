@@ -31,6 +31,7 @@ def ensure_compatible_schema(engine) -> None:
 
     if "assets" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("assets")}
+        add_column(engine, columns, "assets", "asset_no", "VARCHAR(64) NULL")
         add_column(engine, columns, "assets", "company", "VARCHAR(128) NULL")
         add_column(engine, columns, "assets", "purchase_date", "DATETIME NULL")
         add_column(engine, columns, "assets", "purchase_approval_no", "VARCHAR(128) NULL")

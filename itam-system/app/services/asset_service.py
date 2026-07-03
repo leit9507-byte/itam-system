@@ -38,6 +38,7 @@ class AssetService:
     WORKFLOW_STATUSES = {"pending_purchase", "pending_acceptance", "pending_scrap", "scrapped"}
     IMPORT_TEMPLATE_HEADERS = [
         "asset_id",
+        "asset_no",
         "name",
         "category",
         "brand",
@@ -54,7 +55,6 @@ class AssetService:
         "location",
         "company",
         "spec",
-        "warehouse",
         "remark",
     ]
 
@@ -113,6 +113,7 @@ class AssetService:
         user = AssetService.find_user(db, payload.owner_user_id)
         asset = Asset(
             asset_id=getattr(payload, "asset_id", None) or AssetService.generate_asset_id(db),
+            asset_no=AssetService.normalize_blank(payload.asset_no) or None,
             company=AssetService.normalize_company(payload.company),
             name=payload.name,
             category=payload.category,
@@ -165,6 +166,7 @@ class AssetService:
 
                     asset = Asset(
                         asset_id=normalized.asset_id or AssetService.generate_asset_id(db),
+                        asset_no=AssetService.normalize_blank(normalized.asset_no) or None,
                         company=AssetService.normalize_company(normalized.company),
                         name=normalized.name,
                         category=normalized.category,
@@ -213,7 +215,7 @@ class AssetService:
         if "Duplicate entry" in detail and "assets.sn" in detail:
             return "资产序列号已存在，请检查 SN 是否重复"
         if "Duplicate entry" in detail and "PRIMARY" in detail:
-            return "资产编号已存在，请检查 asset_id 是否重复"
+            return "资产ID已存在，请检查 asset_id 是否重复"
         if "Data too long" in detail:
             return "字段内容过长，请检查该行文本长度"
         return detail or "请检查导入数据是否符合要求"
@@ -279,6 +281,7 @@ class AssetService:
             [
                 "",
                 "ThinkPad X1 Carbon",
+                "NB-001",
                 "笔记本电脑",
                 "Lenovo",
                 "X1 Carbon Gen 12",
@@ -294,7 +297,6 @@ class AssetService:
                 "上海IT仓",
                 "总部",
                 "32G/1TB",
-                "上海IT仓",
                 "关键岗位备用机",
             ]
         )
@@ -302,6 +304,7 @@ class AssetService:
             [
                 "",
                 "Dell U2723QE",
+                "DP-001",
                 "显示器",
                 "Dell",
                 "U2723QE",
@@ -317,7 +320,6 @@ class AssetService:
                 "上海办公区",
                 "总部",
                 "27英寸 4K",
-                "上海IT仓",
                 "设计部高色准显示器",
             ]
         )
@@ -375,7 +377,8 @@ class AssetService:
         instruction = workbook.create_sheet("字段说明")
         instruction.append(["字段", "是否必填", "说明"])
         rows = [
-            ("asset_id", "否", "资产编号；留空时系统自动生成"),
+            ("asset_id", "否", "资产ID/外部ID；留空时系统自动生成"),
+            ("asset_no", "否", "资产编号/标签编号，可填写公司内部编码"),
             ("name", "是", "资产名称"),
             ("category", "是", "设备类型，如 笔记本电脑、显示器"),
             ("brand", "否", "品牌"),
@@ -392,7 +395,6 @@ class AssetService:
             ("location", "否", "当前位置"),
             ("company", "否", "所属公司"),
             ("spec", "否", "规格配置"),
-            ("warehouse", "否", "仓库名称"),
             ("remark", "否", "备注/特殊说明，例如备用机、涉密、借测、待补配件"),
         ]
         for row in rows:
@@ -480,11 +482,11 @@ class AssetService:
         warranty_months = warranty_years * 12 if warranty_years is not None else AssetService.parse_int(pick("warranty_months", "质保月数", "维保月数", "质保"))
         config = {
             "spec": pick("spec", "规格", "配置", default=""),
-            "warehouse": pick("warehouse", "仓库", default=""),
             "source": "batch_import",
         }
         return AssetImportRow(
-            asset_id=pick("asset_id", "资产编号", "资产ID"),
+            asset_id=pick("asset_id", "资产ID", "外部ID"),
+            asset_no=pick("asset_no", "资产编号", "资产编码", "标签编号"),
             name=pick("name", "product_name", "产品名称", "资产名称", default="Unnamed Asset"),
             category=pick("category", "device_type", "设备类型", "类别", default="Other"),
             brand=pick("brand", "品牌"),
@@ -500,7 +502,7 @@ class AssetService:
             status=pick("status", "状态", default="in_stock"),
             owner_user_id=pick("owner_user_id", "owner", "使用人", "责任人"),
             dept_id=pick("dept_id", "dept", "部门"),
-            location=pick("location", "warehouse", "位置", "仓库"),
+            location=pick("location", "位置"),
             remark=pick("remark", "备注", "特殊说明", "说明"),
         )
 
@@ -519,8 +521,7 @@ class AssetService:
         config = data.get("config") or {}
         if data.get("spec"):
             config["spec"] = data["spec"]
-        if data.get("warehouse"):
-            config["warehouse"] = data["warehouse"]
+        config.pop("warehouse", None)
         data["config"] = config
         return AssetImportRow(**data)
 
@@ -543,6 +544,7 @@ class AssetService:
             query = query.filter(
                 or_(
                     Asset.asset_id.like(pattern),
+                    Asset.asset_no.like(pattern),
                     Asset.name.like(pattern),
                     Asset.dept_id.like(pattern),
                     Asset.sn.like(pattern),
@@ -661,6 +663,8 @@ class AssetService:
         old_status = asset.status
         should_validate_status_owner = bool({"status", "owner_user_id"} & data.keys())
         for key, value in data.items():
+            if key == "asset_no":
+                value = AssetService.normalize_blank(value) or None
             if key == "company":
                 value = AssetService.normalize_company(value)
             if key == "owner_user_id":
@@ -906,6 +910,7 @@ class AssetService:
         user = user or None
         return {
             "asset_id": asset.asset_id,
+            "asset_no": asset.asset_no,
             "company": asset.company or AssetService.DEFAULT_COMPANY,
             "name": asset.name,
             "category": asset.category,

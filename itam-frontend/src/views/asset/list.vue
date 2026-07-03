@@ -13,7 +13,7 @@
 
     <el-card shadow="never">
       <div class="toolbar">
-        <el-input v-model="filters.keyword" clearable placeholder="搜索资产ID/名称/部门/序列号/使用人/供应商/备注" style="width: 360px" @input="refreshAssets" />
+        <el-input v-model="filters.keyword" clearable placeholder="搜索资产ID/资产编号/名称/部门/序列号/使用人/供应商/备注" style="width: 400px" @input="refreshAssets" />
         <el-select v-model="filters.status" clearable placeholder="状态" style="width: 140px" @change="refreshAssets">
           <el-option v-for="item in assetStatuses" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
@@ -50,6 +50,7 @@
       <el-table :data="assets" border stripe @selection-change="selected = $event">
         <el-table-column type="selection" width="48" />
         <el-table-column prop="asset_id" label="资产ID" width="132" />
+        <el-table-column prop="asset_no" label="资产编号" width="132" />
         <el-table-column prop="company" label="公司" width="140" show-overflow-tooltip />
         <el-table-column label="产品信息" min-width="240">
           <template #default="{ row }">
@@ -124,6 +125,7 @@
           :categories="categories"
           :companies="realCompanies"
           :suppliers="suppliers"
+          :locations="activeLocations"
           :users="filteredUsers"
           @search-users="searchUsers"
           @select-user="userId => fillUserToForm(editDialog.form, userId)"
@@ -202,10 +204,9 @@
           <el-input v-model="batchEdit.form.dept_id" :disabled="!batchEdit.fields.dept_id" />
 
           <el-checkbox v-model="batchEdit.fields.location">位置</el-checkbox>
-          <el-input v-model="batchEdit.form.location" :disabled="!batchEdit.fields.location" />
-
-          <el-checkbox v-model="batchEdit.fields.warehouse">仓库</el-checkbox>
-          <el-input v-model="batchEdit.form.warehouse" :disabled="!batchEdit.fields.warehouse" />
+          <el-select v-model="batchEdit.form.location" filterable clearable :disabled="!batchEdit.fields.location">
+            <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
+          </el-select>
 
           <el-checkbox v-model="batchEdit.fields.remark">备注</el-checkbox>
           <el-input v-model="batchEdit.form.remark" type="textarea" :rows="2" :disabled="!batchEdit.fields.remark" />
@@ -490,7 +491,6 @@ function defaultBatchEditForm() {
     dept_id: '',
     dept_name: '',
     location: '',
-    warehouse: '',
     remark: ''
   }
 }
@@ -514,7 +514,6 @@ function defaultBatchEditFields() {
     owner_user_id: false,
     dept_id: false,
     location: false,
-    warehouse: false,
     remark: false
   }
 }
@@ -800,9 +799,9 @@ function locationLabel(item) {
 
 function fillImportExample() {
   importDialog.content = [
-    '资产名称,设备类型,品牌,型号,序列号,价格,采购日期,采购审批单号,采购供应商,维保年限,使用人,部门,仓库,状态,备注',
-    'ThinkPad X1 Carbon,笔记本电脑,Lenovo,X1 Carbon Gen 12,SN-IMPORT-001,15000,2026-06-24,OA-20260624-001,联想授权供应商,3,U-ADMIN,IT,上海IT仓,in_stock,关键岗位备用机',
-    'Dell U2723QE,显示器,Dell,U2723QE,SN-IMPORT-002,3999,2026-06-24,OA-20260624-001,Dell渠道商,3,U-AUDITOR,AUDIT,上海IT仓,in_stock,设计部高色准显示器'
+    '资产ID,资产编号,资产名称,设备类型,品牌,型号,序列号,价格,采购日期,采购审批单号,采购供应商,维保年限,使用人,部门,位置,状态,备注',
+    '1982,NB-001,ThinkPad X1 Carbon,笔记本电脑,Lenovo,X1 Carbon Gen 12,SN-IMPORT-001,15000,2026-06-24,OA-20260624-001,联想授权供应商,3,U-ADMIN,IT,上海IT仓,in_stock,关键岗位备用机',
+    '1983,DP-001,Dell U2723QE,显示器,Dell,U2723QE,SN-IMPORT-002,3999,2026-06-24,OA-20260624-001,Dell渠道商,3,U-AUDITOR,AUDIT,上海办公区,in_stock,设计部高色准显示器'
   ].join('\n')
   clearImportPreview()
 }
@@ -896,7 +895,6 @@ async function submitBatch() {
     }
     batch.form.outboundTarget = 'user'
     batch.form.location = ''
-    batch.form.warehouse = ''
   }
   for (const asset of batch.assets) {
     if (batch.type === 'inbound') await inboundAsset(asset.asset_id, batch.form)
@@ -927,6 +925,7 @@ const AssetEditFields = defineComponent({
     categories: { type: Array, required: true },
     companies: { type: Array, required: true },
     suppliers: { type: Array, required: true },
+    locations: { type: Array, required: true },
     users: { type: Array, required: true }
   },
   emits: ['search-users', 'select-user'],
@@ -934,6 +933,7 @@ const AssetEditFields = defineComponent({
     return () =>
       h('div', { class: 'edit-grid' }, [
         field('资产ID', h(resolveInput(), { modelValue: props.form.asset_id, 'onUpdate:modelValue': value => (props.form.asset_id = value), placeholder: '可改成外部系统编号，例如 1982' })),
+        field('资产编号', h(resolveInput(), { modelValue: props.form.asset_no, 'onUpdate:modelValue': value => (props.form.asset_no = value), placeholder: '公司内部编号或标签编号' })),
         field('资产名称', h(resolveInput(), { modelValue: props.form.name, 'onUpdate:modelValue': value => (props.form.name = value) })),
         field('所属公司', h(resolveSelect(), { modelValue: props.form.company, 'onUpdate:modelValue': value => (props.form.company = value), filterable: true, clearable: true, style: 'width:100%' }, () => props.companies.map(item => h(resolveOption(), { key: item.id || item.name, label: item.name, value: item.name })))),
         field('序列号', h(resolveInput(), { modelValue: props.form.sn, 'onUpdate:modelValue': value => (props.form.sn = value) })),
@@ -952,8 +952,7 @@ const AssetEditFields = defineComponent({
         field('预计退役时间', h(resolveInput(), { modelValue: retirementDatePreview(props.form), disabled: true, placeholder: '根据采购时间和退役年限自动计算' })),
         field('责任人', h(resolveSelect(), { modelValue: props.form.owner_user_id, 'onUpdate:modelValue': value => (props.form.owner_user_id = value), filterable: true, remote: true, clearable: true, reserveKeyword: true, remoteMethod: value => emit('search-users', value), style: 'width:100%', onChange: value => emit('select-user', value) }, () => props.users.map(user => h(resolveOption(), { key: user.user_id, label: `${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`, value: user.user_id })))),
         field('部门', h(resolveInput(), { modelValue: props.form.dept_id, 'onUpdate:modelValue': value => (props.form.dept_id = value), disabled: true })),
-        field('位置', h(resolveInput(), { modelValue: props.form.location, 'onUpdate:modelValue': value => (props.form.location = value) })),
-        field('仓库', h(resolveInput(), { modelValue: props.form.warehouse, 'onUpdate:modelValue': value => (props.form.warehouse = value) })),
+        field('位置', h(resolveSelect(), { modelValue: props.form.location, 'onUpdate:modelValue': value => (props.form.location = value), filterable: true, clearable: true, style: 'width:100%' }, () => props.locations.map(item => h(resolveOption(), { key: item.id || item.name, label: locationLabel(item), value: item.name })))),
         field('备注', h(resolveInput(), { modelValue: props.form.remark, 'onUpdate:modelValue': value => (props.form.remark = value), type: 'textarea', rows: 3, placeholder: '特殊说明，例如备用机、涉密、借测、待补配件' }))
       ])
   }

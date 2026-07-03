@@ -14,6 +14,7 @@
           <template #header>基本信息</template>
           <el-descriptions :column="2" border>
             <el-descriptions-item label="资产ID">{{ detail.asset?.asset_id }}</el-descriptions-item>
+            <el-descriptions-item label="资产编号">{{ detail.asset?.asset_no || '-' }}</el-descriptions-item>
             <el-descriptions-item label="所属公司">{{ detail.asset?.company || '-' }}</el-descriptions-item>
             <el-descriptions-item label="状态">
               <el-tag :type="statusMap[detail.asset?.status]?.type">{{ statusMap[detail.asset?.status]?.label || detail.asset?.status }}</el-tag>
@@ -27,7 +28,6 @@
             <el-descriptions-item label="责任人">{{ ownerName }}</el-descriptions-item>
             <el-descriptions-item label="部门">{{ deptName }}</el-descriptions-item>
             <el-descriptions-item label="位置">{{ detail.asset?.location || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="仓库">{{ detail.asset?.warehouse || '-' }}</el-descriptions-item>
             <el-descriptions-item label="价值">¥{{ Number(detail.asset?.price || 0).toLocaleString() }}</el-descriptions-item>
             <el-descriptions-item label="备注" :span="2">{{ detail.asset?.remark || '-' }}</el-descriptions-item>
           </el-descriptions>
