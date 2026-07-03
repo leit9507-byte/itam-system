@@ -49,20 +49,24 @@
         </div>
       </article>
 
-      <article class="panel todo-panel">
+      <article class="panel people-panel">
         <header class="panel-head">
-          <h3>待办事项</h3>
-          <el-button link type="primary" @click="$router.push('/todo')">查看全部</el-button>
+          <h3>入离职人员趋势</h3>
+          <el-button link type="primary" @click="$router.push('/personnel')">人员管理</el-button>
         </header>
-        <div class="todo-list">
-          <button v-for="item in todoItems" :key="item.label" type="button" class="todo-row" @click="$router.push(item.path)">
-            <span class="todo-icon" :class="item.tone"><el-icon><component :is="item.icon" /></el-icon></span>
-            <span>{{ item.label }}</span>
-            <strong>{{ item.count }}</strong>
-          </button>
+        <div class="people-layout">
+          <div ref="peopleRef" class="people-chart" />
+          <div class="people-stats">
+            <div><span>当前在职</span><strong>{{ formatValue(data.personnelTrend.activeTotal) }}</strong></div>
+            <div><span>离职人员</span><strong>{{ formatValue(data.personnelTrend.inactiveTotal) }}</strong></div>
+            <div><span>近六月入职</span><strong>{{ formatValue(data.personnelTrend.onboardingTotal) }}</strong></div>
+            <div><span>近六月离职</span><strong>{{ formatValue(data.personnelTrend.offboardingTotal) }}</strong></div>
+          </div>
         </div>
       </article>
+    </section>
 
+    <section class="dashboard-grid lower-grid">
       <article class="panel recent-panel">
         <header class="panel-head">
           <h3>最近领用 / 归还记录</h3>
@@ -79,28 +83,6 @@
             </template>
           </el-table-column>
         </el-table>
-      </article>
-    </section>
-
-    <section class="dashboard-grid lower-grid">
-      <article class="panel progress-panel">
-        <header class="panel-head">
-          <h3>盘点任务进度</h3>
-          <el-button link type="primary" @click="$router.push('/stocktake')">查看全部</el-button>
-        </header>
-        <div class="progress-layout">
-          <div ref="progressRef" class="progress-chart" />
-          <div class="progress-stats">
-            <div><span>总任务数</span><strong>{{ stocktakeProgress.total }}</strong></div>
-            <div><span>已完成</span><strong>{{ stocktakeProgress.done }}</strong></div>
-            <div><span>进行中</span><strong>{{ stocktakeProgress.doing }}</strong></div>
-            <div><span>未开始</span><strong>{{ stocktakeProgress.pending }}</strong></div>
-          </div>
-        </div>
-        <div class="next-plan">
-          <el-icon><Calendar /></el-icon>
-          <span>下次盘点计划：{{ data.nextStocktakeDate }}</span>
-        </div>
       </article>
 
       <article class="panel warranty-panel">
@@ -120,21 +102,6 @@
           </el-table-column>
         </el-table>
       </article>
-
-      <article class="panel log-panel">
-        <header class="panel-head">
-          <h3>最近操作日志</h3>
-          <el-button link type="primary" @click="$router.push('/lifecycle')">查看全部</el-button>
-        </header>
-        <div class="timeline" v-if="data.operationLogs.length">
-          <div v-for="item in data.operationLogs" :key="item.text + item.time" class="timeline-row">
-            <span class="timeline-dot" />
-            <p>{{ item.text }}</p>
-            <time>{{ item.time }}</time>
-          </div>
-        </div>
-        <el-empty v-else description="暂无操作日志" :image-size="80" />
-      </article>
     </section>
   </div>
 </template>
@@ -144,12 +111,9 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import * as echarts from 'echarts'
 import {
   Box,
-  Calendar,
   CircleCheck,
-  Clock,
   Delete,
   Files,
-  List,
   Tools,
   Warning
 } from '@element-plus/icons-vue'
@@ -157,7 +121,7 @@ import { getEnterpriseDashboard } from '../../api/dashboard'
 
 const statusRef = ref(null)
 const categoryRef = ref(null)
-const progressRef = ref(null)
+const peopleRef = ref(null)
 const charts = []
 const data = reactive({
   metrics: [],
@@ -165,11 +129,8 @@ const data = reactive({
   lifecycleDistribution: [],
   retirementSoonAssets: [],
   maintenance: { top10: [], mttr: '0小时', monthCost: 0, yearCost: 0 },
-  todoItems: [],
+  personnelTrend: { months: [], onboarding: [], offboarding: [], activeTotal: 0, inactiveTotal: 0, onboardingTotal: 0, offboardingTotal: 0 },
   recentRecords: [],
-  stocktakeProgress: { total: 0, done: 0, doing: 0, pending: 0, rate: 0 },
-  nextStocktakeDate: '',
-  operationLogs: [],
   warrantyRows: []
 })
 
@@ -181,7 +142,6 @@ const idleAssets = computed(() => metricValue('闲置资产'))
 const repairAssets = computed(() => metricValue('维修中资产'))
 const pendingScrapAssets = computed(() => lifecycleValue('待报废') + lifecycleValue('已提交报废审批'))
 const expiringAssets = computed(() => metricValue('即将过保资产'))
-const stocktakeProgress = computed(() => data.stocktakeProgress)
 
 const summaryCards = computed(() => [
   card('在管资产', totalAssets.value, metricChange('在管资产'), trendTone('在管资产'), 'blue', Files, `本月新增 ${formatValue(metricValue('本月新增资产'))}`),
@@ -215,17 +175,6 @@ const categoryLegend = computed(() => {
   }))
 })
 
-const todoItems = computed(() => {
-  const rows = data.todoItems || []
-  return [
-    { label: '待审批采购申请', count: countTodos(rows, 'purchase_approval'), tone: 'red', icon: Warning, path: '/purchase' },
-    { label: '待处理维修单', count: countTodos(rows, 'repair_followup') || repairAssets.value, tone: 'blue', icon: Tools, path: '/repair' },
-    { label: '维保到期提醒', count: expiringAssets.value, tone: 'amber', icon: Clock, path: '/asset/list' },
-    { label: '即将过保资产', count: expiringAssets.value, tone: 'orange', icon: Warning, path: '/asset/list' },
-    { label: '盘点任务待处理', count: stocktakeProgress.value.doing + stocktakeProgress.value.pending, tone: 'indigo', icon: List, path: '/stocktake' }
-  ]
-})
-
 onMounted(() => {
   window.addEventListener('resize', resizeCharts)
   load()
@@ -245,9 +194,9 @@ async function load() {
 function renderCharts() {
   charts.forEach(chart => chart.dispose())
   charts.length = 0
-  renderDonut(statusRef.value, statusDistribution.value, statusColors, `${formatValue(totalAssets.value)}\n总资产`)
+  renderDonut(statusRef.value, statusDistribution.value, statusColors, `${formatValue(totalAssets.value)}\n在管资产`)
   renderDonut(categoryRef.value, categoryLegend.value, categoryColors, '')
-  renderProgress()
+  renderPersonnelTrend()
   resizeCharts()
 }
 
@@ -276,28 +225,21 @@ function renderDonut(target, rows, colors, centerText) {
   charts.push(chart)
 }
 
-function renderProgress() {
-  if (!progressRef.value) return
-  const rate = Math.min(100, Math.max(0, Number(stocktakeProgress.value.rate || 0)))
-  const chart = echarts.init(progressRef.value)
+function renderPersonnelTrend() {
+  if (!peopleRef.value) return
+  const trend = data.personnelTrend || {}
+  const chart = echarts.init(peopleRef.value)
   chart.setOption({
-    series: [{
-      type: 'pie',
-      radius: ['72%', '88%'],
-      startAngle: 90,
-      silent: true,
-      label: { show: false },
-      data: [
-        { value: rate, itemStyle: { color: '#2478ff' } },
-        { value: 100 - rate, itemStyle: { color: '#e8f0ff' } }
-      ]
-    }],
-    graphic: {
-      type: 'text',
-      left: 'center',
-      top: 'center',
-      style: { text: `${rate}%\n总体进度`, fill: '#102044', fontSize: 24, fontWeight: 800, align: 'center', lineHeight: 34 }
-    }
+    color: ['#2478ff', '#ff9345'],
+    tooltip: { trigger: 'axis' },
+    legend: { top: 0, right: 0, data: ['入职', '离职'] },
+    grid: { left: 34, right: 16, top: 42, bottom: 28 },
+    xAxis: { type: 'category', data: trend.months || [], axisTick: { show: false } },
+    yAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: '#edf2f8' } } },
+    series: [
+      { name: '入职', type: 'bar', barMaxWidth: 28, data: trend.onboarding || [] },
+      { name: '离职', type: 'line', smooth: true, symbolSize: 7, data: trend.offboarding || [] }
+    ]
   })
   charts.push(chart)
 }
@@ -326,10 +268,6 @@ function trendTone(label, lowerIsGood = false) {
 
 function lifecycleValue(name) {
   return Number(data.lifecycleDistribution.find(item => item.name === name)?.value || 0)
-}
-
-function countTodos(rows, type) {
-  return rows.filter(item => item.type === type).length
 }
 
 function formatValue(value) {
@@ -425,11 +363,15 @@ function percentValue(value) {
 }
 
 .main-grid {
-  grid-template-columns: minmax(360px, 1.1fr) minmax(340px, 0.95fr) minmax(270px, 0.72fr) minmax(390px, 1.1fr);
+  grid-template-columns: minmax(420px, 1fr) minmax(420px, 1fr);
 }
 
 .lower-grid {
-  grid-template-columns: minmax(330px, 0.9fr) minmax(430px, 1.1fr) minmax(430px, 1.1fr);
+  grid-template-columns: minmax(430px, 1fr) minmax(430px, 1fr);
+}
+
+.people-panel {
+  grid-column: span 2;
 }
 
 .panel {
@@ -491,131 +433,37 @@ function percentValue(value) {
   text-align: right;
 }
 
-.todo-list {
+.people-layout {
   display: grid;
-}
-
-.todo-row {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) 36px;
-  gap: 10px;
-  align-items: center;
-  min-height: 50px;
-  border: 0;
-  border-bottom: 1px solid #edf2f8;
-  background: transparent;
-  color: #23345d;
-  text-align: left;
-  cursor: pointer;
-}
-
-.todo-row:last-child {
-  border-bottom: 0;
-}
-
-.todo-icon {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-}
-
-.todo-icon.red { color: #ff5c5c; background: #fff0ef; }
-.todo-icon.blue { color: #2478ff; background: #eef5ff; }
-.todo-icon.amber { color: #f59e0b; background: #fff7e8; }
-.todo-icon.orange { color: #ff7a2f; background: #fff0e8; }
-.todo-icon.indigo { color: #4f7cff; background: #eef3ff; }
-
-.todo-row strong {
-  color: #ff3d3d;
-  font-size: 18px;
-  text-align: right;
-}
-
-.progress-layout {
-  display: grid;
-  grid-template-columns: 170px minmax(130px, 1fr);
-  gap: 22px;
+  grid-template-columns: minmax(360px, 1fr) minmax(180px, 0.34fr);
+  gap: 18px;
   align-items: center;
 }
 
-.progress-chart {
-  height: 170px;
+.people-chart {
+  width: 100%;
+  height: 260px;
 }
 
-.progress-stats {
+.people-stats {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
-.progress-stats div {
+.people-stats div {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  color: #6b7791;
-}
-
-.progress-stats strong {
-  color: #102044;
-}
-
-.next-plan {
-  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 18px;
-  padding: 10px 16px;
-  border-radius: 999px;
-  background: #f3f7ff;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 8px;
+  background: #f6f9fe;
   color: #607096;
-  font-weight: 700;
 }
 
-.timeline {
-  position: relative;
-  display: grid;
-  gap: 18px;
-  padding-left: 22px;
-}
-
-.timeline::before {
-  content: "";
-  position: absolute;
-  left: 8px;
-  top: 8px;
-  bottom: 8px;
-  width: 2px;
-  background: #bcd3ff;
-}
-
-.timeline-row {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-}
-
-.timeline-dot {
-  position: absolute;
-  left: -20px;
-  width: 14px;
-  height: 14px;
-  border: 3px solid #dbe8ff;
-  border-radius: 50%;
-  background: #2478ff;
-}
-
-.timeline-row p {
-  margin: 0;
-  color: #23345d;
-  font-weight: 700;
-}
-
-.timeline-row time {
-  color: #7d8aa8;
-  font-weight: 700;
+.people-stats strong {
+  color: #102044;
+  font-size: 20px;
 }
 
 @media (max-width: 1500px) {
@@ -627,6 +475,10 @@ function percentValue(value) {
   .lower-grid {
     grid-template-columns: repeat(2, minmax(320px, 1fr));
   }
+
+  .people-panel {
+    grid-column: span 2;
+  }
 }
 
 @media (max-width: 900px) {
@@ -634,8 +486,12 @@ function percentValue(value) {
   .main-grid,
   .lower-grid,
   .donut-layout,
-  .progress-layout {
+  .people-layout {
     grid-template-columns: 1fr;
+  }
+
+  .people-panel {
+    grid-column: auto;
   }
 }
 </style>

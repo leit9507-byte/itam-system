@@ -2,8 +2,7 @@ import { getAssets, getAssetSummary, getLifecycleList } from './asset'
 import { getPurchases } from './purchase'
 import { getProducts } from './product'
 import { getRepairDashboard } from './repair'
-import { getStocktakeDashboard, getStocktakeTasks } from './stocktake'
-import { getTodoItems } from './todo'
+import { getUsers } from './user'
 
 const DASHBOARD_SOURCE_LIMIT = 1000
 const categoryNames = ['笔记本电脑', '台式机', 'Mac设备', '显示器', '服务器', '存储设备', '网络设备', '软件授权', '其他']
@@ -26,9 +25,7 @@ export async function getEnterpriseDashboard(filters = {}) {
     purchaseResult,
     products,
     repairDashboard,
-    stocktakeDashboard,
-    stocktakeTasks,
-    todoItems,
+    users,
     lifecycleResult
   ] = await Promise.all([
     getAssets({ page: 1, page_size: DASHBOARD_SOURCE_LIMIT }),
@@ -36,9 +33,7 @@ export async function getEnterpriseDashboard(filters = {}) {
     getPurchases({ page: 1, page_size: DASHBOARD_SOURCE_LIMIT }).catch(() => ({ list: [] })),
     getProducts().catch(() => []),
     getRepairDashboard(filters).catch(() => ({ total: 0, inProgress: 0, totalCost: 0, topFaults: [] })),
-    getStocktakeDashboard(filters).catch(() => ({ completionRate: 0, metrics: [], abnormalItems: [] })),
-    getStocktakeTasks(filters).catch(() => []),
-    getTodoItems().catch(() => []),
+    getUsers().catch(() => []),
     getLifecycleList({ page: 1, page_size: 20 }).catch(() => ({ list: [] }))
   ])
   const purchases = purchaseResult.list || []
@@ -84,11 +79,8 @@ export async function getEnterpriseDashboard(filters = {}) {
     retirementSoonAssets,
     maintenance: buildMaintenance(repairDashboard, assets),
     statusCounts: { in_use: inUse, idle, repair, scrapped, pending_scrap: pendingScrap },
-    todoItems,
+    personnelTrend: buildPersonnelTrend(users || []),
     recentRecords: buildRecentRecords(lifecycleResult.list || [], assets),
-    stocktakeProgress: buildStocktakeProgress(stocktakeDashboard, stocktakeTasks),
-    nextStocktakeDate: buildNextStocktakeDate(stocktakeTasks),
-    operationLogs: buildOperationLogs(lifecycleResult.list || []),
     warrantyRows: buildWarrantyRows(retirementSoonAssets)
   }
 }
@@ -373,40 +365,6 @@ function buildRecentRecords(lifecycles, assets) {
     })
 }
 
-function buildStocktakeProgress(stocktakeDashboard, tasks) {
-  const total = Number(stocktakeDashboard.metrics?.find(item => item.label === '盘点任务')?.value || tasks.length || 0)
-  const done = tasks.filter(item => ['已完成', 'finished', 'completed'].includes(item.status)).length
-  const doing = tasks.filter(item => ['进行中', 'running', 'in_progress'].includes(item.status)).length
-  const pending = Math.max(total - done - doing, 0)
-  return {
-    total,
-    done,
-    doing,
-    pending,
-    rate: Number(stocktakeDashboard.completionRate || (total ? Math.round((done / total) * 100) : 0))
-  }
-}
-
-function buildNextStocktakeDate(tasks) {
-  const candidates = tasks
-    .map(item => item.plan_date || item.start_date || item.created_at)
-    .map(value => new Date(value))
-    .filter(date => !Number.isNaN(date.getTime()) && date >= new Date())
-    .sort((a, b) => a - b)
-  if (candidates.length) return candidates[0].toISOString().slice(0, 10)
-  const date = new Date()
-  date.setMonth(date.getMonth() + 1)
-  date.setDate(1)
-  return date.toISOString().slice(0, 10)
-}
-
-function buildOperationLogs(lifecycles) {
-  return lifecycles.slice(0, 6).map(item => ({
-    text: `${item.operator || '系统'} ${item.type_label || item.type || '更新'} ${item.asset_id || ''}`.trim(),
-    time: formatLogTime(item.time_value || item.time)
-  }))
-}
-
 function buildWarrantyRows(retirementSoonAssets) {
   return retirementSoonAssets.slice(0, 6).map(item => ({
     name: item.name,
@@ -415,6 +373,52 @@ function buildWarrantyRows(retirementSoonAssets) {
     days: Math.max(Number(item.days_remaining || 0), 0),
     status: item.overdue ? '已过保' : item.days_remaining <= 30 ? '即将到期' : '正常'
   }))
+}
+
+function buildPersonnelTrend(users) {
+  const months = lastMonths(6)
+  const businessUsers = users.filter(isBusinessUser)
+  const onboarding = months.map(month => countByMonth(businessUsers, 'created_at', month))
+  const offboarding = months.map(month => businessUsers.filter(isInactiveUser).filter(user => inMonth(user.last_synced_at || user.created_at, month)).length)
+  return {
+    months: months.map(item => item.label),
+    onboarding,
+    offboarding,
+    activeTotal: businessUsers.filter(user => !isInactiveUser(user)).length,
+    inactiveTotal: businessUsers.filter(isInactiveUser).length,
+    onboardingTotal: onboarding.reduce((sum, value) => sum + value, 0),
+    offboardingTotal: offboarding.reduce((sum, value) => sum + value, 0)
+  }
+}
+
+function lastMonths(size) {
+  const now = new Date()
+  return Array.from({ length: size }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - (size - 1 - index), 1)
+    return {
+      year: date.getFullYear(),
+      month: date.getMonth(),
+      label: `${date.getMonth() + 1}月`
+    }
+  })
+}
+
+function countByMonth(rows, key, month) {
+  return rows.filter(item => inMonth(item[key], month)).length
+}
+
+function inMonth(value, month) {
+  if (!value) return false
+  const date = new Date(value)
+  return !Number.isNaN(date.getTime()) && date.getFullYear() === month.year && date.getMonth() === month.month
+}
+
+function isBusinessUser(user) {
+  return !['admin', 'auditor'].includes(user.role) && !['admin', 'auditor'].includes(String(user.username || '').toLowerCase())
+}
+
+function isInactiveUser(user) {
+  return ['inactive', 'disabled', 'locked', 'resigned', 'left', 'offboarded', '离职', '停用', '禁用'].includes(String(user.status || '').toLowerCase())
 }
 
 function filterByDateRange(rows, dateRange, key) {
@@ -436,15 +440,5 @@ function shortDate(value) {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return String(value).slice(0, 10)
-  return date.toISOString().slice(0, 10)
-}
-
-function formatLogTime(value) {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return String(value)
-  const now = new Date()
-  const sameDay = date.toDateString() === now.toDateString()
-  if (sameDay) return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
   return date.toISOString().slice(0, 10)
 }
