@@ -10,10 +10,16 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils.exceptions import InvalidFileException
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from app.models.asset import Asset
+from app.models.audit_response import AuditResponse
+from app.models.file import AssetAttachment
+from app.models.lifecycle import Lifecycle
+from app.models.repair import RepairRecord
+from app.models.scrap import ScrapRequest
+from app.models.stocktake import StocktakeItem
 from app.models.user import UserDirectory
 from app.schemas.asset import AssetBatchImport, AssetCreate, AssetImportRow, AssetTextImport, AssetUpdate
 from app.services.lifecycle_service import LifecycleService
@@ -649,6 +655,9 @@ class AssetService:
             raise ValueError("asset not found")
 
         data = payload.model_dump(exclude_unset=True)
+        new_asset_id = AssetService.normalize_blank(data.pop("asset_id", None))
+        if new_asset_id and new_asset_id != asset_id:
+            AssetService.rename_asset_id(db, asset, asset_id, new_asset_id, operator)
         old_status = asset.status
         should_validate_status_owner = bool({"status", "owner_user_id"} & data.keys())
         for key, value in data.items():
@@ -667,6 +676,34 @@ class AssetService:
         db.commit()
         db.refresh(asset)
         return AssetService.to_out(asset)
+
+    @staticmethod
+    def rename_asset_id(db: Session, asset: Asset, old_asset_id: str, new_asset_id: str, operator: str) -> None:
+        if not new_asset_id:
+            raise AssetValidationError("资产ID不能为空")
+        if len(new_asset_id) > 64:
+            raise AssetValidationError("资产ID不能超过 64 个字符")
+        if db.get(Asset, new_asset_id):
+            raise AssetValidationError(f"资产ID {new_asset_id} 已存在，请换一个编号")
+
+        mysql_fk_disabled = db.bind and db.bind.dialect.name in {"mysql", "mariadb"}
+        if mysql_fk_disabled:
+            db.execute(text("SET FOREIGN_KEY_CHECKS=0"))
+        try:
+            db.query(Lifecycle).filter(Lifecycle.asset_id == old_asset_id).update({Lifecycle.asset_id: new_asset_id}, synchronize_session=False)
+            db.query(AssetAttachment).filter(AssetAttachment.asset_id == old_asset_id).update({AssetAttachment.asset_id: new_asset_id}, synchronize_session=False)
+            db.query(RepairRecord).filter(RepairRecord.asset_id == old_asset_id).update({RepairRecord.asset_id: new_asset_id}, synchronize_session=False)
+            db.query(ScrapRequest).filter(ScrapRequest.asset_id == old_asset_id).update({ScrapRequest.asset_id: new_asset_id}, synchronize_session=False)
+            db.query(StocktakeItem).filter(StocktakeItem.asset_id == old_asset_id).update({StocktakeItem.asset_id: new_asset_id}, synchronize_session=False)
+            for response in db.query(AuditResponse).filter(AuditResponse.asset_id == old_asset_id).all():
+                response.asset_id = new_asset_id
+                response.violation_key = response.violation_key.replace(old_asset_id, new_asset_id, 1)
+            asset.asset_id = new_asset_id
+            db.flush()
+        finally:
+            if mysql_fk_disabled:
+                db.execute(text("SET FOREIGN_KEY_CHECKS=1"))
+        LifecycleService.record(db, new_asset_id, "ASSET_ID_CHANGE", None, asset.status, operator, f"资产ID从 {old_asset_id} 调整为 {new_asset_id}")
 
     @staticmethod
     def change_status(

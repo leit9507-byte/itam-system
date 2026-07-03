@@ -32,10 +32,10 @@ class AssetStatusChange(BaseModel):
     dept_id: Optional[str] = None
     location: Optional[str] = None
     remark: Optional[str] = None
-    remark: Optional[str] = None
 
 
 class AssetUpdate(BaseModel):
+    asset_id: Optional[str] = None
     company: Optional[str] = None
     name: Optional[str] = None
     category: Optional[str] = None
@@ -53,6 +53,7 @@ class AssetUpdate(BaseModel):
     owner_user_id: Optional[str] = None
     dept_id: Optional[str] = None
     location: Optional[str] = None
+    remark: Optional[str] = None
 
 
 class AssetOut(BaseModel):

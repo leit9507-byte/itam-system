@@ -114,6 +114,7 @@ export async function updateAsset(assetId, payload) {
   const warrantyMonths = warrantyYears == null ? null : warrantyYears * 12
   const warrantyExpireDate = warrantyYears && payload.purchase_date ? addYears(payload.purchase_date, warrantyYears) : payload.warranty_expire_date
   const row = await request.put(`/asset/${assetId}`, {
+    asset_id: payload.asset_id,
     name: payload.name,
     company: payload.company || '',
     category: payload.category,

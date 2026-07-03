@@ -341,7 +341,7 @@
 import { ArrowDown } from '@element-plus/icons-vue'
 import { computed, defineComponent, h, onMounted, reactive, ref, resolveComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { assetStatuses, batchUpdateAssets, createScrapRequest, downloadAssetImportTemplate, editableAssetStatuses, getAssets, importAssets, inboundAsset, outboundAsset, previewAssetsFromExcel, previewAssetsFromText, statusMap, updateAsset } from '../../api/asset'
 import { getCompanies } from '../../api/company'
 import { getLocations } from '../../api/location'
@@ -632,14 +632,21 @@ function goDetail(row) {
 }
 
 function openEdit(row) {
-  editDialog.form = { ...row, owner_user_id: row.owner_user_id || row.owner, dept_id: row.dept_id || row.dept }
+  editDialog.form = { ...row, original_asset_id: row.asset_id, owner_user_id: row.owner_user_id || row.owner, dept_id: row.dept_id || row.dept }
   searchUsers('')
   editDialog.visible = true
 }
 
 async function submitEdit() {
+  const oldAssetId = editDialog.form.original_asset_id || editDialog.form.asset_id
+  const newAssetId = String(editDialog.form.asset_id || '').trim()
+  if (!newAssetId) return ElMessage.warning('资产ID不能为空')
+  if (newAssetId !== oldAssetId) {
+    const confirmed = await ElMessageBox.confirm(`确认将资产ID从 ${oldAssetId} 修改为 ${newAssetId}？相关生命周期、附件、维修、报废、盘点和审计记录会同步更新。`, '修改资产ID', { type: 'warning' }).then(() => true).catch(() => false)
+    if (!confirmed) return
+  }
   if (!validateStatusOwner(editDialog.form)) return
-  await updateAsset(editDialog.form.asset_id, editDialog.form)
+  await updateAsset(oldAssetId, { ...editDialog.form, asset_id: newAssetId })
   editDialog.visible = false
   ElMessage.success('资产信息已更新')
   await loadAssets()
@@ -926,6 +933,7 @@ const AssetEditFields = defineComponent({
   setup(props, { emit }) {
     return () =>
       h('div', { class: 'edit-grid' }, [
+        field('资产ID', h(resolveInput(), { modelValue: props.form.asset_id, 'onUpdate:modelValue': value => (props.form.asset_id = value), placeholder: '可改成外部系统编号，例如 1982' })),
         field('资产名称', h(resolveInput(), { modelValue: props.form.name, 'onUpdate:modelValue': value => (props.form.name = value) })),
         field('所属公司', h(resolveSelect(), { modelValue: props.form.company, 'onUpdate:modelValue': value => (props.form.company = value), filterable: true, clearable: true, style: 'width:100%' }, () => props.companies.map(item => h(resolveOption(), { key: item.id || item.name, label: item.name, value: item.name })))),
         field('序列号', h(resolveInput(), { modelValue: props.form.sn, 'onUpdate:modelValue': value => (props.form.sn = value) })),
