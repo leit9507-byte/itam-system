@@ -579,10 +579,25 @@ class AssetService:
 
         total = db.query(func.count(Asset.asset_id)).scalar() or 0
         total_value = db.query(func.coalesce(func.sum(Asset.purchase_price), 0)).scalar() or 0
+        managed_filter = or_(Asset.status.is_(None), Asset.status != "scrapped")
+        managed_total = db.query(func.count(Asset.asset_id)).filter(managed_filter).scalar() or 0
+        managed_total_value = db.query(func.coalesce(func.sum(Asset.purchase_price), 0)).filter(managed_filter).scalar() or 0
         current_month_count = db.query(func.count(Asset.asset_id)).filter(Asset.created_at >= current_month).scalar() or 0
         previous_month_count = (
             db.query(func.count(Asset.asset_id))
             .filter(Asset.created_at >= previous_month, Asset.created_at < current_month)
+            .scalar()
+            or 0
+        )
+        current_month_managed_count = (
+            db.query(func.count(Asset.asset_id))
+            .filter(managed_filter, Asset.created_at >= current_month)
+            .scalar()
+            or 0
+        )
+        previous_month_managed_count = (
+            db.query(func.count(Asset.asset_id))
+            .filter(managed_filter, Asset.created_at >= previous_month, Asset.created_at < current_month)
             .scalar()
             or 0
         )
@@ -595,13 +610,27 @@ class AssetService:
             category or "其他": count
             for category, count in db.query(Asset.category, func.count(Asset.asset_id)).group_by(Asset.category).all()
         }
+        managed_status_counts = {
+            status or "unknown": count
+            for status, count in db.query(Asset.status, func.count(Asset.asset_id)).filter(managed_filter).group_by(Asset.status).all()
+        }
+        managed_category_counts = {
+            category or "其他": count
+            for category, count in db.query(Asset.category, func.count(Asset.asset_id)).filter(managed_filter).group_by(Asset.category).all()
+        }
         return {
             "total": total,
             "total_value": float(total_value),
+            "managed_total": managed_total,
+            "managed_total_value": float(managed_total_value),
             "status_counts": status_counts,
             "category_counts": category_counts,
+            "managed_status_counts": managed_status_counts,
+            "managed_category_counts": managed_category_counts,
             "current_month_count": current_month_count,
             "previous_month_count": previous_month_count,
+            "current_month_managed_count": current_month_managed_count,
+            "previous_month_managed_count": previous_month_managed_count,
         }
 
     @staticmethod

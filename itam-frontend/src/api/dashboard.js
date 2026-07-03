@@ -43,39 +43,41 @@ export async function getEnterpriseDashboard(filters = {}) {
   ])
   const purchases = purchaseResult.list || []
 
-  const scopedAssets = filterByDateRange(allAssets, filters.dateRange, 'created_at')
-  const assets = filters.dateRange?.length ? scopedAssets : allAssets
+  const allManagedAssets = allAssets.filter(isManagedAsset)
+  const scopedAssets = filterByDateRange(allManagedAssets, filters.dateRange, 'created_at')
+  const assets = filters.dateRange?.length ? scopedAssets : allManagedAssets
   const summary = normalizeAssetSummary(assetSummary, allAssets)
   const useGlobalSummary = !filters.dateRange?.length
-  const total = useGlobalSummary ? summary.total : assets.length
-  const originalValue = useGlobalSummary ? summary.totalValue : sumAssets(assets)
+  const total = useGlobalSummary ? summary.managedTotal : assets.length
+  const originalValue = useGlobalSummary ? summary.managedTotalValue : sumAssets(assets)
   const netValue = Math.round(originalValue * 0.68)
-  const inUse = useGlobalSummary ? summary.statusCounts.in_use || 0 : countStatus(assets, 'in_use')
-  const idle = useGlobalSummary ? summary.statusCounts.idle || 0 : countStatus(assets, 'idle')
-  const repair = useGlobalSummary ? summary.statusCounts.repair || 0 : countStatus(assets, 'repair')
+  const activeStatusCounts = useGlobalSummary ? summary.managedStatusCounts : {}
+  const inUse = useGlobalSummary ? activeStatusCounts.in_use || 0 : countStatus(assets, 'in_use')
+  const idle = useGlobalSummary ? activeStatusCounts.idle || 0 : countStatus(assets, 'idle')
+  const repair = useGlobalSummary ? activeStatusCounts.repair || 0 : countStatus(assets, 'repair')
   const scrapped = useGlobalSummary ? summary.statusCounts.scrapped || 0 : countStatus(assets, 'scrapped')
   const pendingScrap = useGlobalSummary
-    ? (summary.statusCounts.ready_scrap || 0) + (summary.statusCounts.pending_scrap || 0)
+    ? (activeStatusCounts.ready_scrap || 0) + (activeStatusCounts.pending_scrap || 0)
     : countStatus(assets, 'ready_scrap') + countStatus(assets, 'pending_scrap')
-  const thisMonthAssets = useGlobalSummary ? summary.currentMonthCount : allAssets.filter(item => isMonth(item.created_at, 0)).length
-  const previousMonthAssets = useGlobalSummary ? summary.previousMonthCount : allAssets.filter(item => isMonth(item.created_at, 1)).length
+  const thisMonthAssets = useGlobalSummary ? summary.currentMonthManagedCount : allManagedAssets.filter(item => isMonth(item.created_at, 0)).length
+  const previousMonthAssets = useGlobalSummary ? summary.previousMonthManagedCount : allManagedAssets.filter(item => isMonth(item.created_at, 1)).length
   const previousTotalAssets = Math.max(total - thisMonthAssets, 0)
   const retirementSoonAssets = buildRetirementSoonAssets(assets, products)
-  const allRetirementSoonAssets = buildRetirementSoonAssets(allAssets, products)
+  const allRetirementSoonAssets = buildRetirementSoonAssets(allManagedAssets, products)
   const retirementSoon = retirementSoonAssets.length
 
   return {
     metrics: [
-      metric('资产总数', total, '项', '', compare(total, previousTotalAssets), monthTrendFromAssets(assets, 'count'), 'primary'),
-      metric('资产原值', originalValue, '', '¥', compare(sumAssetsByMonth(allAssets, 0), sumAssetsByMonth(allAssets, 1)), monthTrendFromAssets(assets, 'value'), 'success'),
+      metric('在管资产', total, '项', '', compare(total, previousTotalAssets), monthTrendFromAssets(assets, 'count'), 'primary'),
+      metric('资产原值', originalValue, '', '¥', compare(sumAssetsByMonth(allManagedAssets, 0), sumAssetsByMonth(allManagedAssets, 1)), monthTrendFromAssets(assets, 'value'), 'success'),
       metric('资产净值', netValue, '', '¥', '按原值估算', monthTrendFromAssets(assets, 'net'), 'warning'),
-      metric('在用资产', inUse, '项', '', compare(inUse, countStatus(allAssets, 'in_use')), statusTrend(assets, 'in_use'), 'success'),
-      metric('闲置资产', idle, '项', '', compare(idle, countStatus(allAssets, 'idle')), statusTrend(assets, 'idle'), 'warning'),
-      metric('维修中资产', repair, '项', '', compare(repair, countStatus(allAssets, 'repair')), statusTrend(assets, 'repair'), 'danger'),
-      metric('本月新增资产', thisMonthAssets, '项', '', compare(thisMonthAssets, previousMonthAssets), monthTrendFromAssets(allAssets, 'count'), 'primary'),
+      metric('在用资产', inUse, '项', '', '实时', statusTrend(assets, 'in_use'), 'success'),
+      metric('闲置资产', idle, '项', '', '实时', statusTrend(assets, 'idle'), 'warning'),
+      metric('维修中资产', repair, '项', '', '实时', statusTrend(assets, 'repair'), 'danger'),
+      metric('本月新增资产', thisMonthAssets, '项', '', compare(thisMonthAssets, previousMonthAssets), monthTrendFromAssets(allManagedAssets, 'count'), 'primary'),
       metric('即将过保资产', retirementSoon, '项', '', compare(retirementSoon, allRetirementSoonAssets.length), retirementTrend(assets, products), 'danger')
     ],
-    categoryDistribution: useGlobalSummary ? buildCategoryDistributionFromCounts(summary.categoryCounts) : buildCategoryDistribution(assets),
+    categoryDistribution: useGlobalSummary ? buildCategoryDistributionFromCounts(summary.managedCategoryCounts) : buildCategoryDistribution(assets),
     departmentDistribution: buildDepartmentDistribution(assets),
     purchaseTrend: buildPurchaseTrend(purchases, filters.dateRange),
     lifecycleDistribution: buildLifecycleDistribution(assets, purchases, useGlobalSummary ? summary.statusCounts : null),
@@ -99,6 +101,10 @@ function countStatus(assets, status) {
   return assets.filter(item => item.status === status).length
 }
 
+function isManagedAsset(asset) {
+  return asset.status !== 'scrapped'
+}
+
 function sumAssets(assets) {
   return assets.reduce((sum, item) => sum + Number(item.price || 0), 0)
 }
@@ -108,14 +114,34 @@ function sumAssetsByMonth(assets, offset) {
 }
 
 function normalizeAssetSummary(summary, fallbackAssets) {
+  const fallbackManagedAssets = fallbackAssets.filter(isManagedAsset)
+  const fallbackManagedStatusCounts = fallbackManagedAssets.reduce((map, asset) => {
+    const status = asset.status || 'unknown'
+    map[status] = (map[status] || 0) + 1
+    return map
+  }, {})
   return {
     total: Number(summary?.total ?? fallbackAssets.length),
     totalValue: Number(summary?.total_value ?? sumAssets(fallbackAssets)),
+    managedTotal: Number(summary?.managed_total ?? fallbackManagedAssets.length),
+    managedTotalValue: Number(summary?.managed_total_value ?? sumAssets(fallbackManagedAssets)),
     statusCounts: summary?.status_counts || {},
+    managedStatusCounts: summary?.managed_status_counts || fallbackManagedStatusCounts,
     categoryCounts: summary?.category_counts || {},
+    managedCategoryCounts: summary?.managed_category_counts || buildRawCategoryCounts(fallbackManagedAssets),
     currentMonthCount: Number(summary?.current_month_count ?? fallbackAssets.filter(item => isMonth(item.created_at, 0)).length),
-    previousMonthCount: Number(summary?.previous_month_count ?? fallbackAssets.filter(item => isMonth(item.created_at, 1)).length)
+    previousMonthCount: Number(summary?.previous_month_count ?? fallbackAssets.filter(item => isMonth(item.created_at, 1)).length),
+    currentMonthManagedCount: Number(summary?.current_month_managed_count ?? fallbackManagedAssets.filter(item => isMonth(item.created_at, 0)).length),
+    previousMonthManagedCount: Number(summary?.previous_month_managed_count ?? fallbackManagedAssets.filter(item => isMonth(item.created_at, 1)).length)
   }
+}
+
+function buildRawCategoryCounts(assets) {
+  return assets.reduce((map, asset) => {
+    const category = asset.category || '其他'
+    map[category] = (map[category] || 0) + 1
+    return map
+  }, {})
 }
 
 function isMonth(value, offset) {

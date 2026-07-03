@@ -70,7 +70,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useAppStore()
 const loading = ref(false)
-const form = reactive({ provider: 'local', username: 'admin', password: 'admin' })
+const form = reactive({ provider: 'local', username: 'admin', password: 'Admin@123456' })
 const providerOptions = [
   { label: '本地账号', value: 'local' },
   { label: 'LDAP', value: 'ldap' }

@@ -8,7 +8,7 @@
         <div class="summary-body">
           <span>{{ item.label }}</span>
           <strong>{{ formatValue(item.value) }}</strong>
-          <small :class="item.changeTone">较上月 {{ item.change }}</small>
+          <small :class="item.changeTone">{{ item.caption || `较上月 ${item.change}` }}</small>
         </div>
       </article>
     </section>
@@ -175,7 +175,7 @@ const data = reactive({
 
 const statusColors = ['#2478ff', '#38c5d8', '#ff9345', '#9b5de5', '#6389ff', '#9db5f4']
 const categoryColors = ['#2478ff', '#38c5d8', '#44c486', '#ff9345', '#6683ff', '#8ba4f8']
-const totalAssets = computed(() => metricValue('资产总数'))
+const totalAssets = computed(() => metricValue('在管资产'))
 const inUseAssets = computed(() => metricValue('在用资产'))
 const idleAssets = computed(() => metricValue('闲置资产'))
 const repairAssets = computed(() => metricValue('维修中资产'))
@@ -184,12 +184,12 @@ const expiringAssets = computed(() => metricValue('即将过保资产'))
 const stocktakeProgress = computed(() => data.stocktakeProgress)
 
 const summaryCards = computed(() => [
-  card('资产总数', totalAssets.value, metricChange('资产总数'), trendTone('资产总数'), 'blue', Files),
-  card('在用资产', inUseAssets.value, metricChange('在用资产'), trendTone('在用资产'), 'green', CircleCheck),
-  card('闲置资产', idleAssets.value, metricChange('闲置资产'), trendTone('闲置资产', true), 'cyan', Box),
-  card('维修中', repairAssets.value, metricChange('维修中资产'), trendTone('维修中资产', true), 'purple', Tools),
-  card('待报废', pendingScrapAssets.value, '实时', 'up', 'orange', Delete),
-  card('即将过保', expiringAssets.value, metricChange('即将过保资产'), trendTone('即将过保资产', true), 'violet', Warning)
+  card('在管资产', totalAssets.value, metricChange('在管资产'), trendTone('在管资产'), 'blue', Files, `本月新增 ${formatValue(metricValue('本月新增资产'))}`),
+  card('在用资产', inUseAssets.value, '实时', 'up', 'green', CircleCheck, '实时状态'),
+  card('闲置资产', idleAssets.value, '实时', 'up', 'cyan', Box, '实时状态'),
+  card('维修中', repairAssets.value, '实时', 'up', 'purple', Tools, '实时状态'),
+  card('待报废', pendingScrapAssets.value, '实时', 'up', 'orange', Delete, '含审批中'),
+  card('即将过保', expiringAssets.value, '180天内', 'down', 'violet', Warning, '180天内')
 ])
 
 const statusDistribution = computed(() => {
@@ -198,8 +198,7 @@ const statusDistribution = computed(() => {
     { name: '闲置', value: idleAssets.value },
     { name: '维修中', value: repairAssets.value },
     { name: '待报废', value: pendingScrapAssets.value },
-    { name: '已报废', value: lifecycleValue('已报废') },
-    { name: '其他', value: Math.max(totalAssets.value - inUseAssets.value - idleAssets.value - repairAssets.value - pendingScrapAssets.value - lifecycleValue('已报废'), 0) }
+    { name: '其他', value: Math.max(totalAssets.value - inUseAssets.value - idleAssets.value - repairAssets.value - pendingScrapAssets.value, 0) }
   ]
   return rows.map((item, index) => ({ ...item, color: statusColors[index] }))
 })
@@ -307,8 +306,8 @@ function resizeCharts() {
   charts.forEach(chart => chart.resize())
 }
 
-function card(label, value, change, changeTone, tone, icon) {
-  return { label, value, change, changeTone, tone, icon }
+function card(label, value, change, changeTone, tone, icon, caption = '') {
+  return { label, value, change, changeTone, tone, icon, caption }
 }
 
 function metricValue(label) {
