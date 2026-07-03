@@ -30,7 +30,7 @@
         <div class="form-head">
           <span>欢迎回来</span>
           <h2>登录系统</h2>
-          <p>请选择账号来源后继续。</p>
+          <p>请选择账号来源后继续，移动端扫码作业会自动返回当前入口。</p>
         </div>
 
         <el-form :model="form" label-position="top" class="login-form">
@@ -275,12 +275,20 @@ p {
 }
 
 @media (max-width: 900px) {
+  .login-page {
+    align-items: start;
+    place-items: start center;
+  }
+
   .login-shell {
     grid-template-columns: 1fr;
+    gap: 16px;
+    width: min(520px, 100%);
   }
 
   .brand-side {
     min-height: auto;
+    align-content: start;
   }
 
   .capability-grid {
@@ -290,20 +298,83 @@ p {
 
 @media (max-width: 560px) {
   .login-page {
-    padding: 16px;
+    min-height: 100dvh;
+    padding: 14px;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(243, 247, 253, 0.96)),
+      #f3f7fd;
   }
 
   .brand-side,
   .login-panel {
-    padding: 24px;
+    padding: 18px;
   }
 
   .brand-head {
-    align-items: flex-start;
+    align-items: center;
+  }
+
+  .brand-mark {
+    width: 42px;
+    height: 42px;
+  }
+
+  h1,
+  h2 {
+    font-size: 22px;
+  }
+
+  .brand-head p {
+    font-size: 12px;
+  }
+
+  .brand-copy {
+    gap: 8px;
   }
 
   .brand-copy strong {
-    font-size: 26px;
+    font-size: 20px;
+  }
+
+  .brand-copy span {
+    display: none;
+  }
+
+  .capability-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .capability-item {
+    padding: 10px 8px;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .capability-item .el-icon {
+    font-size: 20px;
+  }
+
+  .capability-item strong {
+    font-size: 12px;
+  }
+
+  .capability-item span {
+    display: none;
+  }
+
+  .login-panel {
+    gap: 16px;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  }
+
+  .form-head p,
+  .login-foot {
+    font-size: 12px;
+  }
+
+  :deep(.el-form-item) {
+    margin-bottom: 14px;
   }
 }
 </style>

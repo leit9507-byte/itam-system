@@ -45,7 +45,8 @@ router.beforeEach(to => {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
   if (to.path === '/login' && store.isAuthenticated) {
-    return { path: '/dashboard' }
+    const redirect = typeof to.query.redirect === 'string' && to.query.redirect.startsWith('/') ? to.query.redirect : '/dashboard'
+    return redirect
   }
   return true
 })

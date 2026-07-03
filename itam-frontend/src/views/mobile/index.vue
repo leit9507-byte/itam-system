@@ -11,6 +11,28 @@
       </div>
     </header>
 
+    <el-card shadow="never" class="todo-card">
+      <template #header>
+        <div class="card-header">
+          <span>待办事项</span>
+          <div class="todo-actions">
+            <el-button text type="primary" :loading="todoLoading" @click="loadTodos">刷新</el-button>
+            <el-button text type="primary" @click="router.push('/todo')">全部</el-button>
+          </div>
+        </div>
+      </template>
+      <div v-if="mobileTodos.length" class="mobile-todo-list">
+        <button v-for="item in mobileTodos" :key="item.id" type="button" class="mobile-todo-row" @click="goTodo(item)">
+          <span class="todo-priority" :class="item.priority">{{ priorityLabel(item.priority) }}</span>
+          <span class="todo-content">
+            <strong>{{ item.title }}</strong>
+            <small>{{ item.type_label }} / {{ item.status }}</small>
+          </span>
+        </button>
+      </div>
+      <el-empty v-else description="暂无待办事项" :image-size="64" />
+    </el-card>
+
     <section class="mode-strip">
       <button v-for="item in modes" :key="item.value" type="button" class="mode-card" :class="{ active: mode === item.value }" @click="selectMode(item.value)">
         <el-icon><component :is="item.icon" /></el-icon>
@@ -195,6 +217,7 @@ import { createScrapRequest, getAssets, inboundAsset, outboundAsset } from '../.
 import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
 import { getStocktakeTasks, startStocktakeTask, submitStocktakeItem } from '../../api/stocktake'
+import { getTodoItems } from '../../api/todo'
 
 const router = useRouter()
 const modes = [
@@ -218,6 +241,8 @@ const filteredUsers = ref([])
 const locations = ref([])
 const faultTypes = ref([])
 const logs = ref([])
+const todos = ref([])
+const todoLoading = ref(false)
 const stocktakeTasks = ref([])
 const form = reactive(defaultForm())
 
@@ -226,6 +251,7 @@ const selectedTask = computed(() => stocktakeTasks.value.find(task => task.id ==
 const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
 const activeFaultTypes = computed(() => faultTypes.value.filter(item => item.enabled !== '停用'))
 const recentCodes = computed(() => [...new Set(logs.value.map(item => item.asset_id).filter(Boolean))].slice(0, 4))
+const mobileTodos = computed(() => todos.value.slice(0, 5))
 
 onMounted(async () => {
   logs.value = JSON.parse(localStorage.getItem('itam_mobile_logs') || '[]')
@@ -238,7 +264,7 @@ onMounted(async () => {
   locations.value = locationRows
   faultTypes.value = faultRows
   filteredUsers.value = users.value.slice(0, 20)
-  await loadStocktakeTasks()
+  await Promise.all([loadStocktakeTasks(), loadTodos()])
 })
 
 function defaultForm() {
@@ -268,6 +294,25 @@ async function loadStocktakeTasks() {
     const activeTask = stocktakeTasks.value.find(task => ['进行中', '待开始', '待确认'].includes(task.status))
     form.task_id = activeTask?.id || stocktakeTasks.value[0].id
   }
+}
+
+async function loadTodos() {
+  todoLoading.value = true
+  try {
+    todos.value = await getTodoItems()
+  } catch {
+    todos.value = []
+  } finally {
+    todoLoading.value = false
+  }
+}
+
+function priorityLabel(priority) {
+  return ({ high: '高', medium: '中', low: '低' })[priority] || '-'
+}
+
+function goTodo(item) {
+  router.push({ path: item.target_path || '/todo', query: item.target_query || {} })
 }
 
 function selectTask() {
@@ -536,6 +581,7 @@ function statusType(value) {
 .tip,
 .asset-main span,
 .asset-meta,
+.todo-content small,
 .log-item small {
   color: #64748b;
 }
@@ -590,6 +636,76 @@ function statusType(value) {
 
 .scan-actions {
   flex-shrink: 0;
+}
+
+.todo-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.todo-card :deep(.el-card__body) {
+  padding-top: 10px;
+}
+
+.mobile-todo-list {
+  display: grid;
+  gap: 8px;
+}
+
+.mobile-todo-row {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #dbe7f3;
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+}
+
+.todo-priority {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.todo-priority.high {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.todo-priority.medium {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.todo-priority.low {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.todo-content {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.todo-content strong,
+.todo-content small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .scan-box,
