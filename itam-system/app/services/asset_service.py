@@ -559,9 +559,11 @@ class AssetService:
         category: str | None = None,
         company: str | None = None,
         supplier: str | None = None,
+        user_context: dict | None = None,
     ) -> dict:
         users = AssetService.users_by_identity(db)
         query = db.query(Asset)
+        query = AssetService.apply_data_scope(query, user_context)
         clean_keyword = (keyword or "").strip()
         if clean_keyword:
             pattern = f"%{clean_keyword}%"
@@ -611,6 +613,22 @@ class AssetService:
         if changed:
             db.commit()
         return {"list": rows, "total": total, "page": max(page, 1), "page_size": page_size or total}
+
+    @staticmethod
+    def apply_data_scope(query, user_context: dict | None):
+        user_context = user_context or {}
+        role = (user_context.get("role") or "").lower()
+        if role in {"admin", "auditor"}:
+            return query
+        dept_id = user_context.get("dept_id") or user_context.get("dept_name")
+        user_id = user_context.get("user_id")
+        username = user_context.get("username")
+        if role in {"dept_manager", "department_manager", "manager", "部门管理员"} and dept_id:
+            return query.filter(Asset.dept_id == dept_id)
+        identities = [value for value in [user_id, username] if value]
+        if identities:
+            return query.filter(Asset.owner_user_id.in_(identities))
+        return query.filter(False)
 
     @staticmethod
     def asset_summary(db: Session) -> dict:

@@ -22,3 +22,7 @@ export function downloadAuditReport() {
   const timestamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')
   return downloadBlob('/audit/report', `audit-report-${timestamp}.html`)
 }
+
+export function getReportAnalytics() {
+  return request.get('/reports/analytics')
+}

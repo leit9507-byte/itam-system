@@ -62,6 +62,12 @@ def ensure_compatible_schema(engine) -> None:
         add_column(engine, columns, "stocktake_items", "review_note", "TEXT NULL")
         add_column(engine, columns, "stocktake_items", "reviewed_by", "VARCHAR(128) NULL")
         add_column(engine, columns, "stocktake_items", "reviewed_at", "DATETIME NULL")
+    if "asset_attachments" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("asset_attachments")}
+        add_column(engine, columns, "asset_attachments", "status", "VARCHAR(32) DEFAULT 'active' NOT NULL")
+        add_column(engine, columns, "asset_attachments", "archived_at", "DATETIME NULL")
+        add_column(engine, columns, "asset_attachments", "deleted_at", "DATETIME NULL")
+        add_column(engine, columns, "asset_attachments", "remark", "VARCHAR(512) NULL")
 
 
 def add_column(engine, columns: set[str], table: str, column: str, definition: str) -> None:

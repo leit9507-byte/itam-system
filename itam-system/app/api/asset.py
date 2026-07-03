@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import operator_from_request
+from app.core.security import operator_from_request, user_context_from_request
 from app.schemas.asset import AssetBatchImport, AssetCreate, AssetImportResult, AssetOut, AssetStatusChange, AssetTextImport, AssetUpdate
 from app.services.asset_service import AssetService, AssetValidationError
 
@@ -27,9 +27,10 @@ def list_assets(
     category: str | None = None,
     company: str | None = None,
     supplier: str | None = None,
+    request: Request = None,
     db: Session = Depends(get_db),
 ):
-    return AssetService.list_assets(db, page, page_size, keyword, status, category, company, supplier)
+    return AssetService.list_assets(db, page, page_size, keyword, status, category, company, supplier, user_context_from_request(request))
 
 
 @router.get("/summary")

@@ -32,6 +32,8 @@ RESOURCE_PREFIXES = {
     "/rbac": "rbac",
     "/files": "file",
     "/reports": "report",
+    "/approval": "rbac",
+    "/ops": "rbac",
 }
 
 
@@ -60,6 +62,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 "username": user.username,
                 "display_name": user.display_name,
                 "role": user.role,
+                "dept_id": user.dept_id,
+                "dept_name": user.dept_name,
             }
 
         return await call_next(request)
@@ -101,5 +105,9 @@ def operator_from_request(request: Request) -> str:
     user = getattr(request.state, "user", {}) or {}
     name = user.get("display_name") or user.get("username") or user.get("user_id") or "system"
     role = user.get("role")
-    label = f"{name}（{role}）" if role else name
+    label = f"{name}({role})" if role else name
     return label[:64]
+
+
+def user_context_from_request(request: Request) -> dict:
+    return getattr(request.state, "user", {}) or {}

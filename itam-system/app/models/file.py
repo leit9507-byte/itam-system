@@ -15,4 +15,8 @@ class AssetAttachment(Base):
     storage_path = Column(String(512), nullable=False)
     size = Column(Integer, default=0, nullable=False)
     uploaded_by = Column(String(64), nullable=True)
+    status = Column(String(32), default="active", nullable=False, index=True)
+    archived_at = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime, nullable=True)
+    remark = Column(String(512), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

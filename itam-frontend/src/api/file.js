@@ -12,6 +12,18 @@ export function listAssetFiles(assetId) {
   return request.get(`/files/asset/${assetId}`)
 }
 
+export function archiveAssetFile(fileId) {
+  return request.post(`/files/${fileId}/archive`)
+}
+
+export function restoreAssetFile(fileId) {
+  return request.post(`/files/${fileId}/restore`)
+}
+
+export function deleteAssetFile(fileId) {
+  return request.delete(`/files/${fileId}`)
+}
+
 export function assetQrCodeUrl(assetId) {
   const base = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
   return `${base}/files/asset/${encodeURIComponent(assetId)}/qrcode`

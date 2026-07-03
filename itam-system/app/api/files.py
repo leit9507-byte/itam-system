@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 import qrcode
@@ -40,16 +41,56 @@ async def upload_asset_file(asset_id: str, file: UploadFile = File(...), db: Ses
 
 
 @router.get("/asset/{asset_id}")
-def list_asset_files(asset_id: str, db: Session = Depends(get_db)):
-    return db.query(AssetAttachment).filter(AssetAttachment.asset_id == asset_id).order_by(AssetAttachment.created_at.desc()).all()
+def list_asset_files(asset_id: str, status: str | None = None, db: Session = Depends(get_db)):
+    query = db.query(AssetAttachment).filter(AssetAttachment.asset_id == asset_id)
+    if status:
+        query = query.filter(AssetAttachment.status == status)
+    else:
+        query = query.filter(AssetAttachment.status != "deleted")
+    return query.order_by(AssetAttachment.created_at.desc()).all()
 
 
 @router.get("/{file_id}/download")
 def download_file(file_id: int, db: Session = Depends(get_db)):
     row = db.get(AssetAttachment, file_id)
-    if not row or not Path(row.storage_path).exists():
+    if not row or row.status == "deleted" or not Path(row.storage_path).exists():
         raise HTTPException(status_code=404, detail="file not found")
     return FileResponse(row.storage_path, filename=row.filename, media_type=row.content_type)
+
+
+@router.post("/{file_id}/archive")
+def archive_file(file_id: int, db: Session = Depends(get_db)):
+    row = db.get(AssetAttachment, file_id)
+    if not row or row.status == "deleted":
+        raise HTTPException(status_code=404, detail="file not found")
+    row.status = "archived"
+    row.archived_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.post("/{file_id}/restore")
+def restore_file(file_id: int, db: Session = Depends(get_db)):
+    row = db.get(AssetAttachment, file_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="file not found")
+    row.status = "active"
+    row.deleted_at = None
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/{file_id}")
+def delete_file(file_id: int, db: Session = Depends(get_db)):
+    row = db.get(AssetAttachment, file_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="file not found")
+    row.status = "deleted"
+    row.deleted_at = datetime.utcnow()
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/asset/{asset_id}/qrcode")

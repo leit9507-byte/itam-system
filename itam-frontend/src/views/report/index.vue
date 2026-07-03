@@ -13,6 +13,38 @@
       </el-space>
     </div>
 
+    <div class="analytics-grid">
+      <el-card shadow="never">
+        <template #header>部门资产占用</template>
+        <el-table :data="analytics.department_occupancy" border height="260">
+          <el-table-column prop="dept_id" label="部门" min-width="120" />
+          <el-table-column prop="asset_count" label="数量" width="90" />
+          <el-table-column label="资产价值" width="130">
+            <template #default="{ row }">¥{{ Number(row.asset_value || 0).toLocaleString() }}</template>
+          </el-table-column>
+        </el-table>
+      </el-card>
+      <el-card shadow="never">
+        <template #header>人均资产价值</template>
+        <el-table :data="analytics.per_capita_value" border height="260">
+          <el-table-column prop="dept_id" label="部门" min-width="120" />
+          <el-table-column prop="owner_count" label="人数" width="90" />
+          <el-table-column label="人均价值" width="130">
+            <template #default="{ row }">¥{{ Number(row.per_capita_value || 0).toLocaleString() }}</template>
+          </el-table-column>
+        </el-table>
+      </el-card>
+      <el-card shadow="never">
+        <template #header>趋势指标</template>
+        <div class="trend-list">
+          <div v-for="item in trendRows" :key="item.label" class="trend-row">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value }}</strong>
+          </div>
+        </div>
+      </el-card>
+    </div>
+
     <div class="two-column">
       <el-card shadow="never">
         <template #header>报告列表</template>
@@ -58,21 +90,29 @@
 import { ElMessage } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { generateReport, getReports } from '../../api/audit'
-import { downloadAssetCsv, downloadAssetPdf, downloadAuditReport } from '../../api/reporting'
+import { downloadAssetCsv, downloadAssetPdf, downloadAuditReport, getReportAnalytics } from '../../api/reporting'
 
 const reports = ref([])
 const previewHtml = ref('')
 const generating = ref(false)
 const pagination = reactive({ page: 1, pageSize: 20 })
+const analytics = reactive({ department_occupancy: [], per_capita_value: [], idle_trend: [], repair_cost_trend: [], stocktake_diff_trend: [] })
 
 const activeReport = computed(() => reports.value.find(item => item.html === previewHtml.value))
 const pagedReports = computed(() => {
   const start = (pagination.page - 1) * pagination.pageSize
   return reports.value.slice(start, start + pagination.pageSize)
 })
+const trendRows = computed(() => [
+  { label: '闲置资产趋势', value: latestTrendValue(analytics.idle_trend, 'count') },
+  { label: '维修成本趋势', value: `¥${Number(latestTrendValue(analytics.repair_cost_trend, 'cost', 0)).toLocaleString()}` },
+  { label: '盘点差异趋势', value: latestTrendValue(analytics.stocktake_diff_trend, 'diff_count') }
+])
 
 onMounted(async () => {
-  reports.value = await getReports()
+  const [reportRows, analyticsResult] = await Promise.all([getReports(), getReportAnalytics()])
+  reports.value = reportRows
+  Object.assign(analytics, analyticsResult)
 })
 
 async function handleGenerate() {
@@ -91,9 +131,39 @@ async function handleDownloadAudit() {
   await downloadAuditReport()
   ElMessage.success('审计报告已下载')
 }
+
+function latestTrendValue(rows, key, fallback = 0) {
+  const row = rows?.[rows.length - 1]
+  return row ? row[key] : fallback
+}
 </script>
 
 <style scoped>
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.trend-list {
+  display: grid;
+  gap: 12px;
+}
+
+.trend-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.trend-row strong {
+  font-size: 18px;
+}
+
 .report-preview {
   min-height: 420px;
   max-height: calc(100vh - 260px);
@@ -121,5 +191,11 @@ async function handleDownloadAudit() {
   display: flex;
   justify-content: flex-end;
   margin-top: 14px;
+}
+
+@media (max-width: 1100px) {
+  .analytics-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

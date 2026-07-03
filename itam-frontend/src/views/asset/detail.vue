@@ -98,10 +98,18 @@
             <el-table-column prop="size" label="大小" width="100">
               <template #default="{ row }">{{ formatSize(row.size) }}</template>
             </el-table-column>
+            <el-table-column label="状态" width="90">
+              <template #default="{ row }">
+                <el-tag :type="row.status === 'archived' ? 'warning' : 'success'">{{ row.status === 'archived' ? '已归档' : '有效' }}</el-tag>
+              </template>
+            </el-table-column>
             <el-table-column prop="created_at" label="上传时间" width="170" />
-            <el-table-column label="操作" width="90">
+            <el-table-column label="操作" width="210">
               <template #default="{ row }">
                 <el-button link type="primary" @click="downloadFile(row)">下载</el-button>
+                <el-button v-if="row.status !== 'archived'" link type="warning" @click="archiveFile(row)">归档</el-button>
+                <el-button v-else link type="success" @click="restoreFile(row)">恢复</el-button>
+                <el-button link type="danger" @click="removeFile(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -156,10 +164,10 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import Timeline from '../../components/Timeline.vue'
 import { getAssetDetail, statusMap } from '../../api/asset'
-import { downloadAssetFile, listAssetFiles, loadAssetQrCode, uploadAssetFile } from '../../api/file'
+import { archiveAssetFile, deleteAssetFile, downloadAssetFile, listAssetFiles, loadAssetQrCode, restoreAssetFile, uploadAssetFile } from '../../api/file'
 
 const route = useRoute()
 const detail = reactive({ asset: null, lifecycles: [], changes: [], usageRecords: [], inventoryRecords: [], risks: [] })
@@ -201,6 +209,25 @@ async function handleUpload(file) {
 
 function downloadFile(row) {
   downloadAssetFile(row)
+}
+
+async function archiveFile(row) {
+  await archiveAssetFile(row.id)
+  ElMessage.success('附件已归档')
+  await loadAttachments()
+}
+
+async function restoreFile(row) {
+  await restoreAssetFile(row.id)
+  ElMessage.success('附件已恢复')
+  await loadAttachments()
+}
+
+async function removeFile(row) {
+  await ElMessageBox.confirm(`确认删除附件 ${row.filename}？文件会标记为删除并保留审计追溯。`, '删除附件', { type: 'warning' })
+  await deleteAssetFile(row.id)
+  ElMessage.success('附件已删除')
+  await loadAttachments()
 }
 
 function formatSize(size = 0) {
