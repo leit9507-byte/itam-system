@@ -22,6 +22,16 @@ To rebuild from an empty database during the first rollout:
 .\scripts\first-deploy.ps1 -ResetData
 ```
 
+Mobile entry variables can be set in `.env` before building:
+
+```text
+VITE_MOBILE_PUBLIC_URL=https://it.example.com/mobile
+VITE_FEISHU_SDK_URL=https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.30.js
+VITE_FEISHU_SDK_AUTO_LOAD=true
+```
+
+After changing these frontend build variables, rebuild the frontend image with `.\scripts\container-deploy.ps1 -Rebuild`.
+
 ## Deployment Mode
 
 Fast page load. Frontend is built once and served by Nginx. Backend runs without reload.

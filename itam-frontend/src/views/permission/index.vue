@@ -421,6 +421,68 @@
         </div>
       </el-tab-pane>
 
+      <el-tab-pane v-if="!isPersonnelMode" label="移动端配置" name="mobile-config">
+        <div class="mobile-config-grid">
+          <el-card shadow="never">
+            <template #header>访问入口</template>
+            <el-descriptions border :column="1" class="mobile-config-desc">
+              <el-descriptions-item label="移动端地址">
+                <div class="copy-row">
+                  <span>{{ mobileConfig.mobileUrl }}</span>
+                  <el-button link type="primary" @click="copyText(mobileConfig.mobileUrl)">复制</el-button>
+                </div>
+              </el-descriptions-item>
+              <el-descriptions-item label="飞书工作台地址">
+                <div class="copy-row">
+                  <span>{{ mobileConfig.mobileUrl }}</span>
+                  <el-button link type="primary" @click="copyText(mobileConfig.mobileUrl)">复制</el-button>
+                </div>
+              </el-descriptions-item>
+              <el-descriptions-item label="扫码内容示例">
+                <div class="copy-row">
+                  <span>{{ mobileConfig.scanExample }}</span>
+                  <el-button link type="primary" @click="copyText(mobileConfig.scanExample)">复制</el-button>
+                </div>
+              </el-descriptions-item>
+            </el-descriptions>
+
+            <div class="mobile-checks">
+              <div v-for="item in mobileConfigChecks" :key="item.label" class="mobile-check-item">
+                <el-tag :type="item.ok ? 'success' : 'warning'">{{ item.ok ? '已就绪' : '需配置' }}</el-tag>
+                <div>
+                  <strong>{{ item.label }}</strong>
+                  <span>{{ item.tip }}</span>
+                </div>
+              </div>
+            </div>
+          </el-card>
+
+          <el-card shadow="never">
+            <template #header>飞书应用配置</template>
+            <el-steps direction="vertical" :active="5" finish-status="success" class="mobile-steps">
+              <el-step title="应用能力" description="在飞书开放平台创建企业自建应用，网页应用或工作台入口指向移动端地址。" />
+              <el-step title="安全域名" :description="mobileConfig.host ? `把 ${mobileConfig.host} 加入网页应用安全域名。` : '把当前系统域名加入网页应用安全域名。'" />
+              <el-step title="JS SDK" description="需要原生扫码时启用飞书 JS SDK，并确保页面使用 HTTPS 或飞书客户端内访问。" />
+              <el-step title="通讯录权限" description="如果要同步人员，继续在身份源配置里填写 App ID / App Secret 并开通通讯录只读权限。" />
+              <el-step title="发布应用" description="权限、域名、工作台入口变更后发布应用，移动端扫码才会按最新配置生效。" />
+            </el-steps>
+          </el-card>
+
+          <el-card shadow="never">
+            <template #header>前端环境变量</template>
+            <el-table :data="mobileEnvRows" border stripe>
+              <el-table-column prop="key" label="变量" width="220" />
+              <el-table-column prop="value" label="当前值" min-width="220">
+                <template #default="{ row }">{{ row.value || '未配置' }}</template>
+              </el-table-column>
+              <el-table-column prop="desc" label="说明" min-width="260" />
+            </el-table>
+            <el-input class="env-snippet" :model-value="mobileConfig.envSnippet" type="textarea" :rows="5" readonly />
+            <el-button type="primary" @click="copyText(mobileConfig.envSnippet)">复制环境变量示例</el-button>
+          </el-card>
+        </div>
+      </el-tab-pane>
+
       <el-tab-pane v-if="!isPersonnelMode" label="登录测试" name="login">
         <el-card shadow="never" class="login-card">
           <el-form :model="loginForm" label-width="100px">
@@ -577,6 +639,9 @@ const loginResult = ref(null)
 const selectedUserId = ref('')
 const selectedRole = ref('user')
 const permissionSaving = ref(false)
+const runtimeOrigin = typeof window !== 'undefined' ? window.location.origin : ''
+const runtimeProtocol = typeof window !== 'undefined' ? window.location.protocol : ''
+const runtimeHost = typeof window !== 'undefined' ? window.location.host : ''
 const providerForm = reactive(defaultProviderForm())
 const providerConfig = reactive(defaultConfig())
 const loginForm = reactive({ provider: 'local', username: 'admin', password: 'admin' })
@@ -598,6 +663,43 @@ const pagedPermissions = computed(() => paginate(permissions.value, permissionPa
 const supportedProviders = computed(() => providers.value.filter(item => ['ldap', 'feishu'].includes(item.provider_type)))
 const pagedProviders = computed(() => paginate(supportedProviders.value, providerPagination))
 const selectedPermissionUser = computed(() => users.value.find(user => user.user_id === selectedUserId.value) || null)
+const mobileConfig = computed(() => {
+  const publicUrl = import.meta.env.VITE_MOBILE_PUBLIC_URL || `${runtimeOrigin}/mobile`
+  return {
+    mobileUrl: publicUrl,
+    host: safeUrlHost(publicUrl) || runtimeHost,
+    scanExample: `${runtimeOrigin || 'https://it.example.com'}/hardware/1982`,
+    feishuSdkUrl: import.meta.env.VITE_FEISHU_SDK_URL || '',
+    feishuSdkAutoLoad: import.meta.env.VITE_FEISHU_SDK_AUTO_LOAD || '',
+    envSnippet: [
+      `VITE_MOBILE_PUBLIC_URL=${publicUrl}`,
+      'VITE_FEISHU_SDK_URL=https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.30.js',
+      'VITE_FEISHU_SDK_AUTO_LOAD=true'
+    ].join('\n')
+  }
+})
+const mobileConfigChecks = computed(() => [
+  {
+    label: '移动端访问地址',
+    ok: Boolean(mobileConfig.value.mobileUrl),
+    tip: '飞书工作台、二维码或企业微信内嵌入口都使用这个地址。'
+  },
+  {
+    label: 'HTTPS 或本地调试',
+    ok: runtimeProtocol === 'https:' || ['localhost', '127.0.0.1'].includes((runtimeHost.split(':')[0] || '').toLowerCase()),
+    tip: '浏览器摄像头扫码通常要求 HTTPS；飞书客户端内扫码也建议使用 HTTPS。'
+  },
+  {
+    label: '飞书 JS SDK',
+    ok: Boolean(mobileConfig.value.feishuSdkUrl || mobileConfig.value.feishuSdkAutoLoad === 'true'),
+    tip: '配置后移动端会优先调用飞书原生扫码，失败时再回退浏览器扫码。'
+  }
+])
+const mobileEnvRows = computed(() => [
+  { key: 'VITE_MOBILE_PUBLIC_URL', value: import.meta.env.VITE_MOBILE_PUBLIC_URL || '', desc: '移动端对外访问地址，用于飞书工作台和配置指引展示。' },
+  { key: 'VITE_FEISHU_SDK_URL', value: import.meta.env.VITE_FEISHU_SDK_URL || '', desc: '飞书 JS SDK 地址；内网环境可换成企业可访问的镜像地址。' },
+  { key: 'VITE_FEISHU_SDK_AUTO_LOAD', value: import.meta.env.VITE_FEISHU_SDK_AUTO_LOAD || '', desc: '设为 true 时非飞书客户端也尝试加载 SDK，便于调试。' }
+])
 const permissionActions = [
   { label: '读取', value: 'read' },
   { label: '写入', value: 'write' },
@@ -970,6 +1072,20 @@ function providerTypeLabel(type) {
   return { ldap: 'LDAP / AD', feishu: '飞书' }[type] || type
 }
 
+async function copyText(text) {
+  if (!text) return
+  await navigator.clipboard?.writeText(text).catch(() => null)
+  ElMessage.success('已复制')
+}
+
+function safeUrlHost(url) {
+  try {
+    return new URL(url).host
+  } catch {
+    return ''
+  }
+}
+
 async function testProvider(row) {
   const result = await testIdentityProvider(row.id)
   ElMessage[result.last_test_status === 'success' ? 'success' : 'warning'](result.last_test_message)
@@ -1032,6 +1148,64 @@ function paginate(rows, pagination) {
   display: grid;
   grid-template-columns: minmax(400px, 0.9fr) minmax(520px, 1.1fr);
   gap: 16px;
+}
+
+.mobile-config-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.9fr) minmax(420px, 1.1fr);
+  gap: 16px;
+}
+
+.mobile-config-grid > .el-card:last-child {
+  grid-column: 1 / -1;
+}
+
+.mobile-config-desc {
+  margin-bottom: 16px;
+}
+
+.copy-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.copy-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mobile-checks {
+  display: grid;
+  gap: 10px;
+}
+
+.mobile-check-item {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid #dbe7f3;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.mobile-check-item div {
+  display: grid;
+  gap: 4px;
+}
+
+.mobile-check-item span,
+.mobile-steps :deep(.el-step__description) {
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.env-snippet {
+  margin: 12px 0;
 }
 
 .rbac-toolbar {
@@ -1141,8 +1315,13 @@ function paginate(rows, pagination) {
 }
 
 @media (max-width: 1100px) {
-  .provider-grid {
+  .provider-grid,
+  .mobile-config-grid {
     grid-template-columns: 1fr;
+  }
+
+  .mobile-config-grid > .el-card:last-child {
+    grid-column: auto;
   }
 }
 </style>
