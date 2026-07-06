@@ -120,7 +120,7 @@
 <script setup>
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
-import * as echarts from 'echarts'
+import echarts from '../../utils/echarts'
 import { deleteRepairFaultType, finishRepairRecord, getRepairDashboard, getRepairFaultTypes, getRepairRecords, saveRepairFaultType } from '../../api/repair'
 
 const records = ref([])

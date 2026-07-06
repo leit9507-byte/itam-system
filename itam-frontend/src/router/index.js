@@ -1,13 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAppStore } from '../store'
-import Layout from '../layout/Layout.vue'
 
 const routes = [
   { path: '/login', name: 'Login', component: () => import('../views/login/index.vue'), meta: { public: true, title: '登录' } },
   { path: '/mobile', name: 'MobileWork', component: () => import('../views/mobile/index.vue'), meta: { title: '移动扫码作业' } },
   {
     path: '/',
-    component: Layout,
+    component: () => import('../layout/Layout.vue'),
     redirect: '/dashboard',
     children: [
       { path: 'dashboard', name: 'Dashboard', component: () => import('../views/dashboard/index.vue'), meta: { title: '资产总览' } },

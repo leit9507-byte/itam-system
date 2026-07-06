@@ -346,7 +346,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Document, Plus, Refresh, Setting } from '@element-plus/icons-vue'
-import * as echarts from 'echarts'
+import echarts from '../../utils/echarts'
 import { getAuditRules, runAudit, saveAuditResponse, saveAuditRules } from '../../api/audit'
 import { getDeviceTypes } from '../../api/product'
 

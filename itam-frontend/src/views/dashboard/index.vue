@@ -108,7 +108,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
-import * as echarts from 'echarts'
+import echarts from '../../utils/echarts'
 import {
   Box,
   CircleCheck,

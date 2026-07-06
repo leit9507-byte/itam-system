@@ -222,7 +222,7 @@
 <script setup>
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
-import * as echarts from 'echarts'
+import echarts from '../../utils/echarts'
 import {
   createStocktakeTask,
   buildStocktakeDashboard,

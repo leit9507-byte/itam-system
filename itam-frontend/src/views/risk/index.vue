@@ -44,7 +44,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
-import * as echarts from 'echarts'
+import echarts from '../../utils/echarts'
 import { getRiskAnalytics } from '../../api/audit'
 
 const trendRef = ref(null)
