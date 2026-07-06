@@ -445,7 +445,7 @@ async function submit() {
 
 async function approve(row) {
   await approvePurchase(row)
-  ElMessage.success('审批已通过，可进行验收')
+  ElMessage.success('已提交飞书采购审批，审批通过后进入验收')
   await loadPurchases()
 }
 

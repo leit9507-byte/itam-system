@@ -80,6 +80,7 @@ export async function getRepairDashboard(filters = {}) {
 }
 
 function mapRepair(row) {
+  const statusLabelMap = { approval_submitted: '已提交飞书审批', rejected: '已驳回' }
   return {
     id: row.id,
     repair_no: row.repair_no,
@@ -95,6 +96,7 @@ function mapRepair(row) {
     vendor: row.vendor || '',
     operator: row.operator || '',
     status: row.status,
+    status_label: statusLabelMap[row.status] || row.status,
     finish_time: row.finish_time ? formatDate(row.finish_time) : '',
     created_at: formatDate(row.created_at),
     remark: row.remark || '',

@@ -2,8 +2,10 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.core.security import can_view_all_data, is_department_manager, scoped_dept_id, scoped_user_identities
 from app.models.asset import Asset
 from app.models.scrap import ScrapRequest
+from app.services.audit_log_service import AuditLogService
 from app.services.lifecycle_service import LifecycleService
 
 
@@ -16,8 +18,10 @@ class ScrapService:
         status: str | None = None,
         created_from: datetime | None = None,
         created_to: datetime | None = None,
+        user_context: dict | None = None,
     ) -> dict:
         query = db.query(ScrapRequest)
+        query = ScrapService.apply_data_scope(query, user_context)
         if status:
             query = query.filter(ScrapRequest.status == status)
         if created_from:
@@ -29,6 +33,18 @@ class ScrapService:
         if page_size and page_size > 0:
             query = query.offset((max(page, 1) - 1) * page_size).limit(page_size)
         return {"list": query.all(), "total": total, "page": max(page, 1), "page_size": page_size or total}
+
+    @staticmethod
+    def apply_data_scope(query, user_context: dict | None):
+        if can_view_all_data(user_context):
+            return query
+        dept_id = scoped_dept_id(user_context)
+        identities = scoped_user_identities(user_context)
+        if is_department_manager(user_context) and dept_id:
+            return query.filter(ScrapRequest.dept_id == dept_id)
+        if identities:
+            return query.filter(ScrapRequest.owner_user_id.in_(identities))
+        return query.filter(False)
 
     @staticmethod
     def create_request(db: Session, asset_id: str, payload: dict, operator: str = "资产管理员") -> ScrapRequest:
@@ -64,6 +80,7 @@ class ScrapService:
         asset.status = "pending_scrap"
         db.add(request)
         LifecycleService.record(db, asset.asset_id, "SCRAP_REQUEST", from_status, "pending_scrap", operator, request.reason)
+        AuditLogService.record_operation(db, "scrap", "create", operator, "scrap_request", request.request_no, f"提交报废申请 {asset.asset_id}", payload)
         db.commit()
         db.refresh(request)
         return request
@@ -81,6 +98,7 @@ class ScrapService:
             from_status = asset.status
             asset.status = "scrapped"
             LifecycleService.record(db, asset.asset_id, "SCRAP_APPROVE", from_status, "scrapped", approver, request.reason)
+        AuditLogService.record_operation(db, "scrap", "approve", approver, "scrap_request", request.request_no, f"报废审批通过 {request.asset_id}")
         db.commit()
         db.refresh(request)
         return request
@@ -98,6 +116,7 @@ class ScrapService:
             from_status = asset.status
             asset.status = "idle"
             LifecycleService.record(db, asset.asset_id, "SCRAP_REJECT", from_status, "idle", approver, request.reason)
+        AuditLogService.record_operation(db, "scrap", "reject", approver, "scrap_request", request.request_no, f"报废审批驳回 {request.asset_id}")
         db.commit()
         db.refresh(request)
         return request

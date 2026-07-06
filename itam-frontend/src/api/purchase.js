@@ -77,6 +77,8 @@ function mapBackendPurchase(row) {
   const items = row.items || []
   const statusLabelMap = {
     created: '审批中',
+    approval_submitted: '已提交飞书审批',
+    rejected: '已驳回',
     pending_acceptance: '待验收',
     received: '已入库'
   }

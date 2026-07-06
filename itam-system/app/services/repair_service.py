@@ -3,9 +3,11 @@ from datetime import datetime
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.core.security import can_view_all_data, is_department_manager, scoped_dept_id, scoped_user_identities
 from app.models.asset import Asset
 from app.models.repair import RepairFaultType, RepairRecord
 from app.schemas.repair import RepairCreate, RepairFinish
+from app.services.audit_log_service import AuditLogService
 from app.services.lifecycle_service import LifecycleService
 
 
@@ -62,8 +64,10 @@ class RepairService:
         status: str | None = None,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
+        user_context: dict | None = None,
     ) -> dict:
-        query = db.query(RepairRecord)
+        query = db.query(RepairRecord).outerjoin(Asset, Asset.asset_id == RepairRecord.asset_id)
+        query = RepairService.apply_data_scope(query, user_context)
         if status:
             query = query.filter(RepairRecord.status == status)
         if start_date:
@@ -73,7 +77,7 @@ class RepairService:
         clean_keyword = (keyword or "").strip()
         if clean_keyword:
             pattern = f"%{clean_keyword}%"
-            query = query.outerjoin(Asset, Asset.asset_id == RepairRecord.asset_id).filter(
+            query = query.filter(
                 or_(
                     RepairRecord.asset_id.like(pattern),
                     RepairRecord.repair_no.like(pattern),
@@ -93,7 +97,19 @@ class RepairService:
         return {"list": [RepairService.to_dict(row, assets.get(row.asset_id)) for row in rows], "total": total, "page": max(page, 1), "page_size": page_size or total}
 
     @staticmethod
-    def create_record(db: Session, payload: RepairCreate) -> dict:
+    def apply_data_scope(query, user_context: dict | None):
+        if can_view_all_data(user_context):
+            return query
+        dept_id = scoped_dept_id(user_context)
+        identities = scoped_user_identities(user_context)
+        if is_department_manager(user_context) and dept_id:
+            return query.filter(Asset.dept_id == dept_id)
+        if identities:
+            return query.filter(Asset.owner_user_id.in_(identities))
+        return query.filter(False)
+
+    @staticmethod
+    def create_record(db: Session, payload: RepairCreate, start_work: bool = True) -> dict:
         asset = db.get(Asset, payload.asset_id)
         if not asset:
             raise ValueError("asset not found")
@@ -105,16 +121,52 @@ class RepairService:
             repair_cost=payload.repair_cost,
             vendor=payload.vendor,
             operator=payload.operator,
-            status="维修中",
+            status="维修中" if start_work else "approval_submitted",
             remark=payload.remark,
         )
         db.add(record)
-        from_status = asset.status
-        asset.status = "repair"
-        LifecycleService.record(db, asset.asset_id, "REPAIR_CREATE", from_status, "repair", payload.operator)
+        if start_work:
+            from_status = asset.status
+            asset.status = "repair"
+            LifecycleService.record(db, asset.asset_id, "REPAIR_CREATE", from_status, "repair", payload.operator)
+        else:
+            LifecycleService.record(db, asset.asset_id, "REPAIR_APPROVAL_SUBMIT", asset.status, asset.status, payload.operator)
+        AuditLogService.record_operation(db, "repair", "create" if start_work else "approval_submit", payload.operator, "repair", record.repair_no, f"维修{'创建' if start_work else '提交飞书审批'} {record.asset_id}", payload.model_dump())
         db.commit()
         db.refresh(record)
         db.refresh(asset)
+        return RepairService.to_dict(record, asset)
+
+    @staticmethod
+    def approve_record(db: Session, record_id: int, operator: str = "system") -> dict:
+        record = db.get(RepairRecord, record_id)
+        if not record:
+            raise ValueError("repair record not found")
+        asset = db.get(Asset, record.asset_id)
+        record.status = "维修中"
+        if asset:
+            from_status = asset.status
+            asset.status = "repair"
+            LifecycleService.record(db, asset.asset_id, "REPAIR_APPROVE", from_status, "repair", operator)
+        AuditLogService.record_operation(db, "repair", "approve", operator, "repair", record.repair_no, f"维修审批通过 {record.asset_id}")
+        db.commit()
+        db.refresh(record)
+        if asset:
+            db.refresh(asset)
+        return RepairService.to_dict(record, asset)
+
+    @staticmethod
+    def reject_record(db: Session, record_id: int, operator: str = "system") -> dict:
+        record = db.get(RepairRecord, record_id)
+        if not record:
+            raise ValueError("repair record not found")
+        asset = db.get(Asset, record.asset_id)
+        record.status = "rejected"
+        if asset:
+            LifecycleService.record(db, asset.asset_id, "REPAIR_REJECT", asset.status, asset.status, operator)
+        AuditLogService.record_operation(db, "repair", "reject", operator, "repair", record.repair_no, f"维修审批驳回 {record.asset_id}")
+        db.commit()
+        db.refresh(record)
         return RepairService.to_dict(record, asset)
 
     @staticmethod
@@ -131,6 +183,7 @@ class RepairService:
             from_status = asset.status
             asset.status = payload.next_status
             LifecycleService.record(db, asset.asset_id, "REPAIR_FINISH", from_status, payload.next_status, payload.operator)
+        AuditLogService.record_operation(db, "repair", "finish", payload.operator, "repair", record.repair_no, f"维修完成 {record.asset_id}", payload.model_dump())
         db.commit()
         db.refresh(record)
         if asset:

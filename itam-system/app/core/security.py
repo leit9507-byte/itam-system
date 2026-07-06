@@ -13,6 +13,7 @@ PUBLIC_PATHS = {
     "/openapi.json",
     "/redoc",
     "/auth/login",
+    "/approval/feishu/callback",
 }
 
 RESOURCE_PREFIXES = {
@@ -111,3 +112,23 @@ def operator_from_request(request: Request) -> str:
 
 def user_context_from_request(request: Request) -> dict:
     return getattr(request.state, "user", {}) or {}
+
+
+def can_view_all_data(user_context: dict | None) -> bool:
+    role = ((user_context or {}).get("role") or "").lower()
+    return role in {"admin", "auditor"}
+
+
+def is_department_manager(user_context: dict | None) -> bool:
+    role = ((user_context or {}).get("role") or "").lower()
+    return role in {"dept_manager", "department_manager", "manager", "部门管理员"}
+
+
+def scoped_dept_id(user_context: dict | None) -> str | None:
+    user_context = user_context or {}
+    return user_context.get("dept_id") or user_context.get("dept_name")
+
+
+def scoped_user_identities(user_context: dict | None) -> list[str]:
+    user_context = user_context or {}
+    return [value for value in [user_context.get("user_id"), user_context.get("username")] if value]

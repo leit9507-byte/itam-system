@@ -121,7 +121,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { approveScrapRequest, createScrapRequest, getAssets, getScrapRequests, inboundAsset, outboundAsset } from '../../api/asset'
+import { approveScrapRequest, createScrapRequest, getAssets, getScrapRequests, inboundAsset, outboundAsset, submitReclaimApproval } from '../../api/asset'
 import { approvePurchase, getPurchases, receivePurchase } from '../../api/purchase'
 import { finishRepairRecord, getRepairRecords } from '../../api/repair'
 import { getTodoItems } from '../../api/todo'
@@ -298,12 +298,12 @@ async function submitScrapRequest() {
 }
 
 async function approvePurchaseTodo(row) {
-  const confirmed = await confirmAction(`确认通过采购单 ${row.purchase_no} 的审批？`, '采购审批')
+  const confirmed = await confirmAction(`确认提交采购单 ${row.purchase_no} 的飞书审批？`, '采购审批')
   if (!confirmed) return
   await runTodoAction(row, async () => {
     const purchase = await findPurchase(row.purchase_no)
     await approvePurchase(purchase)
-    ElMessage.success('采购审批已通过')
+    ElMessage.success('已提交飞书采购审批')
   })
 }
 
@@ -327,11 +327,11 @@ async function approveScrapTodo(row) {
 }
 
 async function reclaimAssetTodo(row) {
-  const confirmed = await confirmAction(`确认回收 ${row.asset_id} 到在库状态？`, '离职资产回收')
+  const confirmed = await confirmAction(`确认提交 ${row.asset_id} 的飞书回收审批？`, '离职资产回收')
   if (!confirmed) return
   await runTodoAction(row, async () => {
-    await inboundAsset(row.asset_id, { location: '', remark: '离职资产收回' })
-    ElMessage.success('离职资产已回收')
+    await submitReclaimApproval(row.asset_id, { location: '', remark: '离职资产回收审批' })
+    ElMessage.success('已提交飞书回收审批')
   })
 }
 

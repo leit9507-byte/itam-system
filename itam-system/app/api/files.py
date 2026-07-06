@@ -2,23 +2,26 @@ from datetime import datetime
 from pathlib import Path
 
 import qrcode
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.auth import secure_filename
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.security import operator_from_request, user_context_from_request
 from app.models.asset import Asset
 from app.models.file import AssetAttachment
+from app.services.asset_service import AssetService
+from app.services.audit_log_service import AuditLogService
 
 
 router = APIRouter(prefix="/files", tags=["Files"])
 
 
 @router.post("/asset/{asset_id}/upload")
-async def upload_asset_file(asset_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    if not db.get(Asset, asset_id):
+async def upload_asset_file(asset_id: str, request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if not can_access_asset(db, asset_id, user_context_from_request(request)):
         raise HTTPException(status_code=404, detail="asset not found")
     upload_root = Path(get_settings().upload_dir) / asset_id
     upload_root.mkdir(parents=True, exist_ok=True)
@@ -35,13 +38,16 @@ async def upload_asset_file(asset_id: str, file: UploadFile = File(...), db: Ses
         uploaded_by="system",
     )
     db.add(row)
+    AuditLogService.record_operation(db, "file", "upload", operator_from_request(request), "asset_attachment", asset_id, f"上传附件 {filename}")
     db.commit()
     db.refresh(row)
     return row
 
 
 @router.get("/asset/{asset_id}")
-def list_asset_files(asset_id: str, status: str | None = None, db: Session = Depends(get_db)):
+def list_asset_files(asset_id: str, request: Request, status: str | None = None, db: Session = Depends(get_db)):
+    if not can_access_asset(db, asset_id, user_context_from_request(request)):
+        raise HTTPException(status_code=404, detail="asset not found")
     query = db.query(AssetAttachment).filter(AssetAttachment.asset_id == asset_id)
     if status:
         query = query.filter(AssetAttachment.status == status)
@@ -51,51 +57,62 @@ def list_asset_files(asset_id: str, status: str | None = None, db: Session = Dep
 
 
 @router.get("/{file_id}/download")
-def download_file(file_id: int, db: Session = Depends(get_db)):
+def download_file(file_id: int, request: Request, db: Session = Depends(get_db)):
     row = db.get(AssetAttachment, file_id)
     if not row or row.status == "deleted" or not Path(row.storage_path).exists():
+        raise HTTPException(status_code=404, detail="file not found")
+    if not can_access_asset(db, row.asset_id, user_context_from_request(request)):
         raise HTTPException(status_code=404, detail="file not found")
     return FileResponse(row.storage_path, filename=row.filename, media_type=row.content_type)
 
 
 @router.post("/{file_id}/archive")
-def archive_file(file_id: int, db: Session = Depends(get_db)):
+def archive_file(file_id: int, request: Request, db: Session = Depends(get_db)):
     row = db.get(AssetAttachment, file_id)
     if not row or row.status == "deleted":
         raise HTTPException(status_code=404, detail="file not found")
+    if not can_access_asset(db, row.asset_id, user_context_from_request(request)):
+        raise HTTPException(status_code=404, detail="file not found")
     row.status = "archived"
     row.archived_at = datetime.utcnow()
+    AuditLogService.record_operation(db, "file", "archive", operator_from_request(request), "asset_attachment", str(row.id), f"归档附件 {row.filename}")
     db.commit()
     db.refresh(row)
     return row
 
 
 @router.post("/{file_id}/restore")
-def restore_file(file_id: int, db: Session = Depends(get_db)):
+def restore_file(file_id: int, request: Request, db: Session = Depends(get_db)):
     row = db.get(AssetAttachment, file_id)
     if not row:
         raise HTTPException(status_code=404, detail="file not found")
+    if not can_access_asset(db, row.asset_id, user_context_from_request(request)):
+        raise HTTPException(status_code=404, detail="file not found")
     row.status = "active"
     row.deleted_at = None
+    AuditLogService.record_operation(db, "file", "restore", operator_from_request(request), "asset_attachment", str(row.id), f"恢复附件 {row.filename}")
     db.commit()
     db.refresh(row)
     return row
 
 
 @router.delete("/{file_id}")
-def delete_file(file_id: int, db: Session = Depends(get_db)):
+def delete_file(file_id: int, request: Request, db: Session = Depends(get_db)):
     row = db.get(AssetAttachment, file_id)
     if not row:
         raise HTTPException(status_code=404, detail="file not found")
+    if not can_access_asset(db, row.asset_id, user_context_from_request(request)):
+        raise HTTPException(status_code=404, detail="file not found")
     row.status = "deleted"
     row.deleted_at = datetime.utcnow()
+    AuditLogService.record_operation(db, "file", "delete", operator_from_request(request), "asset_attachment", str(row.id), f"删除附件 {row.filename}")
     db.commit()
     return {"ok": True}
 
 
 @router.get("/asset/{asset_id}/qrcode")
-def asset_qrcode(asset_id: str, db: Session = Depends(get_db)):
-    asset = db.get(Asset, asset_id)
+def asset_qrcode(asset_id: str, request: Request, db: Session = Depends(get_db)):
+    asset = can_access_asset(db, asset_id, user_context_from_request(request))
     if not asset:
         raise HTTPException(status_code=404, detail="asset not found")
     output_dir = Path(get_settings().upload_dir) / "qrcodes"
@@ -104,3 +121,7 @@ def asset_qrcode(asset_id: str, db: Session = Depends(get_db)):
     img = qrcode.make(f"ITAM-ASSET:{asset.asset_id}|{asset.name}|{asset.sn or ''}")
     img.save(output_path)
     return FileResponse(output_path, filename=f"{asset_id}.png", media_type="image/png")
+
+
+def can_access_asset(db: Session, asset_id: str, user_context: dict | None) -> Asset | None:
+    return AssetService.apply_data_scope(db.query(Asset), user_context).filter(Asset.asset_id == asset_id).first()

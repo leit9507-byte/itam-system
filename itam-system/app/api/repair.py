@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import operator_from_request
+from app.core.security import operator_from_request, user_context_from_request
+from app.models.asset import Asset
+from app.services.approval_service import ApprovalService
 from app.schemas.repair import RepairCreate, RepairFaultTypeOut, RepairFaultTypeSave, RepairFinish, RepairOut
 from app.services.repair_service import RepairService
 
@@ -50,17 +52,38 @@ def list_repairs(
     status: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    request: Request = None,
     db: Session = Depends(get_db),
 ):
     start = datetime.combine(datetime.fromisoformat(start_date).date(), time.min) if start_date else None
     end = datetime.combine(datetime.fromisoformat(end_date).date(), time.max) if end_date else None
-    return RepairService.list_records(db, page, page_size, keyword, status, start, end)
+    return RepairService.list_records(db, page, page_size, keyword, status, start, end, user_context_from_request(request))
 
 
 @router.post("/create", response_model=RepairOut)
 def create_repair(payload: RepairCreate, request: Request, db: Session = Depends(get_db)):
     try:
-        return RepairService.create_record(db, payload.model_copy(update={"operator": operator_from_request(request)}))
+        operator = operator_from_request(request)
+        asset = db.get(Asset, payload.asset_id)
+        config = ApprovalService.match_config(db, "repair", payload.repair_cost or 0, asset.dept_id if asset else None)
+        row = RepairService.create_record(db, payload.model_copy(update={"operator": operator}), start_work=not bool(config))
+        if config:
+            ApprovalService.submit_feishu_approval(
+                db,
+                "repair",
+                row["repair_no"],
+                payload.repair_cost or 0,
+                asset.dept_id if asset else None,
+                form={
+                    "repair_no": row["repair_no"],
+                    "asset_id": payload.asset_id,
+                    "fault_reason": payload.fault_reason,
+                    "repair_cost": payload.repair_cost or 0,
+                    "vendor": payload.vendor or "",
+                },
+                requester=operator,
+            )
+        return row
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

@@ -41,7 +41,7 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getAssets, inboundAsset, outboundAsset } from '../api/asset'
+import { getAssets, inboundAsset, outboundAsset, submitReclaimApproval } from '../api/asset'
 import { getUsers } from '../api/user'
 
 const emit = defineEmits(['completed'])
@@ -126,8 +126,8 @@ async function reclaimAsset(item) {
   if (!confirmed) return
   processing.value = true
   try {
-    await inboundAsset(item.asset_id, { location: '', remark: '离职资产收回' })
-    ElMessage.success('离职资产已回收')
+    await submitReclaimApproval(item.asset_id, { location: '', remark: '离职资产回收审批' })
+    ElMessage.success('已提交飞书回收审批')
     emit('completed')
   } catch (error) {
     ElMessage.error(`回收失败：${error?.message || '请稍后重试'}`)
@@ -164,9 +164,9 @@ async function submitUserReclaim() {
   processing.value = true
   try {
     for (const asset of reclaimDialog.selected) {
-      await inboundAsset(asset.asset_id, { location: '', remark: '离职资产收回' })
+      await submitReclaimApproval(asset.asset_id, { location: '', remark: '离职资产回收审批' })
     }
-    ElMessage.success(`已回收 ${reclaimDialog.selected.length} 个资产`)
+    ElMessage.success(`已提交 ${reclaimDialog.selected.length} 个资产的飞书回收审批`)
     reclaimDialog.visible = false
     emit('completed')
   } catch (error) {

@@ -2,10 +2,12 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.core.security import can_view_all_data, is_department_manager, scoped_dept_id, scoped_user_identities
 from app.models.asset import Asset
 from app.models.purchase import Purchase, PurchaseItem
 from app.schemas.purchase import PurchaseAcceptanceReceive, PurchaseCreate
 from app.services.asset_service import AssetService
+from app.services.audit_log_service import AuditLogService
 from app.services.lifecycle_service import LifecycleService
 from app.services.supplier_service import SupplierService
 
@@ -18,8 +20,10 @@ class PurchaseService:
         created_to: datetime | None = None,
         page: int = 1,
         page_size: int = 0,
+        user_context: dict | None = None,
     ) -> dict:
         query = db.query(Purchase)
+        query = PurchaseService.apply_data_scope(query, user_context)
         if created_from:
             query = query.filter(Purchase.created_at >= created_from)
         if created_to:
@@ -29,6 +33,18 @@ class PurchaseService:
         if page_size and page_size > 0:
             query = query.offset((max(page, 1) - 1) * page_size).limit(page_size)
         return {"list": query.all(), "total": total, "page": max(page, 1), "page_size": page_size or total}
+
+    @staticmethod
+    def apply_data_scope(query, user_context: dict | None):
+        if can_view_all_data(user_context):
+            return query
+        dept_id = scoped_dept_id(user_context)
+        if is_department_manager(user_context) and dept_id:
+            return query.filter(Purchase.items.any(PurchaseItem.dept_id == dept_id))
+        identities = scoped_user_identities(user_context)
+        if identities:
+            return query.filter(Purchase.items.any(PurchaseItem.dept_id.in_(identities)))
+        return query.filter(False)
 
     @staticmethod
     def create_purchase(db: Session, payload: PurchaseCreate) -> Purchase:
@@ -62,6 +78,7 @@ class PurchaseService:
                 )
             )
 
+        AuditLogService.record_operation(db, "purchase", "create", "system", "purchase", purchase.purchase_no, f"创建采购单 {purchase.purchase_no}", payload.model_dump())
         db.commit()
         db.refresh(purchase)
         return purchase
@@ -103,12 +120,13 @@ class PurchaseService:
                 created_assets.append(asset)
 
         purchase.status = "received"
+        AuditLogService.record_operation(db, "purchase", "receive", operator, "purchase", purchase.purchase_no, f"采购入库 {purchase.purchase_no}")
         db.commit()
         db.refresh(purchase)
         return {"purchase": purchase, "assets": created_assets}
 
     @staticmethod
-    def approve_purchase(db: Session, purchase_no: str, operator: str = "system") -> Purchase:
+    def approve_purchase(db: Session, purchase_no: str, operator: str = "system", allow_submitted: bool = False) -> Purchase:
         purchase = db.query(Purchase).filter(Purchase.purchase_no == purchase_no).first()
         if not purchase:
             raise ValueError("purchase not found")
@@ -116,11 +134,25 @@ class PurchaseService:
             raise ValueError("received purchase cannot be approved again")
         if purchase.status == "pending_acceptance":
             return purchase
-        if purchase.status != "created":
+        allowed = {"created", "approval_submitted"} if allow_submitted else {"created"}
+        if purchase.status not in allowed:
             raise ValueError(f"purchase status cannot be approved: {purchase.status}")
         purchase.status = "pending_acceptance"
+        AuditLogService.record_operation(db, "purchase", "approve", operator, "purchase", purchase.purchase_no, f"采购审批通过 {purchase.purchase_no}")
         db.commit()
         db.refresh(purchase)
+        return purchase
+
+    @staticmethod
+    def mark_approval_submitted(db: Session, purchase_no: str, operator: str = "system") -> Purchase:
+        purchase = db.query(Purchase).filter(Purchase.purchase_no == purchase_no).first()
+        if not purchase:
+            raise ValueError("purchase not found")
+        if purchase.status == "created":
+            purchase.status = "approval_submitted"
+            AuditLogService.record_operation(db, "purchase", "approval_submit", operator, "purchase", purchase.purchase_no, f"采购提交飞书审批 {purchase.purchase_no}")
+            db.commit()
+            db.refresh(purchase)
         return purchase
 
     @staticmethod
@@ -179,6 +211,7 @@ class PurchaseService:
                 created_assets.append(asset)
 
         purchase.status = "received"
+        AuditLogService.record_operation(db, "purchase", "accept", payload.operator, "purchase", purchase.purchase_no, f"采购验收 {purchase.purchase_no}")
         db.commit()
         db.refresh(purchase)
         return {"purchase": purchase, "assets": created_assets}

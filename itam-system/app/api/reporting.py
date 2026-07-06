@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from io import StringIO
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, PlainTextResponse
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -12,26 +12,28 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.security import user_context_from_request
 from app.models.asset import Asset
 from app.models.repair import RepairRecord
 from app.models.stocktake import StocktakeItem, StocktakeTask
+from app.services.asset_service import AssetService
 
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
 
 @router.get("/assets.csv")
-def export_assets_csv(db: Session = Depends(get_db)):
+def export_assets_csv(request: Request, db: Session = Depends(get_db)):
     output = StringIO()
     writer = csv.writer(output)
     writer.writerow(["asset_id", "asset_no", "name", "category", "brand", "model", "sn", "status", "owner_user_id", "dept_id", "location", "purchase_price"])
-    for asset in db.query(Asset).order_by(Asset.asset_id.asc()).all():
+    for asset in scoped_assets_query(db, request).order_by(Asset.asset_id.asc()).all():
         writer.writerow([asset.asset_id, asset.asset_no, asset.name, asset.category, asset.brand, asset.model, asset.sn, asset.status, asset.owner_user_id, asset.dept_id, asset.location, asset.purchase_price])
     return PlainTextResponse(output.getvalue(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": "attachment; filename=assets.csv"})
 
 
 @router.get("/assets.pdf")
-def export_assets_pdf(db: Session = Depends(get_db)):
+def export_assets_pdf(request: Request, db: Session = Depends(get_db)):
     output_dir = Path(get_settings().upload_dir) / "reports"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / "assets.pdf"
@@ -42,7 +44,7 @@ def export_assets_pdf(db: Session = Depends(get_db)):
     c.drawString(40, y, "ITAM Asset Report")
     y -= 28
     c.setFont("Helvetica", 9)
-    for asset in db.query(Asset).order_by(Asset.asset_id.asc()).all():
+    for asset in scoped_assets_query(db, request).order_by(Asset.asset_id.asc()).all():
         line = f"{asset.asset_id} | {asset.name} | {asset.category} | {asset.status} | {asset.owner_user_id or '-'} | {asset.location or '-'}"
         c.drawString(40, y, line[:120])
         y -= 16
@@ -55,7 +57,16 @@ def export_assets_pdf(db: Session = Depends(get_db)):
 
 
 @router.get("/analytics")
-def report_analytics(db: Session = Depends(get_db)):
+def report_analytics(request: Request, db: Session = Depends(get_db)):
+    scoped_asset_ids = [row[0] for row in scoped_assets_query(db, request).with_entities(Asset.asset_id).all()]
+    if not scoped_asset_ids:
+        return {
+            "department_occupancy": [],
+            "per_capita_value": [],
+            "idle_trend": [],
+            "repair_cost_trend": [],
+            "stocktake_diff_trend": [],
+        }
     department_rows = (
         db.query(
             Asset.dept_id,
@@ -63,7 +74,7 @@ def report_analytics(db: Session = Depends(get_db)):
             func.coalesce(func.sum(Asset.purchase_price), 0),
             func.count(func.distinct(Asset.owner_user_id)),
         )
-        .filter(Asset.status != "scrapped")
+        .filter(Asset.asset_id.in_(scoped_asset_ids), Asset.status != "scrapped")
         .group_by(Asset.dept_id)
         .order_by(func.count(Asset.asset_id).desc())
         .all()
@@ -83,7 +94,7 @@ def report_analytics(db: Session = Depends(get_db)):
         {
             "month": month,
             "count": db.query(func.count(Asset.asset_id))
-            .filter(Asset.status.in_(["idle", "in_stock"]), Asset.created_at <= end_at)
+            .filter(Asset.asset_id.in_(scoped_asset_ids), Asset.status.in_(["idle", "in_stock"]), Asset.created_at <= end_at)
             .scalar()
             or 0,
         }
@@ -94,7 +105,7 @@ def report_analytics(db: Session = Depends(get_db)):
             "month": month,
             "cost": float(
                 db.query(func.coalesce(func.sum(RepairRecord.repair_cost), 0))
-                .filter(RepairRecord.repair_time >= start_at, RepairRecord.repair_time < end_at)
+                .filter(RepairRecord.asset_id.in_(scoped_asset_ids), RepairRecord.repair_time >= start_at, RepairRecord.repair_time < end_at)
                 .scalar()
                 or 0
             ),
@@ -107,7 +118,7 @@ def report_analytics(db: Session = Depends(get_db)):
             "diff_count": int(
                 db.query(func.count(StocktakeItem.id))
                 .join(StocktakeTask, StocktakeItem.task_id == StocktakeTask.id)
-                .filter(StocktakeTask.created_at >= start_at, StocktakeTask.created_at < end_at, StocktakeItem.result != "正常")
+                .filter(StocktakeItem.asset_id.in_(scoped_asset_ids), StocktakeTask.created_at >= start_at, StocktakeTask.created_at < end_at, StocktakeItem.result != "正常")
                 .scalar()
                 or 0
             ),
@@ -121,6 +132,10 @@ def report_analytics(db: Session = Depends(get_db)):
         "repair_cost_trend": repair_cost_trend,
         "stocktake_diff_trend": stocktake_diff_trend,
     }
+
+
+def scoped_assets_query(db: Session, request: Request):
+    return AssetService.apply_data_scope(db.query(Asset), user_context_from_request(request))
 
 
 def month_windows(count: int) -> list[tuple[str, datetime, datetime]]:

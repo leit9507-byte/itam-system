@@ -1,13 +1,15 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
+from app.core.security import operator_from_request, user_context_from_request
 from app.models.asset import Asset
 from app.models.stocktake import StocktakeItem, StocktakeScanLog, StocktakeTask
 from app.services.audit_log_service import AuditLogService
+from app.services.asset_service import AssetService
 from app.services.notification_service import NotificationService
 
 
@@ -48,18 +50,19 @@ class StocktakeReviewSubmit(BaseModel):
 
 
 @router.get("/tasks")
-def list_tasks(db: Session = Depends(get_db)):
+def list_tasks(request: Request, db: Session = Depends(get_db)):
+    visible_asset_ids = visible_asset_id_set(db, request)
     tasks = (
         db.query(StocktakeTask)
         .options(joinedload(StocktakeTask.items))
         .order_by(StocktakeTask.created_at.desc())
         .all()
     )
-    return [serialize_task(task) for task in tasks]
+    return [row for row in [serialize_task(task, visible_asset_ids) for task in tasks] if row["total"] > 0]
 
 
 @router.post("/tasks")
-def create_task(payload: StocktakeTaskCreate, db: Session = Depends(get_db)):
+def create_task(payload: StocktakeTaskCreate, request: Request, db: Session = Depends(get_db)):
     task_id = f"ST-{datetime.utcnow().year}-{db.query(StocktakeTask).count() + 1:03d}"
     task = StocktakeTask(
         id=task_id,
@@ -69,7 +72,7 @@ def create_task(payload: StocktakeTaskCreate, db: Session = Depends(get_db)):
         owner=payload.owner or "资产管理员",
         status="待开始",
     )
-    for asset in scoped_assets(db, payload.scope, payload.target):
+    for asset in scoped_assets(db, payload.scope, payload.target, user_context_from_request(request)):
         task.items.append(
             StocktakeItem(
                 asset_id=asset.asset_id,
@@ -81,9 +84,10 @@ def create_task(payload: StocktakeTaskCreate, db: Session = Depends(get_db)):
             )
         )
     db.add(task)
+    AuditLogService.record_operation(db, "stocktake", "create_task", operator_from_request(request), "stocktake_task", task.id, f"创建盘点任务 {task.id}", payload.model_dump())
     db.commit()
     db.refresh(task)
-    return serialize_task(task)
+    return serialize_task(task, visible_asset_id_set(db, request))
 
 
 @router.post("/tasks/{task_id}/start")
@@ -212,8 +216,8 @@ def list_scan_logs(task_id: str, db: Session = Depends(get_db)):
     ]
 
 
-def scoped_assets(db: Session, scope: str, target: str | None):
-    query = db.query(Asset)
+def scoped_assets(db: Session, scope: str, target: str | None, user_context: dict | None = None):
+    query = AssetService.apply_data_scope(db.query(Asset), user_context)
     if scope == "部门" and target:
         query = query.filter(Asset.dept_id == target)
     if scope == "仓库" and target:
@@ -252,9 +256,10 @@ def record_scan_log(db: Session, task_id: str, asset_id: str | None, scan_raw: s
     )
 
 
-def serialize_task(task: StocktakeTask) -> dict:
-    checked = len([item for item in task.items if item.result != "未盘"])
-    abnormal = len([item for item in task.items if item.result in {"盘盈", "盘亏", "位置不符", "状态不符"}])
+def serialize_task(task: StocktakeTask, visible_asset_ids: set[str] | None = None) -> dict:
+    items = [item for item in task.items if visible_asset_ids is None or item.asset_id in visible_asset_ids]
+    checked = len([item for item in items if item.result != "未盘"])
+    abnormal = len([item for item in items if item.result in {"盘盈", "盘亏", "位置不符", "状态不符"}])
     return {
         "id": task.id,
         "name": task.name,
@@ -263,11 +268,15 @@ def serialize_task(task: StocktakeTask) -> dict:
         "owner": task.owner or "",
         "status": task.status,
         "created_at": task.created_at.date().isoformat() if task.created_at else "",
-        "total": len(task.items),
+        "total": len(items),
         "checked": checked,
         "abnormal": abnormal,
-        "items": [serialize_item(item) for item in task.items],
+        "items": [serialize_item(item) for item in items],
     }
+
+
+def visible_asset_id_set(db: Session, request: Request) -> set[str]:
+    return {row[0] for row in AssetService.apply_data_scope(db.query(Asset), user_context_from_request(request)).with_entities(Asset.asset_id).all()}
 
 
 def serialize_item(item: StocktakeItem) -> dict:

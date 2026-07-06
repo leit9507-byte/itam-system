@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.security import operator_from_request
 from app.schemas.user import (
     IdentityProviderOut,
     IdentityProviderSave,
@@ -16,6 +17,7 @@ from app.schemas.user import (
     UserUpsert,
 )
 from app.services.identity_service import IdentityService
+from app.services.audit_log_service import AuditLogService
 from app.services.sso_service import SsoService
 
 
@@ -84,17 +86,22 @@ def list_users(db: Session = Depends(get_db)):
 
 
 @router.post("/users/save", response_model=UserOut)
-def save_user(payload: UserUpsert, db: Session = Depends(get_db)):
+def save_user(payload: UserUpsert, request: Request, db: Session = Depends(get_db)):
     try:
-        return IdentityService.save_local_user(db, payload)
+        row = IdentityService.save_local_user(db, payload)
+        AuditLogService.record_operation(db, "identity", "save_user", operator_from_request(request), "user", row.user_id, f"保存用户 {row.user_id}")
+        db.commit()
+        return row
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.delete("/users/{user_id}")
-def delete_user(user_id: str, db: Session = Depends(get_db)):
+def delete_user(user_id: str, request: Request, db: Session = Depends(get_db)):
     try:
         user = IdentityService.delete_local_user(db, user_id)
+        AuditLogService.record_operation(db, "identity", "delete_user", operator_from_request(request), "user", user_id, f"删除/离职用户 {user_id}")
+        db.commit()
         return {"message": "user marked resigned", "user": user}
     except ValueError as exc:
         message = str(exc)
@@ -103,9 +110,12 @@ def delete_user(user_id: str, db: Session = Depends(get_db)):
 
 
 @router.put("/users/{user_id}/permissions", response_model=UserOut)
-def update_user_permissions(user_id: str, payload: UserPermissionUpdate, db: Session = Depends(get_db)):
+def update_user_permissions(user_id: str, payload: UserPermissionUpdate, request: Request, db: Session = Depends(get_db)):
     try:
-        return IdentityService.update_user_permissions(db, user_id, payload)
+        row = IdentityService.update_user_permissions(db, user_id, payload)
+        AuditLogService.record_operation(db, "identity", "update_user_permissions", operator_from_request(request), "user", user_id, f"更新用户权限 {user_id}", payload.model_dump())
+        db.commit()
+        return row
     except ValueError as exc:
         message = str(exc)
         status_code = 404 if message == "user not found" else 400
@@ -132,27 +142,38 @@ def list_permissions(db: Session = Depends(get_db)):
 
 
 @router.post("/rbac/permissions", response_model=list[RolePermissionOut])
-def save_permissions(payload: list[RolePermissionSave], db: Session = Depends(get_db)):
+def save_permissions(payload: list[RolePermissionSave], request: Request, db: Session = Depends(get_db)):
     try:
-        return IdentityService.save_permissions(db, payload)
+        rows = IdentityService.save_permissions(db, payload)
+        AuditLogService.record_operation(db, "rbac", "save_permissions", operator_from_request(request), "role_permission", "batch", "保存角色权限", [item.model_dump() for item in payload])
+        db.commit()
+        return rows
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/identity/providers", response_model=IdentityProviderOut)
-def create_provider(payload: IdentityProviderSave, db: Session = Depends(get_db)):
-    return IdentityService.save_provider(db, payload)
+def create_provider(payload: IdentityProviderSave, request: Request, db: Session = Depends(get_db)):
+    row = IdentityService.save_provider(db, payload)
+    AuditLogService.record_operation(db, "identity", "create_provider", operator_from_request(request), "identity_provider", str(row.id), f"创建身份源 {row.name}")
+    db.commit()
+    return row
 
 
 @router.put("/identity/providers/{provider_id}", response_model=IdentityProviderOut)
-def update_provider(provider_id: int, payload: IdentityProviderSave, db: Session = Depends(get_db)):
-    return IdentityService.save_provider(db, payload, provider_id)
+def update_provider(provider_id: int, payload: IdentityProviderSave, request: Request, db: Session = Depends(get_db)):
+    row = IdentityService.save_provider(db, payload, provider_id)
+    AuditLogService.record_operation(db, "identity", "update_provider", operator_from_request(request), "identity_provider", str(provider_id), f"更新身份源 {row.name}")
+    db.commit()
+    return row
 
 
 @router.delete("/identity/providers/{provider_id}")
-def delete_provider(provider_id: int, db: Session = Depends(get_db)):
+def delete_provider(provider_id: int, request: Request, db: Session = Depends(get_db)):
     try:
         IdentityService.delete_provider(db, provider_id)
+        AuditLogService.record_operation(db, "identity", "delete_provider", operator_from_request(request), "identity_provider", str(provider_id), f"删除身份源 {provider_id}")
+        db.commit()
         return {"message": "identity provider deleted"}
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
