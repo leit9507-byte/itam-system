@@ -12,25 +12,32 @@
       <div class="page">
         <el-card shadow="never">
           <template #header>基本信息</template>
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="资产ID">{{ detail.asset?.asset_id }}</el-descriptions-item>
-            <el-descriptions-item label="资产编号">{{ detail.asset?.asset_no || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="所属公司">{{ detail.asset?.company || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="状态">
-              <el-tag :type="statusMap[detail.asset?.status]?.type">{{ statusMap[detail.asset?.status]?.label || detail.asset?.status }}</el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="产品名称">{{ detail.asset?.name }}</el-descriptions-item>
-            <el-descriptions-item label="设备类型">{{ detail.asset?.category }}</el-descriptions-item>
-            <el-descriptions-item label="品牌">{{ detail.asset?.brand || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="型号">{{ detail.asset?.model || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="规格">{{ detail.asset?.spec || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="序列号">{{ detail.asset?.sn || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="责任人">{{ ownerName }}</el-descriptions-item>
-            <el-descriptions-item label="部门">{{ deptName }}</el-descriptions-item>
-            <el-descriptions-item label="位置">{{ detail.asset?.location || '-' }}</el-descriptions-item>
-            <el-descriptions-item label="价值">¥{{ Number(detail.asset?.price || 0).toLocaleString() }}</el-descriptions-item>
-            <el-descriptions-item label="备注" :span="2">{{ detail.asset?.remark || '-' }}</el-descriptions-item>
-          </el-descriptions>
+          <div class="basic-info-layout">
+            <el-descriptions class="basic-info-table" :column="2" border>
+              <el-descriptions-item label="资产ID">{{ detail.asset?.asset_id }}</el-descriptions-item>
+              <el-descriptions-item label="资产编号">{{ detail.asset?.asset_no || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="所属公司">{{ detail.asset?.company || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="状态">
+                <el-tag :type="statusMap[detail.asset?.status]?.type">{{ statusMap[detail.asset?.status]?.label || detail.asset?.status }}</el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="产品名称">{{ detail.asset?.name }}</el-descriptions-item>
+              <el-descriptions-item label="设备类型">{{ detail.asset?.category }}</el-descriptions-item>
+              <el-descriptions-item label="品牌">{{ detail.asset?.brand || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="型号">{{ detail.asset?.model || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="规格">{{ detail.asset?.spec || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="序列号">{{ detail.asset?.sn || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="责任人">{{ ownerName }}</el-descriptions-item>
+              <el-descriptions-item label="部门">{{ deptName }}</el-descriptions-item>
+              <el-descriptions-item label="位置">{{ detail.asset?.location || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="价值">¥{{ Number(detail.asset?.price || 0).toLocaleString() }}</el-descriptions-item>
+              <el-descriptions-item label="备注" :span="2">{{ detail.asset?.remark || '-' }}</el-descriptions-item>
+            </el-descriptions>
+
+            <div v-if="detail.asset" class="qr-box qr-box-inline">
+              <img :src="qrUrl" alt="资产二维码" />
+              <span>扫码识别资产编号、名称和序列号</span>
+            </div>
+          </div>
         </el-card>
 
         <el-card shadow="never">
@@ -76,14 +83,6 @@
       </div>
 
       <div class="page">
-        <el-card shadow="never">
-          <template #header>资产二维码</template>
-          <div v-if="detail.asset" class="qr-box">
-            <img :src="qrUrl" alt="资产二维码" />
-            <span>扫码识别资产编号、名称和序列号</span>
-          </div>
-        </el-card>
-
         <el-card shadow="never">
           <template #header>
             <div class="card-header">
@@ -256,12 +255,31 @@ function paginate(rows, pagination) {
   gap: 12px;
 }
 
+.basic-info-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 196px;
+  align-items: start;
+  gap: 16px;
+}
+
+.basic-info-table {
+  min-width: 0;
+}
+
 .qr-box {
   display: grid;
   justify-items: center;
   gap: 10px;
   color: var(--muted);
   font-size: 13px;
+  text-align: center;
+}
+
+.qr-box-inline {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
 }
 
 .qr-box img {
@@ -280,6 +298,16 @@ function paginate(rows, pagination) {
 @media (max-width: 1180px) {
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .basic-info-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .qr-box-inline {
+    justify-self: stretch;
   }
 }
 </style>
