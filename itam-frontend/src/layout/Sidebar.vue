@@ -25,7 +25,7 @@
       <el-sub-menu index="/system">
         <template #title><el-icon><Tools /></el-icon><span>系统设置</span></template>
         <el-menu-item index="/permission">权限管理</el-menu-item>
-        <el-menu-item index="/approval">审批流配置</el-menu-item>
+        <el-menu-item index="/approval">飞书审批对接</el-menu-item>
         <el-menu-item index="/personnel">人员管理</el-menu-item>
         <el-menu-item index="/notification">消息通知</el-menu-item>
         <el-menu-item index="/ops">运维面板</el-menu-item>
