@@ -9,7 +9,7 @@ class Asset(Base):
     __tablename__ = "assets"
 
     asset_id = Column(String(64), primary_key=True, index=True)
-    asset_no = Column(String(64), nullable=True, index=True)
+    asset_no = Column(String(64), unique=True, nullable=False, index=True)
     company = Column(String(128), nullable=True, index=True)
     name = Column(String(128), nullable=False)
     category = Column(String(64), nullable=False)
@@ -26,6 +26,6 @@ class Asset(Base):
     status = Column(String(32), default="in_stock", index=True)
     owner_user_id = Column(String(64), nullable=True, index=True)
     dept_id = Column(String(64), nullable=True, index=True)
-    location = Column(String(128), nullable=True)
+    location = Column(String(128), nullable=True, index=True)
     remark = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)

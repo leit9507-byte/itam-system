@@ -23,29 +23,42 @@ router = APIRouter(prefix="/files", tags=["Files"])
 async def upload_asset_file(asset_id: str, request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)):
     if not can_access_asset(db, asset_id, user_context_from_request(request)):
         raise HTTPException(status_code=404, detail="asset not found")
+    settings = get_settings()
     upload_root = Path(get_settings().upload_dir) / asset_id
     upload_root.mkdir(parents=True, exist_ok=True)
     filename = secure_filename(file.filename or "attachment")
+    validate_upload_file(filename)
     storage_path = upload_root / filename
     content = await file.read()
+    max_size = settings.max_upload_size_mb * 1024 * 1024
+    if len(content) > max_size:
+        raise HTTPException(status_code=413, detail=f"file too large, max {settings.max_upload_size_mb} MB")
     storage_path.write_bytes(content)
+    operator = operator_from_request(request)
     row = AssetAttachment(
         asset_id=asset_id,
         filename=filename,
         content_type=file.content_type,
         storage_path=str(storage_path),
         size=len(content),
-        uploaded_by="system",
+        uploaded_by=operator,
     )
     db.add(row)
-    AuditLogService.record_operation(db, "file", "upload", operator_from_request(request), "asset_attachment", asset_id, f"上传附件 {filename}")
+    AuditLogService.record_operation(db, "file", "upload", operator, "asset_attachment", asset_id, f"上传附件 {filename}")
     db.commit()
     db.refresh(row)
     return row
 
 
 @router.get("/asset/{asset_id}")
-def list_asset_files(asset_id: str, request: Request, status: str | None = None, db: Session = Depends(get_db)):
+def list_asset_files(
+    asset_id: str,
+    request: Request,
+    status: str | None = None,
+    page: int | None = None,
+    page_size: int | None = None,
+    db: Session = Depends(get_db),
+):
     if not can_access_asset(db, asset_id, user_context_from_request(request)):
         raise HTTPException(status_code=404, detail="asset not found")
     query = db.query(AssetAttachment).filter(AssetAttachment.asset_id == asset_id)
@@ -53,7 +66,14 @@ def list_asset_files(asset_id: str, request: Request, status: str | None = None,
         query = query.filter(AssetAttachment.status == status)
     else:
         query = query.filter(AssetAttachment.status != "deleted")
-    return query.order_by(AssetAttachment.created_at.desc()).all()
+    query = query.order_by(AssetAttachment.created_at.desc(), AssetAttachment.id.desc())
+    if page_size is None:
+        return query.all()
+    clean_page = max(page or 1, 1)
+    clean_page_size = min(max(page_size, 1), 200)
+    total = query.count()
+    rows = query.offset((clean_page - 1) * clean_page_size).limit(clean_page_size).all()
+    return {"list": rows, "total": total, "page": clean_page, "page_size": clean_page_size}
 
 
 @router.get("/{file_id}/download")
@@ -125,3 +145,13 @@ def asset_qrcode(asset_id: str, request: Request, db: Session = Depends(get_db))
 
 def can_access_asset(db: Session, asset_id: str, user_context: dict | None) -> Asset | None:
     return AssetService.apply_data_scope(db.query(Asset), user_context).filter(Asset.asset_id == asset_id).first()
+
+
+def validate_upload_file(filename: str) -> None:
+    settings = get_settings()
+    suffix = Path(filename).suffix.lower()
+    blocked = {".exe", ".bat", ".cmd", ".com", ".ps1", ".sh", ".js", ".mjs", ".vbs", ".msi", ".dll", ".scr", ".jar", ".py"}
+    if suffix in blocked:
+        raise HTTPException(status_code=400, detail="不允许上传可执行或脚本文件")
+    if settings.allowed_upload_extensions and suffix not in settings.allowed_upload_extensions:
+        raise HTTPException(status_code=400, detail=f"不允许的文件类型：{suffix or '无扩展名'}")

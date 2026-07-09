@@ -1,4 +1,4 @@
-import { getAssets, getAssetSummary, getLifecycleList } from './asset'
+import { getAssets, getAssetSummary, getLifecycleList, getScrapRequests } from './asset'
 import { getPurchases } from './purchase'
 import { getProducts } from './product'
 import { getRepairDashboard } from './repair'
@@ -15,7 +15,8 @@ const lifecycleNames = {
   idle: '闲置',
   ready_scrap: '待报废',
   pending_scrap: '已提交报废审批',
-  scrapped: '已报废'
+  scrapped: '已报废',
+  disposed: '已处置'
 }
 
 export async function getEnterpriseDashboard(filters = {}) {
@@ -26,7 +27,8 @@ export async function getEnterpriseDashboard(filters = {}) {
     products,
     repairDashboard,
     users,
-    lifecycleResult
+    lifecycleResult,
+    scrapResult
   ] = await Promise.all([
     getAssets({ page: 1, page_size: DASHBOARD_SOURCE_LIMIT }),
     getAssetSummary().catch(() => null),
@@ -34,9 +36,11 @@ export async function getEnterpriseDashboard(filters = {}) {
     getProducts().catch(() => []),
     getRepairDashboard(filters).catch(() => ({ total: 0, inProgress: 0, totalCost: 0, topFaults: [] })),
     getUsers().catch(() => []),
-    getLifecycleList({ page: 1, page_size: 20 }).catch(() => ({ list: [] }))
+    getLifecycleList({ page: 1, page_size: 20 }).catch(() => ({ list: [] })),
+    getScrapRequests({ page: 1, page_size: DASHBOARD_SOURCE_LIMIT }).catch(() => ({ list: [] }))
   ])
   const purchases = purchaseResult.list || []
+  const scrapRequests = scrapResult.list || []
 
   const allManagedAssets = allAssets.filter(isManagedAsset)
   const scopedAssets = filterByDateRange(allManagedAssets, filters.dateRange, 'created_at')
@@ -75,6 +79,8 @@ export async function getEnterpriseDashboard(filters = {}) {
     categoryDistribution: useGlobalSummary ? buildCategoryDistributionFromCounts(summary.managedCategoryCounts) : buildCategoryDistribution(assets),
     departmentDistribution: buildDepartmentDistribution(assets),
     purchaseTrend: buildPurchaseTrend(purchases, filters.dateRange),
+    scrapTrend: buildScrapTrend(scrapRequests, filters.dateRange),
+    retirementTrend: buildRetirementDueTrend(allManagedAssets, products),
     lifecycleDistribution: buildLifecycleDistribution(assets, purchases, useGlobalSummary ? summary.statusCounts : null),
     retirementSoonAssets,
     maintenance: buildMaintenance(repairDashboard, assets),
@@ -94,7 +100,7 @@ function countStatus(assets, status) {
 }
 
 function isManagedAsset(asset) {
-  return asset.status !== 'scrapped'
+  return !['scrapped', 'disposed'].includes(asset.status)
 }
 
 function sumAssets(assets) {
@@ -191,7 +197,7 @@ function buildRetirementSoonAssets(assets, products) {
     .map(asset => {
       const expireDate = resolveWarrantyExpireDate(asset)
       const retirementDate = expireDate || resolveRetirementDate(asset, products)
-      if (!retirementDate || ['scrapped'].includes(asset.status)) return null
+      if (!retirementDate || ['scrapped', 'disposed'].includes(asset.status)) return null
       const days = Math.ceil((retirementDate.getTime() - now.getTime()) / 86400000)
       if (days > 180) return null
       return {
@@ -302,6 +308,45 @@ function normalizeDepartment(value = '') {
 }
 
 function buildPurchaseTrend(purchases, dateRange) {
+  const months = lastMonths(12)
+  return {
+    months: months.map(item => item.label),
+    amount: months.map(month => {
+      const rows = purchases.filter(item => inMonth(item.created_at, month) && (!dateRange?.length || inDateRange(item.created_at, dateRange)))
+      return rows.reduce((sum, item) => sum + Number(item.total_amount || 0), 0)
+    }),
+    quantity: months.map(month => {
+      const rows = purchases.filter(item => inMonth(item.created_at, month) && (!dateRange?.length || inDateRange(item.created_at, dateRange)))
+      return rows.reduce((sum, item) => sum + Number(item.quantity || item.items?.length || 0), 0)
+    })
+  }
+}
+
+function buildScrapTrend(scraps, dateRange) {
+  const months = lastMonths(12)
+  return {
+    months: months.map(item => item.label),
+    submitted: months.map(month => scraps.filter(item => inMonth(item.created_at, month) && (!dateRange?.length || inDateRange(item.created_at, dateRange))).length),
+    approved: months.map(month => scraps.filter(item => item.status === '已通过' && inMonth(item.approved_at || item.updated_at || item.created_at, month) && (!dateRange?.length || inDateRange(item.approved_at || item.updated_at || item.created_at, dateRange))).length)
+  }
+}
+
+function buildRetirementDueTrend(assets, products) {
+  const months = nextMonths(6)
+  const retirementAssets = assets
+    .map(asset => {
+      const retirementDate = resolveRetirementDate(asset, products) || resolveWarrantyExpireDate(asset)
+      return retirementDate && !['scrapped', 'disposed'].includes(asset.status) ? { asset, retirementDate } : null
+    })
+    .filter(Boolean)
+  return {
+    months: months.map(item => item.label),
+    due: months.map(month => retirementAssets.filter(item => inMonth(item.retirementDate, month)).length),
+    overdue: retirementAssets.filter(item => item.retirementDate < startOfToday()).length
+  }
+}
+
+function legacyBuildPurchaseTrend(purchases, dateRange) {
   const now = new Date()
   const months = []
   const amount = []
@@ -331,7 +376,8 @@ function buildLifecycleDistribution(assets, purchases, statusCounts = null) {
     { name: lifecycleNames.idle, value: count('idle') },
     { name: lifecycleNames.ready_scrap, value: count('ready_scrap') },
     { name: lifecycleNames.pending_scrap, value: count('pending_scrap') },
-    { name: lifecycleNames.scrapped, value: count('scrapped') }
+    { name: lifecycleNames.scrapped, value: count('scrapped') },
+    { name: lifecycleNames.disposed, value: count('disposed') }
   ]
 }
 
@@ -401,6 +447,23 @@ function lastMonths(size) {
       label: `${date.getMonth() + 1}月`
     }
   })
+}
+
+function nextMonths(size) {
+  const now = new Date()
+  return Array.from({ length: size }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() + index, 1)
+    return {
+      year: date.getFullYear(),
+      month: date.getMonth(),
+      label: `${date.getMonth() + 1}月`
+    }
+  })
+}
+
+function startOfToday() {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate())
 }
 
 function countByMonth(rows, key, month) {

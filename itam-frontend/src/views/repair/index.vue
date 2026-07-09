@@ -129,7 +129,7 @@ const faultRef = ref(null)
 const charts = []
 const faultTypes = ref([])
 const filters = reactive({ keyword: '', status: '', dateRange: defaultDateRange() })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const dashboard = reactive({ total: 0, inProgress: 0, completed: 0, totalCost: 0, avgCost: 0, topFaults: [], costTrend: [] })
 const faultTypeDialog = reactive({ visible: false, form: defaultFaultTypeForm() })
 

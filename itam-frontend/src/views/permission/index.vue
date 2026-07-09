@@ -356,6 +356,12 @@
                 <el-form-item label="App ID" required><el-input v-model="providerConfig.app_id" placeholder="cli_xxx" /></el-form-item>
                 <el-form-item label="App Secret" required><el-input v-model="providerConfig.app_secret" type="password" show-password placeholder="飞书应用凭证" /></el-form-item>
                 <el-form-item label="根部门 ID"><el-input v-model="providerConfig.root_department_id" placeholder="0 表示从根部门同步" /></el-form-item>
+                <el-form-item label="指定部门 ID">
+                  <el-input v-model="providerConfig.department_ids" type="textarea" :rows="2" placeholder="没有根部门权限时填写，可多个，用逗号或换行分隔" />
+                </el-form-item>
+                <el-form-item label="同步子部门">
+                  <el-switch v-model="providerConfig.discover_child_departments" />
+                </el-form-item>
                 <el-form-item label="部门 ID 类型"><el-input v-model="providerConfig.department_id_type" placeholder="open_department_id" /></el-form-item>
                 <el-form-item label="用户 ID 类型"><el-input v-model="providerConfig.user_id_type" placeholder="user_id / open_id / union_id" /></el-form-item>
                 <el-form-item label="默认角色">
@@ -648,11 +654,11 @@ const loginForm = reactive({ provider: 'local', username: 'admin', password: 'ad
 const accountDialog = reactive({ visible: false, form: defaultLocalUserForm() })
 const userPermissionDialog = reactive({ visible: false, user: null, status: 'active', saving: false })
 const permissionDraft = reactive({})
-const userPagination = reactive({ page: 1, pageSize: 20 })
-const onboardingPagination = reactive({ page: 1, pageSize: 20 })
-const offboardingPagination = reactive({ page: 1, pageSize: 20 })
-const permissionPagination = reactive({ page: 1, pageSize: 20 })
-const providerPagination = reactive({ page: 1, pageSize: 20 })
+const userPagination = reactive({ page: 1, pageSize: 10 })
+const onboardingPagination = reactive({ page: 1, pageSize: 10 })
+const offboardingPagination = reactive({ page: 1, pageSize: 10 })
+const permissionPagination = reactive({ page: 1, pageSize: 10 })
+const providerPagination = reactive({ page: 1, pageSize: 10 })
 const todoAssetActionsRef = ref(null)
 const pagedUsers = computed(() => paginate(users.value, userPagination))
 const onboardingUsers = computed(() => users.value.filter(user => user.status === 'active').sort((a, b) => dateValue(b.created_at) - dateValue(a.created_at)))
@@ -714,6 +720,7 @@ const resourceOptions = [
   { label: '审计中心', resource: 'audit' },
   { label: '身份源/用户', resource: 'identity' },
   { label: 'RBAC 权限', resource: 'rbac' },
+  { label: '运维面板', resource: 'ops' },
   { label: '附件文件', resource: 'file' },
   { label: '报告中心', resource: 'report' }
 ]
@@ -1005,11 +1012,13 @@ function defaultConfig(type = 'ldap') {
       test_username: ''
     },
     feishu: {
-      app_id: '',
-      app_secret: '',
-      root_department_id: '0',
-      department_id_type: 'open_department_id',
-      user_id_type: 'user_id',
+        app_id: '',
+        app_secret: '',
+        root_department_id: '0',
+        department_ids: '',
+        discover_child_departments: true,
+        department_id_type: 'open_department_id',
+        user_id_type: 'user_id',
       default_role: 'user',
       sync_limit: '200',
       department_limit: '200',
@@ -1063,7 +1072,9 @@ function buildProviderConfig() {
   const config = {}
   Object.entries(providerConfig).forEach(([key, value]) => {
     if (value === '' || value == null) return
-    config[key] = ['port', 'sync_limit', 'department_limit', 'page_size'].includes(key) ? Number(value) : value
+    if (['port', 'sync_limit', 'department_limit', 'page_size'].includes(key)) config[key] = Number(value)
+    else if (['discover_child_departments'].includes(key)) config[key] = Boolean(value)
+    else config[key] = value
   })
   return config
 }

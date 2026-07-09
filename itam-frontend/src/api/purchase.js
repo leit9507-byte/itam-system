@@ -19,6 +19,7 @@ export async function createPurchase(payload) {
     category: item.category,
     brand: item.brand,
     model: item.model,
+    spec: item.spec || '',
     quantity: Number(item.quantity || 1),
     unit_price: Number(item.unit_price || 0),
     retirement_years: item.retirement_years ? Number(item.retirement_years) : null,
@@ -100,6 +101,7 @@ function mapBackendPurchase(row) {
       category: item.category,
       brand: item.brand || '',
       model: item.model || '',
+      spec: item.spec || '',
       quantity: Number(item.quantity || 0),
       unit_price: Number(item.unit_price || 0),
       retirement_years: item.retirement_years ?? null,
@@ -109,7 +111,6 @@ function mapBackendPurchase(row) {
       location: item.location || '',
       dept: item.dept_id || '',
       dept_id: item.dept_id || '',
-      spec: '',
       warranty_years: '',
       supplier_name: row.supplier_name || '未指定供应商',
       purchase_no: row.purchase_no

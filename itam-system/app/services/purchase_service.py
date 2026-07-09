@@ -9,6 +9,7 @@ from app.schemas.purchase import PurchaseAcceptanceReceive, PurchaseCreate
 from app.services.asset_service import AssetService
 from app.services.audit_log_service import AuditLogService
 from app.services.lifecycle_service import LifecycleService
+from app.services.notification_service import NotificationService
 from app.services.supplier_service import SupplierService
 
 
@@ -69,6 +70,7 @@ class PurchaseService:
                     category=item.category,
                     brand=item.brand,
                     model=item.model,
+                    spec=item.spec,
                     quantity=item.quantity,
                     unit_price=item.unit_price,
                     retirement_years=item.retirement_years,
@@ -95,14 +97,18 @@ class PurchaseService:
         purchase_date = datetime.utcnow()
         for item in purchase.items:
             for _ in range(item.quantity):
+                asset_id = AssetService.generate_asset_id(db)
+                asset_no = AssetService.normalize_asset_no(None, asset_id)
+                AssetService.validate_asset_identity_unique(db, asset_no=asset_no)
                 asset = Asset(
-                    asset_id=AssetService.generate_asset_id(db),
+                    asset_id=asset_id,
+                    asset_no=asset_no,
                     name=item.name,
                     category=item.category,
                     brand=item.brand,
                     model=item.model,
                     sn=None,
-                    config={"retirement_years": item.retirement_years} if item.retirement_years else {},
+                    config=PurchaseService.purchase_item_config(item),
                     company=purchase.company,
                     purchase_price=item.unit_price,
                     purchase_date=purchase_date,
@@ -116,7 +122,26 @@ class PurchaseService:
                 AssetService.apply_warranty_expire(asset)
                 db.add(asset)
                 db.flush()
-                LifecycleService.record(db, asset.asset_id, "PURCHASE", None, "in_stock", operator)
+                LifecycleService.record(
+                    db,
+                    asset.asset_id,
+                    "PURCHASE",
+                    None,
+                    "in_stock",
+                    operator,
+                    LifecycleService.structured_remark(
+                        reason=purchase.purchase_reason or "采购入库",
+                        object=f"采购单 {purchase.purchase_no}",
+                        previous_owner="-",
+                        new_owner="-",
+                        location=asset.location,
+                        extra={
+                            "purchase_no": purchase.purchase_no,
+                            "supplier": purchase.supplier_name or "",
+                            "dept_id": asset.dept_id or "",
+                        },
+                    ),
+                )
                 created_assets.append(asset)
 
         purchase.status = "received"
@@ -141,6 +166,18 @@ class PurchaseService:
         AuditLogService.record_operation(db, "purchase", "approve", operator, "purchase", purchase.purchase_no, f"采购审批通过 {purchase.purchase_no}")
         db.commit()
         db.refresh(purchase)
+        NotificationService.send_event(
+            db,
+            "acceptance",
+            "采购单已进入验收",
+            [
+                f"采购单号：{purchase.purchase_no}",
+                f"供应商：{purchase.supplier_name or '-'}",
+                f"采购金额：￥{purchase.total_amount or 0:,.0f}",
+                f"当前状态：待验收",
+                f"处理建议：请进入待办中心完善资产编号、序列号和使用人",
+            ],
+        )
         return purchase
 
     @staticmethod
@@ -153,6 +190,18 @@ class PurchaseService:
             AuditLogService.record_operation(db, "purchase", "approval_submit", operator, "purchase", purchase.purchase_no, f"采购提交飞书审批 {purchase.purchase_no}")
             db.commit()
             db.refresh(purchase)
+            NotificationService.send_event(
+                db,
+                "purchase",
+                "采购审批已提交",
+                [
+                    f"采购单号：{purchase.purchase_no}",
+                    f"供应商：{purchase.supplier_name or '-'}",
+                    f"采购金额：￥{purchase.total_amount or 0:,.0f}",
+                    f"当前状态：审批中",
+                    f"操作人：{operator}",
+                ],
+            )
         return purchase
 
     @staticmethod
@@ -175,22 +224,31 @@ class PurchaseService:
                 raise ValueError(f"accepted asset count exceeds quantity for item {item.id}")
 
             for accepted in acceptance.assets:
-                if accepted.sn and db.query(Asset).filter(Asset.sn == accepted.sn).first():
-                    raise ValueError(f"duplicate sn: {accepted.sn}")
+                asset_id = AssetService.normalize_blank(accepted.asset_id) or AssetService.generate_asset_id(db)
+                if db.get(Asset, asset_id):
+                    raise ValueError(f"duplicate asset_id: {asset_id}")
+                asset_no = AssetService.normalize_asset_no(None, asset_id)
+                sn = AssetService.normalize_blank(accepted.sn) or None
+                AssetService.validate_asset_identity_unique(db, asset_no=asset_no, sn=sn)
+                owner_user = AssetService.find_user(db, accepted.owner_user_id)
+                owner_user_id = owner_user.user_id if owner_user else AssetService.normalize_blank(accepted.owner_user_id) or None
                 config = {}
-                if accepted.spec:
-                    config["spec"] = accepted.spec
+                spec = AssetService.normalize_blank(accepted.spec) or item.spec
+                if spec:
+                    config["spec"] = spec
                 config["purchase_no"] = purchase.purchase_no
                 config["purchase_item_id"] = item.id
-                if item.retirement_years:
-                    config["retirement_years"] = item.retirement_years
+                retirement_years = accepted.retirement_years if accepted.retirement_years is not None else item.retirement_years
+                if retirement_years:
+                    config["retirement_years"] = retirement_years
                 asset = Asset(
-                    asset_id=AssetService.generate_asset_id(db),
+                    asset_id=asset_id,
+                    asset_no=asset_no,
                     name=accepted.name or item.name,
                     category=accepted.category or item.category,
                     brand=accepted.brand if accepted.brand is not None else item.brand,
                     model=accepted.model if accepted.model is not None else item.model,
-                    sn=accepted.sn,
+                    sn=sn,
                     config=config,
                     company=AssetService.normalize_company(accepted.company) or purchase.company,
                     purchase_price=accepted.purchase_price if accepted.purchase_price is not None else item.unit_price,
@@ -199,19 +257,79 @@ class PurchaseService:
                     purchase_supplier_name=accepted.purchase_supplier_name or purchase.supplier_name,
                     warranty_expire_date=accepted.warranty_expire_date,
                     warranty_months=accepted.warranty_months,
-                    status="in_stock",
-                    owner_user_id=accepted.owner_user_id,
-                    dept_id=accepted.dept_id if accepted.dept_id is not None else item.dept_id,
+                    status="in_use" if owner_user_id else "in_stock",
+                    owner_user_id=owner_user_id,
+                    dept_id=(owner_user.dept_id or owner_user.dept_name) if owner_user else (accepted.dept_id if accepted.dept_id is not None else item.dept_id),
                     location=accepted.location if accepted.location is not None else item.location,
                 )
                 AssetService.apply_warranty_expire(asset)
                 db.add(asset)
                 db.flush()
-                LifecycleService.record(db, asset.asset_id, "PURCHASE_ACCEPTANCE", None, "in_stock", payload.operator)
+                LifecycleService.record(
+                    db,
+                    asset.asset_id,
+                    "PURCHASE_ACCEPTANCE",
+                    None,
+                    "in_stock",
+                    payload.operator,
+                    LifecycleService.structured_remark(
+                        reason=item.purchase_reason or purchase.purchase_reason or "采购验收入库",
+                        object=f"采购单 {purchase.purchase_no}",
+                        previous_owner="-",
+                        new_owner=owner_user_id or "-",
+                        location=asset.location,
+                        extra={
+                            "purchase_no": purchase.purchase_no,
+                            "purchase_item_id": item.id,
+                            "supplier": purchase.supplier_name or "",
+                            "asset_no": asset.asset_no or "",
+                            "sn": asset.sn or "",
+                        },
+                    ),
+                )
+                if owner_user_id:
+                    LifecycleService.record(
+                        db,
+                        asset.asset_id,
+                        "STATUS_CHANGE",
+                        "in_stock",
+                        asset.status,
+                        payload.operator,
+                        AssetService.inventory_lifecycle_remark(
+                            asset.status,
+                            "采购验收后直接分配",
+                            None,
+                            None,
+                            owner_user_id,
+                            owner_user,
+                            asset.location,
+                        ),
+                    )
                 created_assets.append(asset)
 
         purchase.status = "received"
         AuditLogService.record_operation(db, "purchase", "accept", payload.operator, "purchase", purchase.purchase_no, f"采购验收 {purchase.purchase_no}")
         db.commit()
         db.refresh(purchase)
+        NotificationService.send_event(
+            db,
+            "acceptance",
+            "采购验收完成",
+            [
+                f"采购单号：{purchase.purchase_no}",
+                f"本次入库资产：{len(created_assets)} 台",
+                f"直接分配资产：{len([asset for asset in created_assets if asset.owner_user_id])} 台",
+                f"供应商：{purchase.supplier_name or '-'}",
+                f"操作人：{payload.operator}",
+            ],
+        )
         return {"purchase": purchase, "assets": created_assets}
+
+    @staticmethod
+    def purchase_item_config(item: PurchaseItem) -> dict:
+        config = {}
+        if item.spec:
+            config["spec"] = item.spec
+        if item.retirement_years:
+            config["retirement_years"] = item.retirement_years
+        return config

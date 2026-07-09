@@ -136,7 +136,7 @@
       <el-form :model="form" label-width="100px">
         <el-form-item label="任务名称"><el-input v-model="form.name" /></el-form-item>
         <el-form-item label="范围类型">
-          <el-select v-model="form.scope" style="width: 100%">
+          <el-select v-model="form.scope" style="width: 100%" @change="handleScopeChange">
             <el-option label="全部资产" value="全部" />
             <el-option label="按部门" value="部门" />
             <el-option label="按仓库" value="仓库" />
@@ -144,7 +144,25 @@
           </el-select>
         </el-form-item>
         <el-form-item label="盘点范围">
-          <el-input v-model="form.target" placeholder="如：研发部、上海 IT 仓、in_stock；全部资产可留空" />
+          <el-select
+            v-model="form.target"
+            :disabled="form.scope === '全部'"
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+            filterable
+            clearable
+            :placeholder="targetPlaceholder"
+            style="width: 100%"
+          >
+            <el-option v-for="option in targetOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="专项范围">
+          <div class="scope-switches">
+            <el-checkbox v-model="form.include_scrapped">包含已报废未处置资产</el-checkbox>
+            <el-checkbox v-model="form.include_disposed">包含已处置资产</el-checkbox>
+          </div>
         </el-form-item>
         <el-form-item label="负责人"><el-input v-model="form.owner" /></el-form-item>
       </el-form>
@@ -233,6 +251,9 @@ import {
   startStocktakeTask,
   submitStocktakeItem
 } from '../../api/stocktake'
+import { assetStatuses, getAssets } from '../../api/asset'
+import { getLocations } from '../../api/location'
+import { getUsers } from '../../api/user'
 import { assetCodeMatches, parseAssetCode } from '../../utils/assetCode'
 
 const tasks = ref([])
@@ -247,11 +268,12 @@ const resultRef = ref(null)
 const trendRef = ref(null)
 const charts = []
 const form = reactive(defaultForm())
-const taskPagination = reactive({ page: 1, pageSize: 20 })
-const abnormalPagination = reactive({ page: 1, pageSize: 20 })
-const itemPagination = reactive({ page: 1, pageSize: 20 })
+const taskPagination = reactive({ page: 1, pageSize: 10 })
+const abnormalPagination = reactive({ page: 1, pageSize: 10 })
+const itemPagination = reactive({ page: 1, pageSize: 10 })
 const itemFilters = reactive({ keyword: '', result: '' })
 const quickForm = reactive({ code: '' })
+const scopeSource = reactive({ departments: [], locations: [] })
 const dashboard = reactive({
   metrics: [],
   completionRate: 0,
@@ -275,6 +297,18 @@ const filteredTaskItems = computed(() => {
   })
 })
 const pagedTaskItems = computed(() => paginate(filteredTaskItems.value, itemPagination))
+const targetOptions = computed(() => {
+  if (form.scope === '部门') return scopeSource.departments
+  if (form.scope === '仓库') return scopeSource.locations
+  if (form.scope === '状态') return assetStatuses.map(item => ({ label: item.label, value: item.value }))
+  return []
+})
+const targetPlaceholder = computed(() => {
+  if (form.scope === '部门') return '请选择部门'
+  if (form.scope === '仓库') return '请选择仓库或位置'
+  if (form.scope === '状态') return '请选择资产状态'
+  return '全部资产无需选择范围'
+})
 
 onMounted(load)
 onUnmounted(() => charts.forEach(chart => chart.dispose()))
@@ -333,21 +367,51 @@ function defaultForm() {
   return {
     name: '月度资产盘点',
     scope: '全部',
-    target: '',
-    owner: '资产管理员'
+    target: [],
+    owner: '资产管理员',
+    include_scrapped: false,
+    include_disposed: false
   }
 }
 
-function openCreate() {
+async function openCreate() {
   Object.assign(form, defaultForm())
+  await loadScopeOptions()
   createDialog.value = true
 }
 
 async function createTask() {
-  await createStocktakeTask(form)
+  if (form.scope !== '全部' && !form.target.length) {
+    ElMessage.warning(`请选择${form.scope}范围`)
+    return
+  }
+  await createStocktakeTask({ ...form, targets: form.target, target: form.target.join('、') })
   createDialog.value = false
   ElMessage.success('盘点任务已创建')
   await load()
+}
+
+function handleScopeChange() {
+  form.target = []
+}
+
+async function loadScopeOptions() {
+  const [assetResult, users, locations] = await Promise.all([
+    getAssets({ page: 1, page_size: 1000 }).catch(() => ({ list: [] })),
+    getUsers().catch(() => []),
+    getLocations().catch(() => [])
+  ])
+  scopeSource.departments = uniqueOptions([
+    ...(assetResult.list || []).flatMap(item => [item.dept_name, item.dept_id, item.dept]),
+    ...(users || []).flatMap(item => [item.dept_name, item.dept_id])
+  ])
+  scopeSource.locations = uniqueOptions((locations || []).filter(item => item.status !== '停用').flatMap(item => [item.name, item.code]))
+}
+
+function uniqueOptions(values) {
+  return [...new Set(values.map(value => String(value || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+    .map(value => ({ label: value, value }))
 }
 
 async function start(row) {
@@ -654,6 +718,11 @@ function paginate(rows, pagination) {
 .scan-tip {
   color: #64748b;
   font-size: 12px;
+}
+
+.scope-switches {
+  display: grid;
+  gap: 8px;
 }
 
 @media (max-width: 1280px) {

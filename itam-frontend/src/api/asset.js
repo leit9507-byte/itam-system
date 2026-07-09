@@ -11,11 +11,12 @@ export const assetStatuses = [
   { label: '已出库', value: 'out_stock', type: 'info' },
   { label: '待报废', value: 'ready_scrap', type: 'warning' },
   { label: '已提交报废审批', value: 'pending_scrap', type: 'danger' },
-  { label: '已报废', value: 'scrapped', type: 'info' }
+  { label: '已报废', value: 'scrapped', type: 'info' },
+  { label: '已处置', value: 'disposed', type: 'info' }
 ]
 
 export const statusMap = Object.fromEntries(assetStatuses.map(item => [item.value, item]))
-export const editableAssetStatuses = assetStatuses.filter(item => !['pending_purchase', 'pending_acceptance', 'pending_scrap', 'scrapped'].includes(item.value))
+export const editableAssetStatuses = assetStatuses.filter(item => !['pending_purchase', 'pending_acceptance', 'pending_scrap', 'scrapped', 'disposed'].includes(item.value))
 const DETAIL_CONTEXT_LIMIT = 500
 
 export const lifecycleActionMap = {
@@ -29,7 +30,8 @@ export const lifecycleActionMap = {
   REPAIR_FINISH: '维修完成',
   SCRAP_REQUEST: '提交报废审批',
   SCRAP_APPROVE: '报废审批通过',
-  SCRAP_REJECT: '报废审批驳回'
+  SCRAP_REJECT: '报废审批驳回',
+  SCRAP_DISPOSE: '报废处置归档'
 }
 
 export async function getAssets(params = {}) {
@@ -152,17 +154,21 @@ export async function batchUpdateAssets(rows, payload) {
 export async function getAssetDetail(assetId) {
   const { list } = await getAssets({})
   const asset = list.find(item => item.asset_id === assetId) || list[0]
-  const lifecycleResult = await getLifecycleList({ page: 1, page_size: DETAIL_CONTEXT_LIMIT }).catch(() => ({ list: [] }))
+  const lifecycleResult = await getLifecycleList({ asset_id: assetId, page: 1, page_size: DETAIL_CONTEXT_LIMIT }).catch(() => ({ list: [] }))
   const changes = await getAssetChanges(assetId).catch(() => [])
-  const lifecycles = lifecycleResult.list.filter(item => item.asset_id === assetId)
+  const checkouts = await getAssetCheckouts(assetId).catch(() => [])
+  const lifecycles = lifecycleResult.list
+  const inventoryRecords = lifecycles.filter(item => item.category === 'daily_inventory').map(mapInventoryLifecycle)
   return {
     asset,
     lifecycles,
     changes,
+    checkouts,
+    timeline: buildAssetTimeline(asset, lifecycles, changes, checkouts),
     usageRecords: [
       { user: asset?.owner_name || asset?.owner || '未分配', dept: asset?.dept_name || asset?.dept || '未绑定', from: asset?.created_at || '-', to: '至今' }
     ],
-    inventoryRecords: lifecycles.filter(item => item.category === 'daily_inventory').map(mapInventoryLifecycle),
+    inventoryRecords,
     risks: buildAssetRisks(asset)
   }
 }
@@ -189,21 +195,81 @@ export async function changeAssetStatus(assetId, status, payload = {}) {
     owner_user_id: payload.owner_user_id,
     dept_id: payload.dept_id,
     location: payload.location,
+    borrow_due_date: payload.borrow_due_date || '',
     remark: payload.remark || ''
   })
   return mapBackendAsset(asset)
 }
 
+export async function getAssetCheckouts(assetId, limit = 200) {
+  const rows = await request.get(`/asset/${assetId}/checkouts`, { params: { limit } })
+  return (Array.isArray(rows) ? rows : []).map(mapAssetCheckout)
+}
+
+export async function getCheckoutRecords(params = {}) {
+  const result = await request.get('/asset/checkouts/list', {
+    params: {
+      keyword: params.keyword || undefined,
+      status: params.status || undefined,
+      checkout_type: params.checkout_type || undefined,
+      assignee_user_id: params.assignee_user_id || undefined,
+      dept_id: params.dept_id || undefined,
+      date_from: params.date_from || undefined,
+      date_to: params.date_to || undefined,
+      due_from: params.due_from || undefined,
+      due_to: params.due_to || undefined,
+      due_days: params.due_days ?? undefined,
+      page: params.page || undefined,
+      page_size: params.page_size ?? params.pageSize ?? undefined
+    }
+  })
+  const { rows, total } = normalizePagedResult(result)
+  return { list: rows.map(mapAssetCheckout), total, summary: result.summary || {} }
+}
+
+export async function checkoutAsset(assetId, payload = {}) {
+  const asset = await request.post(`/asset/${assetId}/checkout`, {
+    checkout_type: payload.toStatus || payload.checkout_type || 'in_use',
+    owner_user_id: payload.owner_user_id,
+    dept_id: payload.dept_id,
+    location: payload.location,
+    due_date: payload.borrow_due_date || payload.due_date || '',
+    remark: payload.remark || ''
+  })
+  return mapBackendAsset(asset)
+}
+
+export async function batchCheckoutAssets(assetIds, payload = {}) {
+  return request.post('/asset/checkouts/batch-checkout', {
+    asset_ids: assetIds,
+    checkout_type: payload.toStatus || payload.checkout_type || 'in_use',
+    owner_user_id: payload.owner_user_id,
+    dept_id: payload.dept_id,
+    location: payload.location,
+    due_date: payload.borrow_due_date || payload.due_date || '',
+    remark: payload.remark || ''
+  })
+}
+
+export async function checkinAsset(assetId, payload = {}) {
+  const asset = await request.post(`/asset/${assetId}/checkin`, {
+    location: payload.location,
+    remark: payload.remark || '资产归还入库'
+  })
+  return mapBackendAsset(asset)
+}
+
+export async function batchCheckinAssets(assetIds, payload = {}) {
+  return request.post('/asset/checkouts/batch-checkin', {
+    asset_ids: assetIds,
+    location: payload.location,
+    remark: payload.remark || '资产批量归还入库'
+  })
+}
+
 export async function inboundAsset(assetId, payload = {}) {
   const inboundAddress = payload.location || ''
-  const asset = await changeAssetStatus(assetId, 'in_stock', {
-    ...payload,
-    owner_user_id: '',
-    dept_id: '',
-    location: inboundAddress,
-    action: '入库',
-    remark: payload.remark || '资产入库'
-  })
+  const asset = await checkinAsset(assetId, { ...payload, location: inboundAddress, remark: payload.remark || '资产入库' })
   return asset
 }
 
@@ -219,13 +285,16 @@ export async function submitReclaimApproval(assetId, payload = {}) {
 export async function outboundAsset(assetId, payload = {}) {
   const status = payload.toStatus || 'in_use'
   const isPublicLocation = payload.outboundTarget === 'location'
-  const asset = await changeAssetStatus(assetId, status, {
+  const borrowDueDateText = status === 'borrowed' && payload.borrow_due_date ? `借用到期时间：${payload.borrow_due_date}` : ''
+  const remark = [payload.remark || (isPublicLocation ? `公用设备：${payload.location || ''}` : '资产出库'), borrowDueDateText].filter(Boolean).join('；')
+  const asset = await checkoutAsset(assetId, {
     ...payload,
+    toStatus: status,
     owner_user_id: isPublicLocation ? '' : payload.owner_user_id,
     dept_id: isPublicLocation ? '' : payload.dept_id,
     location: payload.location,
     action: '出库',
-    remark: payload.remark || (isPublicLocation ? `公用设备：${payload.location || ''}` : '资产出库')
+    remark
   })
   return asset
 }
@@ -254,6 +323,13 @@ export async function approveScrapRequest(requestId, approver = '资产负责人
 
 export async function rejectScrapRequest(requestId, approver = '资产负责人') {
   return mapScrapRequest(await request.post(`/scrap/${requestId}/reject`, { approver }))
+}
+
+export async function disposeScrapRequest(requestId, payload = {}) {
+  return mapScrapRequest(await request.post(`/scrap/${requestId}/dispose`, {
+    final_residual_value: Number(payload.final_residual_value || 0),
+    disposal_remark: payload.disposal_remark || ''
+  }))
 }
 
 export async function addAcceptedAssets(product, serialNumbers = []) {
@@ -314,6 +390,7 @@ function mapBackendAsset(row) {
     asset_id: row.asset_id,
     asset_no: row.asset_no || '',
     config,
+    borrow_due_date: config.borrow_due_date || '',
     company: row.company || '',
     name: row.name,
     category: row.category,
@@ -367,6 +444,10 @@ function mapScrapRequest(row) {
     reason: row.reason || '',
     disposal_method: row.disposal_method || '',
     estimated_residual_value: Number(row.estimated_residual_value || 0),
+    final_residual_value: Number(row.final_residual_value || 0),
+    disposal_remark: row.disposal_remark || '',
+    disposed_by: row.disposed_by || '',
+    disposed_at: formatDate(row.disposed_at),
     status: row.status,
     created_at: formatDate(row.created_at),
     approver: row.approver || '',
@@ -440,7 +521,8 @@ function lifecycleDescription(row, fromStatus, toStatus) {
     REPAIR_FINISH: `维修完成，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
     SCRAP_REQUEST: `提交报废审批，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
     SCRAP_APPROVE: `报废审批通过，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
-    SCRAP_REJECT: `报废审批驳回，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`
+    SCRAP_REJECT: `报废审批驳回，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
+    SCRAP_DISPOSE: `报废资产完成处置归档，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`
   }[row.type] || `${action}，${statusText}`
   return remark ? `${base}；备注：${remark}` : base
 }
@@ -467,6 +549,156 @@ function mapInventoryLifecycle(row) {
   }
 }
 
+function mapAssetCheckout(row) {
+  return {
+    id: row.id,
+    asset_id: row.asset_id,
+    asset_no: row.asset_no || '',
+    asset_name: row.asset_name || '',
+    asset_category: row.asset_category || '',
+    asset_status: row.asset_status || '',
+    asset_status_label: statusLabel(row.asset_status),
+    checkout_type: row.checkout_type,
+    checkout_type_label: statusLabel(row.checkout_type),
+    assignee_user_id: row.assignee_user_id || '',
+    assignee_name: row.assignee_name || row.assignee_user_id || '',
+    dept_id: row.dept_id || '',
+    location: row.location || '',
+    due_date: formatDate(row.due_date),
+    status: row.status,
+    status_label: row.status === 'open' ? '领用中' : '已归还',
+    is_overdue: Boolean(row.is_overdue),
+    days_overdue: Number(row.days_overdue || 0),
+    checked_out_at: formatDateTime(row.checked_out_at),
+    checked_out_by: row.checked_out_by || '',
+    checked_in_at: formatDateTime(row.checked_in_at),
+    checked_in_by: row.checked_in_by || '',
+    checkin_location: row.checkin_location || '',
+    remark: row.remark || '',
+    checkin_remark: row.checkin_remark || ''
+  }
+}
+
+function buildAssetTimeline(asset, lifecycles = [], changes = [], checkouts = []) {
+  const rows = [
+    ...(asset?.created_at ? [assetCreatedTimeline(asset)] : []),
+    ...lifecycles.map(lifecycleTimeline),
+    ...changes.map(changeTimeline),
+    ...checkouts.flatMap(checkoutTimeline)
+  ]
+  const deduped = new Map()
+  rows.filter(Boolean).forEach(item => {
+    const key = `${item.source}:${item.source_id}:${item.event}:${item.raw_time || item.time}`
+    if (!deduped.has(key)) deduped.set(key, item)
+  })
+  return [...deduped.values()].sort((a, b) => dateValue(b.raw_time || b.time) - dateValue(a.raw_time || a.time))
+}
+
+function assetCreatedTimeline(asset) {
+  return {
+    source: 'asset',
+    source_id: asset.asset_id,
+    event: 'created',
+    group: 'basic',
+    type: '建档',
+    title: '资产建档',
+    description: `${asset.name || asset.asset_id} 已创建，初始状态：${statusLabel(asset.status) || '-'}`,
+    operator: '-',
+    time: formatDateTime(asset.created_at),
+    raw_time: asset.created_at,
+    tone: 'primary',
+    meta: [asset.category, asset.company].filter(Boolean)
+  }
+}
+
+function lifecycleTimeline(row) {
+  return {
+    source: 'lifecycle',
+    source_id: row.id,
+    event: row.type,
+    group: lifecycleGroup(row),
+    type: row.type_label || lifecycleActionMap[row.type] || row.type || '生命周期',
+    title: row.type_label || lifecycleActionMap[row.type] || row.type || '生命周期记录',
+    description: row.description || row.status_change_label || '-',
+    operator: row.operator || '-',
+    time: row.time,
+    raw_time: row.time_value || row.time,
+    tone: lifecycleTone(row),
+    meta: [row.status_change_label, row.responsible_label && row.responsible_label !== '-' ? `责任人：${row.responsible_label}` : ''].filter(Boolean)
+  }
+}
+
+function changeTimeline(row) {
+  return {
+    source: 'change',
+    source_id: row.id,
+    event: row.field,
+    group: 'change',
+    type: '字段变更',
+    title: `${row.field_label || row.field || '字段'}变更`,
+    description: `${emptyText(row.old_value)} -> ${emptyText(row.new_value)}`,
+    operator: row.operator || '-',
+    time: row.created_at || '',
+    raw_time: row.created_at || '',
+    tone: 'info',
+    meta: [row.summary].filter(Boolean)
+  }
+}
+
+function checkoutTimeline(row) {
+  const out = {
+    source: 'checkout',
+    source_id: row.id,
+    event: 'checkout',
+    group: 'checkout',
+    type: row.checkout_type_label || '领用',
+    title: `${row.checkout_type_label || '资产'}领用`,
+    description: [row.assignee_name ? `领用人：${row.assignee_name}` : '', row.location ? `位置：${row.location}` : '', row.due_date ? `到期：${row.due_date}` : '', row.remark].filter(Boolean).join('；') || '资产已领用',
+    operator: row.checked_out_by || '-',
+    time: row.checked_out_at || '',
+    raw_time: row.checked_out_at || '',
+    tone: row.checkout_type === 'borrowed' ? 'warning' : 'success',
+    meta: [row.dept_id, row.status_label].filter(Boolean)
+  }
+  const rows = [out]
+  if (row.checked_in_at) {
+    rows.push({
+      source: 'checkout',
+      source_id: row.id,
+      event: 'checkin',
+      group: 'checkout',
+      type: '归还',
+      title: '资产归还',
+      description: [row.assignee_name ? `归还人：${row.assignee_name}` : '', row.checkin_location ? `入库位置：${row.checkin_location}` : '', row.checkin_remark].filter(Boolean).join('；') || '资产已归还入库',
+      operator: row.checked_in_by || '-',
+      time: row.checked_in_at,
+      raw_time: row.checked_in_at,
+      tone: 'primary',
+      meta: [row.checkout_type_label].filter(Boolean)
+    })
+  }
+  return rows
+}
+
+function lifecycleTone(row) {
+  if (row.to_status === 'in_stock') return 'primary'
+  if (['in_use', 'out_stock'].includes(row.to_status)) return 'success'
+  if (row.to_status === 'borrowed') return 'warning'
+  if (['repair', 'pending_scrap', 'scrapped', 'disposed'].includes(row.to_status)) return 'danger'
+  return 'info'
+}
+
+function lifecycleGroup(row) {
+  if (['STATUS_CHANGE', 'PURCHASE', 'PURCHASE_ACCEPTANCE'].includes(row.type)) return 'inventory'
+  if (['REPAIR_CREATE', 'REPAIR_FINISH'].includes(row.type) || row.to_status === 'repair') return 'repair'
+  if (['SCRAP_REQUEST', 'SCRAP_APPROVE', 'SCRAP_REJECT', 'SCRAP_DISPOSE'].includes(row.type) || ['ready_scrap', 'pending_scrap', 'scrapped', 'disposed'].includes(row.to_status)) return 'scrap'
+  return 'lifecycle'
+}
+
+function emptyText(value) {
+  return value === undefined || value === null || value === '' ? '-' : String(value)
+}
+
 function buildAssetRisks(asset) {
   if (!asset) return []
   const risks = []
@@ -477,6 +709,7 @@ function buildAssetRisks(asset) {
   if (asset.status === 'ready_scrap') risks.push({ level: 'medium', message: '资产已标记待报废，可提交报废审批' })
   if (asset.status === 'pending_scrap') risks.push({ level: 'medium', message: '资产已提交报废审批，请关注审批结果' })
   if (asset.status === 'scrapped') risks.push({ level: 'low', message: '资产已报废，等待处置归档' })
+  if (asset.status === 'disposed') risks.push({ level: 'low', message: '资产已处置归档，仅保留审计记录' })
   if (asset.warranty_expire_date && new Date(asset.warranty_expire_date) < new Date()) risks.push({ level: 'medium', message: '资产质保已过期' })
   return risks.length ? risks : [{ level: 'low', message: '暂无显著风险' }]
 }
@@ -493,6 +726,11 @@ function formatDateTime(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
   return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+function dateValue(value) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime()
 }
 
 function dateToApi(value) {

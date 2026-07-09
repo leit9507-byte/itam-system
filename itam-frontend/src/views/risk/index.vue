@@ -50,7 +50,7 @@ import { getRiskAnalytics } from '../../api/audit'
 const trendRef = ref(null)
 const idleRef = ref(null)
 const analytics = reactive({ trend: [], deptRank: [], idleStats: [] })
-const pagination = reactive({ page: 1, pageSize: 20 })
+const pagination = reactive({ page: 1, pageSize: 10 })
 const pagedDeptRank = computed(() => {
   const start = (pagination.page - 1) * pagination.pageSize
   return analytics.deptRank.slice(start, start + pagination.pageSize)

@@ -25,6 +25,11 @@ class ScrapApprovePayload(BaseModel):
     approver: str = "资产负责人"
 
 
+class ScrapDisposePayload(BaseModel):
+    final_residual_value: float = 0
+    disposal_remark: str | None = None
+
+
 @router.get("/list")
 def list_scrap_requests(
     page: int = 1,
@@ -80,3 +85,11 @@ def reject_scrap_request(request_id: int, payload: ScrapApprovePayload, request:
         return ScrapService.reject(db, request_id, operator_from_request(request))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{request_id}/dispose")
+def dispose_scrap_request(request_id: int, payload: ScrapDisposePayload, request: Request, db: Session = Depends(get_db)):
+    try:
+        return ScrapService.dispose(db, request_id, payload.model_dump(), operator_from_request(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

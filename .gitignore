@@ -19,11 +19,14 @@ audit_report.html
 artifacts/
 uploads/qrcodes/*.png
 itam-system/uploads/qrcodes/*.png
+itam-system/uploads/reports/*.pdf
 
 # Local env files
 .env
 .env.local
+.env.production
 docker-compose.local.yml
+backups/
 
 # Legacy prototype files at repository root
 /app.js

@@ -9,6 +9,7 @@ from app.models.repair import RepairFaultType, RepairRecord
 from app.schemas.repair import RepairCreate, RepairFinish
 from app.services.audit_log_service import AuditLogService
 from app.services.lifecycle_service import LifecycleService
+from app.services.notification_service import NotificationService
 
 
 class RepairService:
@@ -113,6 +114,8 @@ class RepairService:
         asset = db.get(Asset, payload.asset_id)
         if not asset:
             raise ValueError("asset not found")
+        if asset.status in {"scrapped", "disposed"}:
+            raise ValueError("已报废/已处置资产不能创建维修单")
         record = RepairRecord(
             repair_no=RepairService.generate_repair_no(db),
             asset_id=payload.asset_id,
@@ -135,6 +138,19 @@ class RepairService:
         db.commit()
         db.refresh(record)
         db.refresh(asset)
+        NotificationService.send_event(
+            db,
+            "repair",
+            "维修任务已创建" if start_work else "维修审批已提交",
+            [
+                f"维修单号：{record.repair_no}",
+                f"资产编号：{record.asset_id}",
+                f"资产名称：{asset.name or '-'}",
+                f"故障类型：{record.fault_reason or '-'}",
+                f"维修供应商：{record.vendor or '-'}",
+                f"操作人：{payload.operator}",
+            ],
+        )
         return RepairService.to_dict(record, asset)
 
     @staticmethod
@@ -145,6 +161,8 @@ class RepairService:
         asset = db.get(Asset, record.asset_id)
         record.status = "维修中"
         if asset:
+            if asset.status in {"scrapped", "disposed"}:
+                raise ValueError("已报废/已处置资产不能进入维修")
             from_status = asset.status
             asset.status = "repair"
             LifecycleService.record(db, asset.asset_id, "REPAIR_APPROVE", from_status, "repair", operator)
@@ -153,6 +171,17 @@ class RepairService:
         db.refresh(record)
         if asset:
             db.refresh(asset)
+        NotificationService.send_event(
+            db,
+            "repair",
+            "维修审批已通过",
+            [
+                f"维修单号：{record.repair_no}",
+                f"资产编号：{record.asset_id}",
+                f"当前状态：维修中",
+                f"审批人：{operator}",
+            ],
+        )
         return RepairService.to_dict(record, asset)
 
     @staticmethod
@@ -167,6 +196,17 @@ class RepairService:
         AuditLogService.record_operation(db, "repair", "reject", operator, "repair", record.repair_no, f"维修审批驳回 {record.asset_id}")
         db.commit()
         db.refresh(record)
+        NotificationService.send_event(
+            db,
+            "repair",
+            "维修审批已驳回",
+            [
+                f"维修单号：{record.repair_no}",
+                f"资产编号：{record.asset_id}",
+                f"审批人：{operator}",
+                f"当前状态：已驳回",
+            ],
+        )
         return RepairService.to_dict(record, asset)
 
     @staticmethod
@@ -180,6 +220,8 @@ class RepairService:
         if payload.remark:
             record.remark = payload.remark
         if asset:
+            if asset.status in {"scrapped", "disposed"}:
+                raise ValueError("已报废/已处置资产不能变更维修状态")
             from_status = asset.status
             asset.status = payload.next_status
             LifecycleService.record(db, asset.asset_id, "REPAIR_FINISH", from_status, payload.next_status, payload.operator)
@@ -188,6 +230,18 @@ class RepairService:
         db.refresh(record)
         if asset:
             db.refresh(asset)
+        NotificationService.send_event(
+            db,
+            "repair",
+            "维修任务已完成",
+            [
+                f"维修单号：{record.repair_no}",
+                f"资产编号：{record.asset_id}",
+                f"资产名称：{asset.name if asset else '-'}",
+                f"后续状态：{payload.next_status}",
+                f"操作人：{payload.operator}",
+            ],
+        )
         return RepairService.to_dict(record, asset)
 
     @staticmethod

@@ -111,8 +111,8 @@ const devices = ref([])
 const currentSupplier = ref(null)
 const keyword = ref('')
 const dialog = reactive({ visible: false, form: defaultForm() })
-const supplierPagination = reactive({ page: 1, pageSize: 20, total: 0 })
-const devicePagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const supplierPagination = reactive({ page: 1, pageSize: 10, total: 0 })
+const devicePagination = reactive({ page: 1, pageSize: 10, total: 0 })
 
 onMounted(load)
 

@@ -17,6 +17,7 @@ class IdentityService:
     @staticmethod
     def ensure_seed(db: Session) -> None:
         settings = get_settings()
+        IdentityService.validate_production_seed_passwords(settings)
         if not db.query(UserDirectory).first():
             seed_users = [
                 UserUpsert(
@@ -58,10 +59,23 @@ class IdentityService:
         for role, resource, actions in [
             ("user", "asset", ["read"]),
             ("user", "catalog", ["read"]),
-            ("user", "purchase", ["read"]),
-            ("user", "repair", ["read"]),
-            ("user", "supplier", ["read"]),
+            ("user", "file", ["read"]),
+            ("asset_manager", "asset", ["read", "write"]),
+            ("asset_manager", "file", ["read", "write"]),
+            ("asset_manager", "catalog", ["read", "write"]),
+            ("asset_manager", "purchase", ["read", "write"]),
+            ("asset_manager", "repair", ["read", "write"]),
+            ("asset_manager", "supplier", ["read", "write"]),
+            ("asset_manager", "report", ["read"]),
+            ("dept_manager", "asset", ["read", "write"]),
+            ("dept_manager", "file", ["read", "write"]),
+            ("dept_manager", "catalog", ["read"]),
+            ("dept_manager", "purchase", ["read"]),
+            ("dept_manager", "repair", ["read", "write"]),
+            ("dept_manager", "supplier", ["read"]),
+            ("dept_manager", "report", ["read"]),
             ("auditor", "asset", ["read"]),
+            ("auditor", "file", ["read"]),
             ("auditor", "audit", ["read", "write"]),
             ("auditor", "report", ["read"]),
             ("auditor", "catalog", ["read"]),
@@ -88,6 +102,16 @@ class IdentityService:
             IdentityService._generated_seed_passwords[username] = password
             logging.warning("Generated temporary password for seed user '%s': %s", username, password)
         return IdentityService._generated_seed_passwords[username]
+
+    @staticmethod
+    def validate_production_seed_passwords(settings) -> None:
+        if not settings.production_mode:
+            return
+        weak_values = {"", "admin", "auditor", "Admin@123456", "Auditor@123456", "password", "123456"}
+        if not settings.initial_admin_password or settings.initial_admin_password in weak_values or settings.initial_admin_password.startswith("change-this"):
+            raise RuntimeError("Production requires a strong INITIAL_ADMIN_PASSWORD")
+        if settings.initial_auditor_password and (settings.initial_auditor_password in weak_values or settings.initial_auditor_password.startswith("change-this")):
+            raise RuntimeError("Production requires a strong INITIAL_AUDITOR_PASSWORD")
 
     @staticmethod
     def list_users(db: Session) -> list[UserDirectory]:

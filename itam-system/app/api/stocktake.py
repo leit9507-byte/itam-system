@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
@@ -20,7 +20,10 @@ class StocktakeTaskCreate(BaseModel):
     name: str
     scope: str = "全部"
     target: str | None = None
+    targets: list[str] = Field(default_factory=list)
     owner: str | None = None
+    include_scrapped: bool = False
+    include_disposed: bool = False
 
 
 class StocktakeItemSubmit(BaseModel):
@@ -64,15 +67,16 @@ def list_tasks(request: Request, db: Session = Depends(get_db)):
 @router.post("/tasks")
 def create_task(payload: StocktakeTaskCreate, request: Request, db: Session = Depends(get_db)):
     task_id = f"ST-{datetime.utcnow().year}-{db.query(StocktakeTask).count() + 1:03d}"
+    targets = normalize_targets(payload.target, payload.targets)
     task = StocktakeTask(
         id=task_id,
         name=payload.name,
         scope=payload.scope,
-        target=payload.target or "",
+        target="、".join(targets),
         owner=payload.owner or "资产管理员",
         status="待开始",
     )
-    for asset in scoped_assets(db, payload.scope, payload.target, user_context_from_request(request)):
+    for asset in scoped_assets(db, payload.scope, targets, user_context_from_request(request), payload.include_scrapped, payload.include_disposed):
         task.items.append(
             StocktakeItem(
                 asset_id=asset.asset_id,
@@ -216,15 +220,35 @@ def list_scan_logs(task_id: str, db: Session = Depends(get_db)):
     ]
 
 
-def scoped_assets(db: Session, scope: str, target: str | None, user_context: dict | None = None):
+def scoped_assets(db: Session, scope: str, target: str | list[str] | None, user_context: dict | None = None, include_scrapped: bool = False, include_disposed: bool = False):
     query = AssetService.apply_data_scope(db.query(Asset), user_context)
-    if scope == "部门" and target:
-        query = query.filter(Asset.dept_id == target)
-    if scope == "仓库" and target:
-        query = query.filter(Asset.location == target)
-    if scope == "状态" and target:
-        query = query.filter(Asset.status == target)
+    targets = normalize_targets(target)
+    excluded_statuses = []
+    if not include_scrapped:
+        excluded_statuses.append("scrapped")
+    if not include_disposed:
+        excluded_statuses.append("disposed")
+    if excluded_statuses:
+        query = query.filter(~Asset.status.in_(excluded_statuses))
+    if scope == "部门" and targets:
+        query = query.filter(Asset.dept_id.in_(targets))
+    if scope == "仓库" and targets:
+        query = query.filter(Asset.location.in_(targets))
+    if scope == "状态" and targets:
+        query = query.filter(Asset.status.in_(targets))
     return query.order_by(Asset.asset_id.asc()).all()
+
+
+def normalize_targets(target: str | list[str] | None = None, targets: list[str] | None = None) -> list[str]:
+    values: list[str] = []
+    if isinstance(target, list):
+        values.extend(target)
+    elif target:
+        values.extend(str(target).replace(",", "、").split("、"))
+    if targets:
+        values.extend(targets)
+    clean = [str(value).strip() for value in values if str(value or "").strip()]
+    return list(dict.fromkeys(clean))
 
 
 def get_task(db: Session, task_id: str) -> StocktakeTask:

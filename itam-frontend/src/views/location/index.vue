@@ -77,7 +77,7 @@ import { createLocation, deleteLocation, getLocations, updateLocation } from '..
 const locations = ref([])
 const keyword = ref('')
 const dialog = reactive({ visible: false, form: defaultForm() })
-const pagination = reactive({ page: 1, pageSize: 20 })
+const pagination = reactive({ page: 1, pageSize: 10 })
 const pagedLocations = computed(() => {
   const start = (pagination.page - 1) * pagination.pageSize
   return locations.value.slice(start, start + pagination.pageSize)

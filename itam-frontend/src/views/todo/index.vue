@@ -68,27 +68,6 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="assignDialog.visible" title="入职资产分配" width="620px">
-      <el-alert :title="`为 ${assignDialog.todo?.name || assignDialog.todo?.owner || '员工'} 分配在库或闲置资产`" type="info" show-icon :closable="false" />
-      <el-form :model="assignDialog.form" label-width="100px" class="todo-form">
-        <el-form-item label="选择资产" required>
-          <el-select v-model="assignDialog.form.asset_id" filterable remote reserve-keyword placeholder="搜索资产编号、名称、序列号" :remote-method="searchAssignableAssets" style="width: 100%">
-            <el-option v-for="item in assignDialog.assets" :key="item.asset_id" :label="assetLabel(item)" :value="item.asset_id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="使用位置">
-          <el-input v-model="assignDialog.form.location" placeholder="可填写办公位置" />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="assignDialog.form.remark" type="textarea" :rows="3" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="assignDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="processingId === assignDialog.todo?.id" @click="submitAssign">确认分配</el-button>
-      </template>
-    </el-dialog>
-
     <el-dialog v-model="scrapDialog.visible" title="提交报废审批" width="620px">
       <el-alert :title="scrapDialog.todo?.title || '提交报废审批'" type="warning" show-icon :closable="false" />
       <el-form :model="scrapDialog.form" label-width="110px" class="todo-form">
@@ -115,30 +94,28 @@
         <el-button type="primary" :loading="processingId === scrapDialog.todo?.id" @click="submitScrapRequest">提交审批</el-button>
       </template>
     </el-dialog>
+    <TodoAssetActions ref="todoAssetActionsRef" @completed="load" />
+    <PurchaseAcceptanceDialog ref="purchaseAcceptanceRef" @completed="load" />
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { approveScrapRequest, createScrapRequest, getAssets, getScrapRequests, inboundAsset, outboundAsset, submitReclaimApproval } from '../../api/asset'
-import { approvePurchase, getPurchases, receivePurchase } from '../../api/purchase'
+import { approveScrapRequest, createScrapRequest, getScrapRequests } from '../../api/asset'
+import { approvePurchase, getPurchases } from '../../api/purchase'
 import { finishRepairRecord, getRepairRecords } from '../../api/repair'
 import { getTodoItems } from '../../api/todo'
-import { getUsers } from '../../api/user'
+import TodoAssetActions from '../../components/TodoAssetActions.vue'
+import PurchaseAcceptanceDialog from '../../components/PurchaseAcceptanceDialog.vue'
 
 const loading = ref(false)
 const processingId = ref('')
 const todos = ref([])
 const filters = reactive({ keyword: '', type: '', priority: '' })
-const pagination = reactive({ page: 1, pageSize: 20 })
-const users = ref([])
-const assignDialog = reactive({
-  visible: false,
-  todo: null,
-  assets: [],
-  form: { asset_id: '', location: '', remark: '入职资产分配' }
-})
+const pagination = reactive({ page: 1, pageSize: 10 })
+const todoAssetActionsRef = ref(null)
+const purchaseAcceptanceRef = ref(null)
 const scrapDialog = reactive({
   visible: false,
   todo: null,
@@ -175,9 +152,7 @@ onMounted(load)
 async function load() {
   loading.value = true
   try {
-    const [todoRows, userRows] = await Promise.all([getTodoItems(), users.value.length ? Promise.resolve(users.value) : getUsers().catch(() => [])])
-    todos.value = todoRows
-    users.value = userRows
+    todos.value = await getTodoItems()
     resetPage()
   } catch (error) {
     ElMessage.error(`待办加载失败：${error?.message || '请稍后重试'}`)
@@ -214,60 +189,13 @@ function priorityType(priority) {
 }
 
 async function handleTodo(row) {
-  if (row.type === 'onboarding_assign') return openAssignDialog(row)
+  if (await todoAssetActionsRef.value?.handle(row)) return
   if (row.type === 'scrap_request') return openScrapDialog(row)
   if (row.type === 'purchase_approval') return approvePurchaseTodo(row)
   if (row.type === 'purchase_acceptance') return receivePurchaseTodo(row)
   if (row.type === 'scrap_approval') return approveScrapTodo(row)
-  if (row.type === 'offboarding_reclaim') return reclaimAssetTodo(row)
   if (row.type === 'repair_followup') return finishRepairTodo(row)
   ElMessage.warning('暂不支持该类型待办的直接处理')
-}
-
-async function openAssignDialog(row) {
-  assignDialog.todo = row
-  Object.assign(assignDialog.form, {
-    asset_id: '',
-    location: '',
-    remark: '入职资产分配'
-  })
-  assignDialog.assets = await loadAssignableAssets('')
-  assignDialog.visible = true
-}
-
-async function searchAssignableAssets(keyword = '') {
-  assignDialog.assets = await loadAssignableAssets(keyword)
-}
-
-async function loadAssignableAssets(keyword = '') {
-  const { list } = await getAssets({ keyword, page: 1, page_size: 50 })
-  return list.filter(item => ['in_stock', 'idle'].includes(item.status))
-}
-
-async function submitAssign() {
-  if (!assignDialog.form.asset_id) return ElMessage.warning('请选择要分配的资产')
-  const todo = assignDialog.todo
-  processingId.value = todo.id
-  try {
-    const user = users.value.find(item => item.user_id === todo.user_id || item.username === todo.username)
-    await outboundAsset(assignDialog.form.asset_id, {
-      outboundTarget: 'user',
-      toStatus: 'in_use',
-      owner_user_id: user?.user_id || todo.user_id || todo.username,
-      owner_name: user?.display_name || todo.name || todo.owner,
-      dept_id: user?.dept_id || user?.dept_name || '',
-      dept_name: user?.dept_name || user?.dept_id || '',
-      location: assignDialog.form.location,
-      remark: assignDialog.form.remark || '入职资产分配'
-    })
-    ElMessage.success('入职资产已分配')
-    assignDialog.visible = false
-    await load()
-  } catch (error) {
-    ElMessage.error(`分配失败：${error?.message || '请稍后重试'}`)
-  } finally {
-    processingId.value = ''
-  }
 }
 
 function openScrapDialog(row) {
@@ -308,12 +236,8 @@ async function approvePurchaseTodo(row) {
 }
 
 async function receivePurchaseTodo(row) {
-  const confirmed = await confirmAction(`确认验收采购单 ${row.purchase_no} 并自动入库？`, '采购验收')
-  if (!confirmed) return
-  await runTodoAction(row, async () => {
-    const result = await receivePurchase(row.purchase_no)
-    ElMessage.success(`采购验收完成，生成 ${result.generated_assets} 个资产`)
-  })
+  const purchase = await findPurchase(row.purchase_no)
+  purchaseAcceptanceRef.value?.open(purchase)
 }
 
 async function approveScrapTodo(row) {
@@ -323,15 +247,6 @@ async function approveScrapTodo(row) {
     const request = await findScrapRequest(row)
     await approveScrapRequest(request.id, '资产负责人')
     ElMessage.success('报废审批已通过')
-  })
-}
-
-async function reclaimAssetTodo(row) {
-  const confirmed = await confirmAction(`确认提交 ${row.asset_id} 的飞书回收审批？`, '离职资产回收')
-  if (!confirmed) return
-  await runTodoAction(row, async () => {
-    await submitReclaimApproval(row.asset_id, { location: '', remark: '离职资产回收审批' })
-    ElMessage.success('已提交飞书回收审批')
   })
 }
 
@@ -384,9 +299,6 @@ async function confirmAction(message, title) {
   return ElMessageBox.confirm(message, title, { type: 'warning' }).then(() => true).catch(() => false)
 }
 
-function assetLabel(item) {
-  return `${item.asset_id} / ${item.name || '-'} / ${item.sn || '-'} / ${item.location || '未填写位置'}`
-}
 </script>
 
 <style scoped>

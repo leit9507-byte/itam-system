@@ -69,7 +69,7 @@ const loading = ref(false)
 const users = ref([])
 const assets = ref([])
 const keyword = ref('')
-const pagination = reactive({ page: 1, pageSize: 20 })
+const pagination = reactive({ page: 1, pageSize: 10 })
 const DEPARTMENT_ASSET_LIMIT = 1000
 
 const departments = computed(() => {

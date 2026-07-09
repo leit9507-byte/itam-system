@@ -5,13 +5,25 @@
         <h2 class="page-title">报告中心</h2>
         <p class="page-subtitle">基于正式审计数据生成、预览和下载资产审计报告</p>
       </div>
-      <el-space>
+      <el-space wrap>
         <el-button @click="downloadAssetCsv">导出资产 CSV</el-button>
         <el-button @click="downloadAssetPdf">导出资产 PDF</el-button>
-        <el-button :disabled="!previewHtml" @click="handleDownloadAudit">下载审计报告</el-button>
-        <el-button type="primary" :loading="generating" @click="handleGenerate">生成审计报告</el-button>
+        <el-button @click="handleDownloadAudit">下载审计报告 PDF</el-button>
+        <el-button type="primary" class="generate-btn" :loading="generating" @click="handleGenerate">生成审计报告</el-button>
+        <el-button @click="downloadAuditReportExcel">下载审计报告 Excel</el-button>
       </el-space>
     </div>
+
+    <el-card shadow="never" class="export-card">
+      <template #header>正式台账导出</template>
+      <div class="export-grid">
+        <el-button @click="downloadDepartmentAssetsCsv">部门资产清单</el-button>
+        <el-button @click="downloadPersonHoldingsCsv">人员持有清单</el-button>
+        <el-button @click="downloadOverdueBorrowingsCsv">逾期借用清单</el-button>
+        <el-button @click="downloadWarrantyExpiringCsv(90)">即将过保清单</el-button>
+        <el-button @click="downloadScrapDisposalLedgerCsv">报废处置台账</el-button>
+      </div>
+    </el-card>
 
     <div class="analytics-grid">
       <el-card shadow="never">
@@ -79,8 +91,10 @@
             <el-tag v-if="activeReport" type="success">{{ activeReport.name }}</el-tag>
           </div>
         </template>
-        <div v-if="previewHtml" class="report-preview" v-html="previewHtml" />
-        <el-empty v-else description="生成审计报告后，可在这里预览正式报告内容" />
+        <div v-loading="generating" class="report-preview-shell" element-loading-text="正在生成报告">
+          <div v-if="previewHtml" class="report-preview" v-html="previewHtml" />
+          <el-empty v-else class="preview-empty" description="生成审计报告后，可在这里预览正式报告内容" />
+        </div>
       </el-card>
     </div>
   </div>
@@ -90,12 +104,12 @@
 import { ElMessage } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { generateReport, getReports } from '../../api/audit'
-import { downloadAssetCsv, downloadAssetPdf, downloadAuditReport, getReportAnalytics } from '../../api/reporting'
+import { downloadAssetCsv, downloadAssetPdf, downloadAuditReport, downloadAuditReportExcel, downloadDepartmentAssetsCsv, downloadOverdueBorrowingsCsv, downloadPersonHoldingsCsv, downloadScrapDisposalLedgerCsv, downloadWarrantyExpiringCsv, getReportAnalytics } from '../../api/reporting'
 
 const reports = ref([])
 const previewHtml = ref('')
 const generating = ref(false)
-const pagination = reactive({ page: 1, pageSize: 20 })
+const pagination = reactive({ page: 1, pageSize: 10 })
 const analytics = reactive({ department_occupancy: [], per_capita_value: [], idle_trend: [], repair_cost_trend: [], stocktake_diff_trend: [] })
 
 const activeReport = computed(() => reports.value.find(item => item.html === previewHtml.value))
@@ -120,6 +134,7 @@ async function handleGenerate() {
   try {
     const report = await generateReport()
     reports.value.unshift(report)
+    pagination.page = 1
     previewHtml.value = report.html
     ElMessage.success('审计报告已生成，已包含审计答复和合规判断')
   } finally {
@@ -129,7 +144,7 @@ async function handleGenerate() {
 
 async function handleDownloadAudit() {
   await downloadAuditReport()
-  ElMessage.success('审计报告已下载')
+  ElMessage.success('审计报告 PDF 已下载')
 }
 
 function latestTrendValue(rows, key, fallback = 0) {
@@ -144,6 +159,16 @@ function latestTrendValue(rows, key, fallback = 0) {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
   margin-bottom: 16px;
+}
+
+.export-card {
+  margin-bottom: 16px;
+}
+
+.export-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .trend-list {
@@ -165,10 +190,15 @@ function latestTrendValue(rows, key, fallback = 0) {
 }
 
 .report-preview {
-  min-height: 420px;
-  max-height: calc(100vh - 260px);
+  height: 100%;
   overflow: auto;
   padding: 0;
+}
+
+.report-preview-shell {
+  height: min(640px, calc(100vh - 260px));
+  min-height: 420px;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -178,6 +208,16 @@ function latestTrendValue(rows, key, fallback = 0) {
   max-width: none;
   border: 0;
   border-radius: 0;
+}
+
+.preview-empty {
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+.generate-btn {
+  min-width: 124px;
 }
 
 .card-header {

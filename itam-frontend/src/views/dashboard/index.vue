@@ -66,6 +66,24 @@
       </article>
     </section>
 
+    <section class="dashboard-grid trend-grid">
+      <article class="panel trend-panel">
+        <header class="panel-head">
+          <h3>采购和报废趋势</h3>
+          <el-button link type="primary" @click="$router.push('/purchase')">采购管理</el-button>
+        </header>
+        <div ref="purchaseScrapRef" class="trend-chart" />
+      </article>
+
+      <article class="panel trend-panel">
+        <header class="panel-head">
+          <h3>待退役资产趋势</h3>
+          <el-button link type="primary" @click="$router.push('/asset/list')">查看资产</el-button>
+        </header>
+        <div ref="retirementTrendRef" class="trend-chart" />
+      </article>
+    </section>
+
     <section class="dashboard-grid lower-grid">
       <article class="panel recent-panel">
         <header class="panel-head">
@@ -122,10 +140,16 @@ import { getEnterpriseDashboard } from '../../api/dashboard'
 const statusRef = ref(null)
 const categoryRef = ref(null)
 const peopleRef = ref(null)
+const purchaseScrapRef = ref(null)
+const retirementTrendRef = ref(null)
 const charts = []
+let resizeTimer = null
 const data = reactive({
   metrics: [],
   categoryDistribution: [],
+  purchaseTrend: { months: [], amount: [], quantity: [] },
+  scrapTrend: { months: [], submitted: [], approved: [] },
+  retirementTrend: { months: [], due: [], overdue: 0 },
   lifecycleDistribution: [],
   retirementSoonAssets: [],
   maintenance: { top10: [], mttr: '0小时', monthCost: 0, yearCost: 0 },
@@ -182,6 +206,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', resizeCharts)
+  if (resizeTimer) window.clearTimeout(resizeTimer)
   charts.forEach(chart => chart.dispose())
 })
 
@@ -197,6 +222,8 @@ function renderCharts() {
   renderDonut(statusRef.value, statusDistribution.value, statusColors, `${formatValue(totalAssets.value)}\n在管资产`)
   renderDonut(categoryRef.value, categoryLegend.value, categoryColors, '')
   renderPersonnelTrend()
+  renderPurchaseScrapTrend()
+  renderRetirementTrend()
   resizeCharts()
 }
 
@@ -225,6 +252,50 @@ function renderDonut(target, rows, colors, centerText) {
   charts.push(chart)
 }
 
+function renderPurchaseScrapTrend() {
+  if (!purchaseScrapRef.value) return
+  const purchase = data.purchaseTrend || {}
+  const scrap = data.scrapTrend || {}
+  const months = purchase.months?.length ? purchase.months : scrap.months || []
+  const chart = echarts.init(purchaseScrapRef.value)
+  chart.setOption({
+    color: ['#2478ff', '#ff9345', '#dc2626'],
+    tooltip: { trigger: 'axis' },
+    legend: { top: 0, right: 0, data: ['采购金额', '采购数量', '报废通过'] },
+    grid: { left: 58, right: 42, top: 44, bottom: 30 },
+    xAxis: { type: 'category', data: months, axisTick: { show: false } },
+    yAxis: [
+      { type: 'value', name: '金额', splitLine: { lineStyle: { color: '#edf2f8' } }, axisLabel: { formatter: value => `¥${formatCompact(value)}` } },
+      { type: 'value', name: '数量', minInterval: 1, splitLine: { show: false } }
+    ],
+    series: [
+      { name: '采购金额', type: 'bar', barMaxWidth: 26, data: purchase.amount || [], itemStyle: { borderRadius: [4, 4, 0, 0] } },
+      { name: '采购数量', type: 'line', yAxisIndex: 1, smooth: true, symbolSize: 6, data: purchase.quantity || [] },
+      { name: '报废通过', type: 'line', yAxisIndex: 1, smooth: true, symbolSize: 6, data: scrap.approved || [] }
+    ]
+  })
+  charts.push(chart)
+}
+
+function renderRetirementTrend() {
+  if (!retirementTrendRef.value) return
+  const trend = data.retirementTrend || {}
+  const chart = echarts.init(retirementTrendRef.value)
+  chart.setOption({
+    color: ['#7657e8', '#f04438'],
+    tooltip: { trigger: 'axis' },
+    legend: { top: 0, right: 0, data: ['预计退役', '已超期'] },
+    grid: { left: 38, right: 18, top: 44, bottom: 30 },
+    xAxis: { type: 'category', data: trend.months || [], axisTick: { show: false } },
+    yAxis: { type: 'value', minInterval: 1, splitLine: { lineStyle: { color: '#edf2f8' } } },
+    series: [
+      { name: '预计退役', type: 'bar', barMaxWidth: 30, data: trend.due || [], itemStyle: { borderRadius: [4, 4, 0, 0] } },
+      { name: '已超期', type: 'line', smooth: true, symbolSize: 7, data: (trend.months || []).map((_, index) => index === 0 ? Number(trend.overdue || 0) : 0) }
+    ]
+  })
+  charts.push(chart)
+}
+
 function renderPersonnelTrend() {
   if (!peopleRef.value) return
   const trend = data.personnelTrend || {}
@@ -245,7 +316,10 @@ function renderPersonnelTrend() {
 }
 
 function resizeCharts() {
-  charts.forEach(chart => chart.resize())
+  if (resizeTimer) window.clearTimeout(resizeTimer)
+  resizeTimer = window.setTimeout(() => {
+    charts.forEach(chart => chart.resize())
+  }, 120)
 }
 
 function card(label, value, change, changeTone, tone, icon, caption = '') {
@@ -274,6 +348,12 @@ function formatValue(value) {
   return Number(value || 0).toLocaleString()
 }
 
+function formatCompact(value) {
+  const number = Number(value || 0)
+  if (Math.abs(number) >= 10000) return `${Math.round(number / 1000) / 10}万`
+  return number.toLocaleString()
+}
+
 function percent(value, total) {
   if (!total) return '0%'
   return `${Math.round((Number(value || 0) / total) * 1000) / 10}%`
@@ -288,47 +368,60 @@ function percentValue(value) {
 <style scoped>
 .dashboard-page {
   display: grid;
-  gap: 18px;
+  gap: 16px;
 }
 
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(150px, 1fr));
-  gap: 16px;
+  gap: 14px;
 }
 
 .summary-card,
 .panel {
-  border: 1px solid #e6edf7;
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 8px 24px rgba(18, 46, 94, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: var(--shadow);
 }
 
 .summary-card {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 16px;
-  min-height: 126px;
-  padding: 20px;
+  gap: 14px;
+  min-height: 112px;
+  padding: 18px;
+  overflow: hidden;
+}
+
+.summary-card::after {
+  position: absolute;
+  right: -30px;
+  bottom: -36px;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: rgba(25, 117, 252, 0.08);
+  content: "";
 }
 
 .summary-icon {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 54px;
-  height: 54px;
+  width: 48px;
+  height: 48px;
   border-radius: 14px;
-  font-size: 30px;
+  font-size: 25px;
 }
 
-.summary-icon.blue { color: #2478ff; background: #eaf2ff; }
-.summary-icon.green { color: #18b87a; background: #e9f9f2; }
-.summary-icon.cyan { color: #2aa8e8; background: #e8f7ff; }
-.summary-icon.purple { color: #6b63ff; background: #f0efff; }
-.summary-icon.orange { color: #ff8a3d; background: #fff0e8; }
-.summary-icon.violet { color: #7657e8; background: #f0ecff; }
+.summary-icon.blue { color: #1975fc; background: #e5f2ff; }
+.summary-icon.green { color: #16a34a; background: #eaf8f0; }
+.summary-icon.cyan { color: #0ea5e9; background: #e8f7ff; }
+.summary-icon.purple { color: #7c3aed; background: #f1edff; }
+.summary-icon.orange { color: #d97706; background: #fff7e8; }
+.summary-icon.violet { color: #2563eb; background: #eef4ff; }
 
 .summary-body {
   display: grid;
@@ -336,26 +429,26 @@ function percentValue(value) {
 }
 
 .summary-body span {
-  color: #25345d;
-  font-size: 15px;
+  color: var(--muted);
+  font-size: 13px;
   font-weight: 700;
 }
 
 .summary-body strong {
-  margin-top: 10px;
-  color: #102044;
-  font-size: 28px;
+  margin-top: 8px;
+  color: var(--text);
+  font-size: 26px;
   line-height: 1;
 }
 
 .summary-body small {
-  margin-top: 12px;
-  color: #8a96ad;
+  margin-top: 10px;
+  color: var(--muted);
   font-size: 13px;
 }
 
-.summary-body small.up { color: #23a66a; }
-.summary-body small.down { color: #f04438; }
+.summary-body small.up { color: var(--success); }
+.summary-body small.down { color: var(--danger); }
 
 .dashboard-grid {
   display: grid;
@@ -367,6 +460,10 @@ function percentValue(value) {
 }
 
 .lower-grid {
+  grid-template-columns: minmax(430px, 1fr) minmax(430px, 1fr);
+}
+
+.trend-grid {
   grid-template-columns: minmax(430px, 1fr) minmax(430px, 1fr);
 }
 
@@ -389,8 +486,8 @@ function percentValue(value) {
 
 .panel-head h3 {
   margin: 0;
-  color: #17254d;
-  font-size: 18px;
+  color: var(--text);
+  font-size: 17px;
 }
 
 .donut-layout {
@@ -415,7 +512,7 @@ function percentValue(value) {
   grid-template-columns: 10px minmax(70px, 1fr) 56px 52px;
   gap: 10px;
   align-items: center;
-  color: #53617d;
+  color: var(--muted);
   font-size: 13px;
 }
 
@@ -427,7 +524,7 @@ function percentValue(value) {
 
 .legend-row strong,
 .legend-row em {
-  color: #1a2a52;
+  color: var(--text);
   font-style: normal;
   font-weight: 700;
   text-align: right;
@@ -445,6 +542,11 @@ function percentValue(value) {
   height: 260px;
 }
 
+.trend-chart {
+  width: 100%;
+  height: 280px;
+}
+
 .people-stats {
   display: grid;
   gap: 12px;
@@ -456,13 +558,14 @@ function percentValue(value) {
   align-items: center;
   gap: 12px;
   padding: 14px;
-  border-radius: 8px;
-  background: #f6f9fe;
-  color: #607096;
+  border-radius: 14px;
+  border: 1px solid #edf4ff;
+  background: linear-gradient(135deg, #ffffff, var(--panel-soft));
+  color: var(--muted);
 }
 
 .people-stats strong {
-  color: #102044;
+  color: var(--text);
   font-size: 20px;
 }
 
@@ -472,6 +575,7 @@ function percentValue(value) {
   }
 
   .main-grid,
+  .trend-grid,
   .lower-grid {
     grid-template-columns: repeat(2, minmax(320px, 1fr));
   }
@@ -484,6 +588,7 @@ function percentValue(value) {
 @media (max-width: 900px) {
   .summary-grid,
   .main-grid,
+  .trend-grid,
   .lower-grid,
   .donut-layout,
   .people-layout {

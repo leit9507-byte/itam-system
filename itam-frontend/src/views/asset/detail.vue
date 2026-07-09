@@ -57,32 +57,31 @@
         </el-card>
 
         <el-card shadow="never">
-          <template #header>生命周期时间轴</template>
-          <Timeline :items="detail.lifecycles" />
-        </el-card>
-
-        <el-card shadow="never">
-          <template #header>字段变更历史</template>
-          <el-table :data="pagedChanges" border empty-text="暂无字段变更记录">
-            <el-table-column prop="field_label" label="字段" width="120" />
-            <el-table-column prop="old_value" label="修改前" min-width="160" show-overflow-tooltip />
-            <el-table-column prop="new_value" label="修改后" min-width="160" show-overflow-tooltip />
-            <el-table-column prop="operator" label="操作人" width="110" />
-            <el-table-column prop="created_at" label="时间" width="170" />
-          </el-table>
-          <div class="pagination-bar">
-            <el-pagination
-              v-model:current-page="changePagination.page"
-              v-model:page-size="changePagination.pageSize"
-              :page-sizes="[10, 20, 50, 100]"
-              :total="detail.changes.length"
-              layout="total, sizes, prev, pager, next"
-            />
-          </div>
+          <template #header>
+            <div class="history-header">
+              <span>完整历史时间线</span>
+              <el-segmented v-model="historyFilter" :options="historyFilterOptions" />
+            </div>
+          </template>
+          <Timeline :items="filteredTimeline" />
         </el-card>
       </div>
 
       <div class="page">
+        <el-card shadow="never">
+          <template #header>风险提示</template>
+          <el-space direction="vertical" alignment="stretch" style="width: 100%">
+            <el-alert
+              v-for="risk in detail.risks"
+              :key="risk.message"
+              :type="risk.level === 'high' ? 'error' : risk.level === 'medium' ? 'warning' : 'success'"
+              :title="risk.message"
+              show-icon
+              :closable="false"
+            />
+          </el-space>
+        </el-card>
+
         <el-card shadow="never">
           <template #header>
             <div class="card-header">
@@ -117,43 +116,12 @@
               v-model:current-page="attachmentPagination.page"
               v-model:page-size="attachmentPagination.pageSize"
               :page-sizes="[10, 20, 50, 100]"
-              :total="attachments.length"
+              :total="attachmentPagination.total"
               layout="total, sizes, prev, pager, next"
+              @current-change="loadAttachments"
+              @size-change="handleAttachmentSizeChange"
             />
           </div>
-        </el-card>
-
-        <el-card shadow="never">
-          <template #header>出入库记录</template>
-          <el-table :data="pagedInventoryRecords" border empty-text="暂无出入库记录">
-            <el-table-column prop="type" label="类型" width="80" />
-            <el-table-column prop="target" label="目标" />
-            <el-table-column prop="operator" label="操作人" width="110" />
-            <el-table-column prop="time" label="时间" width="170" />
-          </el-table>
-          <div class="pagination-bar">
-            <el-pagination
-              v-model:current-page="inventoryPagination.page"
-              v-model:page-size="inventoryPagination.pageSize"
-              :page-sizes="[10, 20, 50, 100]"
-              :total="detail.inventoryRecords.length"
-              layout="total, sizes, prev, pager, next"
-            />
-          </div>
-        </el-card>
-
-        <el-card shadow="never">
-          <template #header>风险提示</template>
-          <el-space direction="vertical" alignment="stretch" style="width: 100%">
-            <el-alert
-              v-for="risk in detail.risks"
-              :key="risk.message"
-              :type="risk.level === 'high' ? 'error' : risk.level === 'medium' ? 'warning' : 'success'"
-              :title="risk.message"
-              show-icon
-              :closable="false"
-            />
-          </el-space>
         </el-card>
       </div>
     </div>
@@ -169,18 +137,27 @@ import { getAssetDetail, statusMap } from '../../api/asset'
 import { archiveAssetFile, deleteAssetFile, downloadAssetFile, listAssetFiles, loadAssetQrCode, restoreAssetFile, uploadAssetFile } from '../../api/file'
 
 const route = useRoute()
-const detail = reactive({ asset: null, lifecycles: [], changes: [], usageRecords: [], inventoryRecords: [], risks: [] })
+const detail = reactive({ asset: null, lifecycles: [], changes: [], checkouts: [], timeline: [], usageRecords: [], inventoryRecords: [], risks: [] })
 const attachments = ref([])
 const qrUrl = ref('')
-const attachmentPagination = reactive({ page: 1, pageSize: 10 })
-const inventoryPagination = reactive({ page: 1, pageSize: 10 })
-const changePagination = reactive({ page: 1, pageSize: 10 })
+const historyFilter = ref('all')
+const historyFilterOptions = [
+  { label: '全部', value: 'all' },
+  { label: '领用归还', value: 'checkout' },
+  { label: '字段变更', value: 'change' },
+  { label: '维修报废', value: 'repair_scrap' },
+  { label: '出入库', value: 'inventory' }
+]
+const attachmentPagination = reactive({ page: 1, pageSize: 10, total: 0 })
 
 const ownerName = computed(() => detail.asset?.owner_name || detail.asset?.owner_username || detail.asset?.owner || '未分配')
 const deptName = computed(() => detail.asset?.dept_name || detail.asset?.dept || '未绑定')
-const pagedAttachments = computed(() => paginate(attachments.value, attachmentPagination))
-const pagedInventoryRecords = computed(() => paginate(detail.inventoryRecords, inventoryPagination))
-const pagedChanges = computed(() => paginate(detail.changes, changePagination))
+const filteredTimeline = computed(() => {
+  if (historyFilter.value === 'all') return detail.timeline
+  if (historyFilter.value === 'repair_scrap') return detail.timeline.filter(item => ['repair', 'scrap'].includes(item.group))
+  return detail.timeline.filter(item => item.group === historyFilter.value)
+})
+const pagedAttachments = computed(() => attachments.value)
 
 const warrantyTag = computed(() => {
   const value = detail.asset?.warranty_expire_date
@@ -196,7 +173,14 @@ onMounted(async () => {
 
 async function loadAttachments() {
   if (!route.params.id) return
-  attachments.value = await listAssetFiles(route.params.id)
+  const result = await listAssetFiles(route.params.id, { page: attachmentPagination.page, page_size: attachmentPagination.pageSize })
+  attachments.value = result.list || result
+  attachmentPagination.total = result.total ?? attachments.value.length
+}
+
+function handleAttachmentSizeChange() {
+  attachmentPagination.page = 1
+  loadAttachments()
 }
 
 async function handleUpload(file) {
@@ -223,7 +207,7 @@ async function restoreFile(row) {
 }
 
 async function removeFile(row) {
-  await ElMessageBox.confirm(`确认删除附件 ${row.filename}？文件会标记为删除并保留审计追溯。`, '删除附件', { type: 'warning' })
+  await ElMessageBox.confirm(`确认删除附件 ${row.filename}？文件会标记为删除并保留审计追踪。`, '删除附件', { type: 'warning' })
   await deleteAssetFile(row.id)
   ElMessage.success('附件已删除')
   await loadAttachments()
@@ -235,10 +219,6 @@ function formatSize(size = 0) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
-function paginate(rows, pagination) {
-  const start = (pagination.page - 1) * pagination.pageSize
-  return rows.slice(start, start + pagination.pageSize)
-}
 </script>
 
 <style scoped>
@@ -248,11 +228,16 @@ function paginate(rows, pagination) {
   gap: 16px;
 }
 
-.card-header {
+.card-header,
+.history-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.history-header {
+  flex-wrap: wrap;
 }
 
 .basic-info-layout {

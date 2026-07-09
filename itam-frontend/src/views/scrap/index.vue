@@ -12,7 +12,7 @@
       <el-card shadow="never"><el-statistic title="审批中" :value="countByStatus('审批中')" /></el-card>
       <el-card shadow="never"><el-statistic title="已通过" :value="countByStatus('已通过')" /></el-card>
       <el-card shadow="never"><el-statistic title="已驳回" :value="countByStatus('已驳回')" /></el-card>
-      <el-card shadow="never"><el-statistic title="预计残值" :value="totalResidual" prefix="¥" /></el-card>
+      <el-card shadow="never"><el-statistic title="已处置" :value="countByStatus('已处置')" /></el-card>
     </div>
 
     <el-card shadow="never" class="filter-card">
@@ -33,6 +33,7 @@
             <el-option label="审批中" value="审批中" />
             <el-option label="已通过" value="已通过" />
             <el-option label="已驳回" value="已驳回" />
+            <el-option label="已处置" value="已处置" />
           </el-select>
         </el-form-item>
         <el-button @click="resetFilters">重置</el-button>
@@ -82,10 +83,11 @@
           </template>
         </el-table-column>
         <el-table-column prop="created_at" label="创建日期" width="120" />
-        <el-table-column label="操作" width="170" fixed="right">
+        <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
             <el-button type="success" link :disabled="row.status !== '审批中'" @click="approve(row)">通过</el-button>
             <el-button type="danger" link :disabled="row.status !== '审批中'" @click="reject(row)">驳回</el-button>
+            <el-button type="primary" link :disabled="row.status !== '已通过'" @click="openDispose(row)">处置</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -101,18 +103,47 @@
         />
       </div>
     </el-card>
+
+    <el-dialog v-model="disposeDialog.visible" title="确认报废资产处置" width="560px">
+      <el-alert
+        :title="disposeDialog.row ? `${disposeDialog.row.asset_id} 将进入已处置终态` : '确认处置'"
+        type="warning"
+        show-icon
+        :closable="false"
+      />
+      <el-form :model="disposeDialog.form" label-width="110px" class="dispose-form">
+        <el-form-item label="实际残值">
+          <el-input-number v-model="disposeDialog.form.final_residual_value" :min="0" :precision="2" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="处置说明">
+          <el-input v-model="disposeDialog.form.disposal_remark" type="textarea" :rows="4" placeholder="例如：环保回收，回收单号 XXX；或已销毁并上传证明附件" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="disposeDialog.visible = false">取消</el-button>
+        <el-button type="primary" @click="dispose">确认处置</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { approveScrapRequest, getScrapRequests, rejectScrapRequest } from '../../api/asset'
+import { approveScrapRequest, disposeScrapRequest, getScrapRequests, rejectScrapRequest } from '../../api/asset'
 
 const requests = ref([])
 const allRequests = ref([])
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const filters = reactive({ createdRange: [], status: '' })
+const disposeDialog = reactive({
+  visible: false,
+  row: null,
+  form: {
+    final_residual_value: 0,
+    disposal_remark: ''
+  }
+})
 const SCRAP_SUMMARY_LIMIT = 500
 
 const totalResidual = computed(() => allRequests.value.reduce((sum, item) => sum + Number(item.estimated_residual_value || 0), 0))
@@ -169,7 +200,24 @@ async function reject(row) {
   await load()
 }
 
+function openDispose(row) {
+  disposeDialog.row = row
+  disposeDialog.form.final_residual_value = row.estimated_residual_value || 0
+  disposeDialog.form.disposal_remark = row.disposal_method ? `处置方式：${row.disposal_method}` : ''
+  disposeDialog.visible = true
+}
+
+async function dispose() {
+  if (!disposeDialog.row) return
+  await ElMessageBox.confirm(`确认 ${disposeDialog.row.asset_id} 已完成实物处置？处置后资产不可再领用、维修或盘点为普通资产。`, '确认处置', { type: 'warning' })
+  await disposeScrapRequest(disposeDialog.row.id, disposeDialog.form)
+  disposeDialog.visible = false
+  ElMessage.success('报废资产已处置归档')
+  await load()
+}
+
 function statusType(status) {
+  if (status === '已处置') return 'info'
   if (status === '已通过') return 'success'
   if (status === '已驳回') return 'danger'
   return 'warning'
@@ -206,6 +254,10 @@ function statusType(status) {
 .filter-grid :deep(.el-date-editor),
 .filter-grid :deep(.el-select) {
   width: 100%;
+}
+
+.dispose-form {
+  margin-top: 16px;
 }
 
 .pagination-bar {

@@ -31,6 +31,7 @@ class PurchaseItem(Base):
     category = Column(String(64), nullable=False)
     brand = Column(String(64), nullable=True)
     model = Column(String(64), nullable=True)
+    spec = Column(String(255), nullable=True)
     quantity = Column(Integer, default=1)
     unit_price = Column(Float, default=0)
     retirement_years = Column(Integer, nullable=True)

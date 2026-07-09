@@ -32,7 +32,51 @@ class AssetStatusChange(BaseModel):
     owner_user_id: Optional[str] = None
     dept_id: Optional[str] = None
     location: Optional[str] = None
+    borrow_due_date: Optional[str] = None
     remark: Optional[str] = None
+
+
+class AssetCheckoutCreate(BaseModel):
+    checkout_type: str = "in_use"
+    owner_user_id: Optional[str] = None
+    dept_id: Optional[str] = None
+    location: Optional[str] = None
+    due_date: Optional[str] = None
+    remark: Optional[str] = None
+
+
+class AssetCheckinCreate(BaseModel):
+    location: Optional[str] = None
+    remark: Optional[str] = None
+
+
+class AssetBatchCheckoutCreate(AssetCheckoutCreate):
+    asset_ids: list[str]
+
+
+class AssetBatchCheckinCreate(AssetCheckinCreate):
+    asset_ids: list[str]
+
+
+class AssetCheckoutOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    asset_id: str
+    checkout_type: str
+    assignee_user_id: Optional[str] = None
+    assignee_name: Optional[str] = None
+    dept_id: Optional[str] = None
+    location: Optional[str] = None
+    due_date: Optional[datetime] = None
+    status: str
+    checked_out_at: datetime
+    checked_out_by: str
+    checked_in_at: Optional[datetime] = None
+    checked_in_by: Optional[str] = None
+    checkin_location: Optional[str] = None
+    remark: Optional[str] = None
+    checkin_remark: Optional[str] = None
 
 
 class AssetUpdate(BaseModel):

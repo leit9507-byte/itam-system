@@ -19,14 +19,38 @@ class NotificationService:
     DEFAULT_EVENT_TYPES = {
         "inbound": True,
         "outbound": True,
+        "purchase": True,
+        "acceptance": True,
+        "scrap": True,
+        "repair": True,
         "stocktake": True,
+        "borrow_due": True,
+        "todo": True,
         "risk": True,
     }
     EVENT_LABELS = {
         "inbound": "入库通知",
         "outbound": "出库通知",
+        "purchase": "采购通知",
+        "acceptance": "验收通知",
+        "scrap": "报废通知",
+        "repair": "维修通知",
         "stocktake": "盘点通知",
+        "borrow_due": "借用到期",
+        "todo": "待办提醒",
         "risk": "风险通知",
+    }
+    EVENT_COLORS = {
+        "inbound": "green",
+        "outbound": "blue",
+        "purchase": "wathet",
+        "acceptance": "green",
+        "scrap": "orange",
+        "repair": "purple",
+        "stocktake": "turquoise",
+        "borrow_due": "red",
+        "todo": "yellow",
+        "risk": "red",
     }
 
     @staticmethod
@@ -63,7 +87,7 @@ class NotificationService:
             return False
 
         try:
-            NotificationService.send_message_with_setting(setting, NotificationService.format_event_message(event_type, title, lines))
+            NotificationService.send_event_message_with_setting(setting, event_type, title, lines)
             return True
         except Exception as exc:
             setting.last_test_status = "failed"
@@ -99,6 +123,45 @@ class NotificationService:
                     "操作时间：2026-07-02 19:20:00",
                 ],
             },
+            "purchase": {
+                "title": "采购流程待处理",
+                "lines": [
+                    "采购单号：PO-202607-001",
+                    "供应商：联想授权服务商",
+                    "采购金额：￥86,000",
+                    "当前状态：待审批",
+                    "处理建议：请进入采购模块复核并提交审批",
+                ],
+            },
+            "acceptance": {
+                "title": "采购验收待完善",
+                "lines": [
+                    "采购单号：PO-202607-001",
+                    "待验收设备：ThinkPad X1 Carbon / 8 台",
+                    "需补充字段：资产编号、序列号、使用人、位置",
+                    "处理建议：进入待办中心打开批量验收弹窗",
+                ],
+            },
+            "scrap": {
+                "title": "报废审批待处理",
+                "lines": [
+                    "资产编号：ITAM-001288",
+                    "资产名称：Dell U2720Q 显示器",
+                    "报废原因：维修成本过高",
+                    "预计残值：￥300",
+                    "处理建议：请复核后通过或驳回报废申请",
+                ],
+            },
+            "repair": {
+                "title": "维修任务提醒",
+                "lines": [
+                    "维修单号：RP-202607-009",
+                    "资产编号：ITAM-001688",
+                    "故障类型：屏幕异常",
+                    "维修供应商：外部维修商",
+                    "处理建议：维修完成后及时入库或重新分配",
+                ],
+            },
             "stocktake": {
                 "title": "盘点任务已开始",
                 "lines": [
@@ -108,6 +171,26 @@ class NotificationService:
                     "应盘资产：128 台",
                     "负责人：资产管理员",
                     "开始时间：2026-07-02 19:20:00",
+                ],
+            },
+            "borrow_due": {
+                "title": "借用资产即将到期",
+                "lines": [
+                    "资产编号：ITAM-002901",
+                    "资产名称：MacBook Pro 14",
+                    "借用人：李四（U-LISI）",
+                    "到期时间：2026-07-09",
+                    "处理建议：确认续借或回收入库",
+                ],
+            },
+            "todo": {
+                "title": "待办中心有新的处理事项",
+                "lines": [
+                    "待办类型：离职资产回收",
+                    "责任人：王五",
+                    "涉及资产：3 台",
+                    "优先级：高",
+                    "处理建议：进入待办中心批量处理",
                 ],
             },
             "risk": {
@@ -128,6 +211,7 @@ class NotificationService:
                 "event_type": key,
                 "label": NotificationService.EVENT_LABELS.get(key, key),
                 "message": NotificationService.format_event_message(key, item["title"], item["lines"]),
+                "rich": NotificationService.build_rich_preview(key, item["title"], item["lines"]),
             }
             for key, item in samples.items()
         ]
@@ -137,6 +221,15 @@ class NotificationService:
         label = NotificationService.EVENT_LABELS.get(event_type, "系统通知")
         body_lines = [f"【{label}】", title, *[line for line in (lines or []) if line]]
         return "\n".join(body_lines)
+
+    @staticmethod
+    def build_rich_preview(event_type: str, title: str, lines: list[str] | None = None) -> dict:
+        return {
+            "label": NotificationService.EVENT_LABELS.get(event_type, "系统通知"),
+            "title": f"{NotificationService.EVENT_LABELS.get(event_type, '系统通知')}｜{title}",
+            "color": NotificationService.EVENT_COLORS.get(event_type, "blue"),
+            "lines": [line for line in (lines or []) if line],
+        }
 
     @staticmethod
     def send_test(db: Session, message: str) -> NotificationSetting:
@@ -197,15 +290,63 @@ class NotificationService:
 
     @staticmethod
     def send_message_with_setting(setting: NotificationSetting, text: str) -> None:
+        title = "资产管理系统消息通知测试"
+        lines = [line for line in text.splitlines() if line.strip()] or [text]
+        payload = NotificationService.build_feishu_post_payload("todo", title, lines)
+        NotificationService.apply_signature(setting, payload)
+        result = NotificationService.post_json(setting.webhook_url, payload)
+        NotificationService.ensure_success_response(result)
+
+    @staticmethod
+    def send_event_message_with_setting(setting: NotificationSetting, event_type: str, title: str, lines: list[str] | None = None) -> None:
+        payload = NotificationService.build_feishu_post_payload(event_type, title, lines or [])
+        NotificationService.apply_signature(setting, payload)
+        result = NotificationService.post_json(setting.webhook_url, payload)
+        NotificationService.ensure_success_response(result)
+
+    @staticmethod
+    def build_feishu_post_payload(event_type: str, title: str, lines: list[str]) -> dict:
+        label = NotificationService.EVENT_LABELS.get(event_type, "系统通知")
+        color = NotificationService.EVENT_COLORS.get(event_type, "blue")
+        content = [
+            [{"tag": "text", "text": f"{label}\n"}],
+            [{"tag": "text", "text": f"{title}\n"}],
+        ]
+        for line in [line for line in lines if line]:
+            key, separator, value = line.partition("：")
+            if separator:
+                content.append([
+                    {"tag": "text", "text": f"{key}："},
+                    {"tag": "text", "text": value},
+                ])
+            else:
+                content.append([{"tag": "text", "text": line}])
+        content.append([{"tag": "text", "text": f"发送时间：{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"}])
         payload = {
-            "msg_type": "text",
-            "content": {"text": text},
+            "msg_type": "post",
+            "content": {
+                "post": {
+                    "zh_cn": {
+                        "title": f"{label}｜{title}",
+                        "content": content,
+                    }
+                }
+            },
         }
+        # 飞书 post 消息不支持直接设置侧边色条，这里把颜色留给前端预览使用。
+        payload["_preview_color"] = color
+        return payload
+
+    @staticmethod
+    def apply_signature(setting: NotificationSetting, payload: dict) -> None:
+        payload.pop("_preview_color", None)
         if setting.secret:
             timestamp = str(int(time.time()))
             payload["timestamp"] = timestamp
             payload["sign"] = NotificationService.build_feishu_sign(timestamp, setting.secret)
-        result = NotificationService.post_json(setting.webhook_url, payload)
+
+    @staticmethod
+    def ensure_success_response(result: dict) -> None:
         status_code = result.get("StatusCode") or result.get("code")
         status_message = result.get("StatusMessage") or result.get("msg") or "sent"
         if status_code not in (0, "0", None):

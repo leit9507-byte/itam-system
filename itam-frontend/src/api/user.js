@@ -4,6 +4,10 @@ export function login(payload) {
   return request.post('/auth/login', payload)
 }
 
+export function getCurrentPermissions() {
+  return request.get('/auth/me/permissions', { silentError: true })
+}
+
 export function startSso(providerType) {
   return request.get(`/auth/sso/${providerType}/start`)
 }

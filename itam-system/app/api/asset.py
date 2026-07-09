@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import operator_from_request, user_context_from_request
 from app.models.asset import Asset
-from app.schemas.asset import AssetBatchImport, AssetCreate, AssetImportResult, AssetOut, AssetStatusChange, AssetTextImport, AssetUpdate
+from app.schemas.asset import AssetBatchCheckinCreate, AssetBatchCheckoutCreate, AssetBatchImport, AssetCheckinCreate, AssetCheckoutCreate, AssetCheckoutOut, AssetCreate, AssetImportResult, AssetOut, AssetStatusChange, AssetTextImport, AssetUpdate
 from app.services.approval_service import ApprovalService
 from app.services.asset_service import AssetService, AssetValidationError
 
@@ -25,7 +25,10 @@ class ReclaimApprovalPayload(BaseModel):
 
 @router.post("/create", response_model=AssetOut)
 def create_asset(payload: AssetCreate, request: Request, db: Session = Depends(get_db)):
-    return AssetService.create_asset(db, payload, operator_from_request(request))
+    try:
+        return AssetService.create_asset(db, payload, operator_from_request(request))
+    except AssetValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/list")
@@ -48,9 +51,57 @@ def asset_summary(db: Session = Depends(get_db)):
     return AssetService.asset_summary(db)
 
 
+@router.get("/checkouts/list")
+def list_asset_checkouts(
+    page: int = 1,
+    page_size: int = 20,
+    keyword: str | None = None,
+    status: str | None = None,
+    checkout_type: str | None = None,
+    assignee_user_id: str | None = None,
+    dept_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    due_from: str | None = None,
+    due_to: str | None = None,
+    due_days: int = 7,
+    db: Session = Depends(get_db),
+):
+    return AssetService.list_checkout_records(
+        db,
+        page,
+        page_size,
+        keyword,
+        status,
+        checkout_type,
+        assignee_user_id,
+        dept_id,
+        date_from,
+        date_to,
+        due_from,
+        due_to,
+        due_days,
+    )
+
+
+@router.post("/checkouts/batch-checkout")
+def batch_checkout_assets(payload: AssetBatchCheckoutCreate, request: Request, db: Session = Depends(get_db)):
+    return AssetService.batch_checkout_assets(db, payload, operator_from_request(request))
+
+
+@router.post("/checkouts/batch-checkin")
+def batch_checkin_assets(payload: AssetBatchCheckinCreate, request: Request, db: Session = Depends(get_db)):
+    return AssetService.batch_checkin_assets(db, payload, operator_from_request(request))
+
+
 @router.get("/{asset_id}/changes")
 def asset_changes(asset_id: str, limit: int = 200, db: Session = Depends(get_db)):
     return AssetService.list_asset_changes(db, asset_id, limit)
+
+
+@router.get("/{asset_id}/checkouts", response_model=list[AssetCheckoutOut])
+def asset_checkouts(asset_id: str, limit: int = 200, db: Session = Depends(get_db)):
+    return AssetService.list_checkouts(db, asset_id, limit)
 
 
 @router.put("/{asset_id}", response_model=AssetOut)
@@ -126,8 +177,29 @@ def change_asset_status(asset_id: str, payload: AssetStatusChange, request: Requ
             payload.owner_user_id,
             payload.dept_id,
             payload.location,
+            payload.borrow_due_date,
             payload.remark,
         )
+    except AssetValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{asset_id}/checkout", response_model=AssetOut)
+def checkout_asset(asset_id: str, payload: AssetCheckoutCreate, request: Request, db: Session = Depends(get_db)):
+    try:
+        return AssetService.checkout_asset(db, asset_id, payload, operator_from_request(request))
+    except AssetValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{asset_id}/checkin", response_model=AssetOut)
+def checkin_asset(asset_id: str, payload: AssetCheckinCreate, request: Request, db: Session = Depends(get_db)):
+    try:
+        return AssetService.checkin_asset(db, asset_id, payload, operator_from_request(request))
     except AssetValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:

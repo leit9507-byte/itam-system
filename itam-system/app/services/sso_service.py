@@ -425,15 +425,26 @@ class FeishuClient:
     @staticmethod
     def test(config: dict) -> str:
         token = FeishuClient.tenant_access_token(config)
-        departments = FeishuClient.department_children(config, token, FeishuClient.root_department_id(config), page_size=1, limit=1)
-        return f"Feishu connection success. Root department children: {len(departments)}"
+        manual_departments = FeishuClient.configured_department_ids(config)
+        try:
+            if manual_departments and not FeishuClient.discover_child_departments(config):
+                users = FeishuClient.users_by_department(config, token, manual_departments[0], limit=1)
+                return f"Feishu connection success. Department {manual_departments[0]} users visible: {len(users)}"
+            departments = FeishuClient.department_children(config, token, manual_departments[0] if manual_departments else FeishuClient.root_department_id(config), page_size=1, limit=1)
+            return f"Feishu connection success. Department children visible: {len(departments)}"
+        except ValueError as exc:
+            if FeishuClient.is_no_dept_authority(exc):
+                raise ValueError(
+                    "飞书应用没有当前部门的数据权限。可在系统里填写“指定部门 ID 列表”，并关闭“自动同步子部门”；"
+                    "如果要从根部门 0 同步，则飞书应用需要全通讯录/根部门可见范围。"
+                ) from exc
+            raise
 
     @staticmethod
     def sync_users(config: dict, limit: int = 200) -> list[UserUpsert]:
         token = FeishuClient.tenant_access_token(config)
-        root_id = FeishuClient.root_department_id(config)
         department_names: dict[str, str] = {}
-        department_ids = FeishuClient.collect_department_ids(config, token, root_id, department_names, limit)
+        department_ids = FeishuClient.collect_department_ids(config, token, department_names, limit)
         users: list[UserUpsert] = []
         seen: set[str] = set()
         for department_id in department_ids:
@@ -463,13 +474,21 @@ class FeishuClient:
         return users
 
     @staticmethod
-    def collect_department_ids(config: dict, token: str, root_id: str, department_names: dict[str, str], limit: int) -> list[str]:
-        queue = [root_id]
-        result = [root_id]
+    def collect_department_ids(config: dict, token: str, department_names: dict[str, str], limit: int) -> list[str]:
+        start_ids = FeishuClient.configured_department_ids(config) or [FeishuClient.root_department_id(config)]
+        if not FeishuClient.discover_child_departments(config):
+            return start_ids
+        queue = list(start_ids)
+        result = list(dict.fromkeys(start_ids))
         max_departments = int(config.get("department_limit") or limit or 200)
         while queue and len(result) < max_departments:
             current = queue.pop(0)
-            children = FeishuClient.department_children(config, token, current)
+            try:
+                children = FeishuClient.department_children(config, token, current)
+            except ValueError as exc:
+                if FeishuClient.is_no_dept_authority(exc) and FeishuClient.configured_department_ids(config):
+                    continue
+                raise
             for dept in children:
                 dept_id = dept.get("open_department_id") or dept.get("department_id")
                 if not dept_id or dept_id in result:
@@ -566,6 +585,29 @@ class FeishuClient:
     @staticmethod
     def root_department_id(config: dict) -> str:
         return str(config.get("root_department_id") or "0")
+
+    @staticmethod
+    def configured_department_ids(config: dict) -> list[str]:
+        raw = config.get("department_ids") or config.get("sync_department_ids")
+        if raw is None:
+            return []
+        if isinstance(raw, list):
+            values = raw
+        else:
+            values = re.split(r"[\s,，、;；]+", str(raw))
+        return [str(value).strip() for value in values if str(value).strip()]
+
+    @staticmethod
+    def discover_child_departments(config: dict) -> bool:
+        value = config.get("discover_child_departments", True)
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() not in {"0", "false", "no", "off"}
+
+    @staticmethod
+    def is_no_dept_authority(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return "no dept authority" in message or '"code":40004' in message or "code 40004" in message
 
     @staticmethod
     def user_status(item: dict) -> str:

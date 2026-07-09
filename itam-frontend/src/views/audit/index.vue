@@ -8,7 +8,7 @@
       <el-space>
         <el-button :icon="Setting" @click="openRules">规则设置</el-button>
         <el-button :icon="Document" @click="router.push('/report')">生成报告</el-button>
-        <el-button type="primary" :icon="Refresh" :loading="loading" @click="handleRun(true)">立即审计</el-button>
+        <el-button type="primary" :icon="Refresh" :loading="loading" @click="handleRun(true)">手动审计</el-button>
       </el-space>
     </div>
 
@@ -371,9 +371,9 @@ const builtinRuleCodes = new Set([
   'ASSET_IDLE_OVER_90_DAYS'
 ])
 const rulePagination = reactive({ page: 1, pageSize: 10 })
-const resultPagination = reactive({ page: 1, pageSize: 20 })
-const drawerRulePagination = reactive({ page: 1, pageSize: 20 })
-const responseAssetPagination = reactive({ page: 1, pageSize: 20 })
+const resultPagination = reactive({ page: 1, pageSize: 10 })
+const drawerRulePagination = reactive({ page: 1, pageSize: 10 })
+const responseAssetPagination = reactive({ page: 1, pageSize: 10 })
 const responseDrawer = reactive({
   visible: false,
   saving: false,

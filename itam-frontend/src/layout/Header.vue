@@ -113,8 +113,8 @@ onMounted(async () => {
     backendOnline.value = false
     backendLabel.value = '后端未连接'
   }
-  await loadPendingTodos()
-  todoTimer = window.setInterval(loadPendingTodos, 60000)
+  window.setTimeout(loadPendingTodos, 800)
+  todoTimer = window.setInterval(loadPendingTodos, 300000)
 })
 
 onUnmounted(() => {
@@ -138,9 +138,10 @@ function goSearch() {
 }
 
 async function loadPendingTodos() {
+  if (todoLoading.value) return
   todoLoading.value = true
   try {
-    pendingTodos.value = await getTodoItems()
+    pendingTodos.value = await getTodoItems({ fallback: false })
   } catch {
     pendingTodos.value = []
   } finally {
@@ -168,11 +169,12 @@ function priorityType(priority) {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  height: 76px;
+  height: 68px;
   min-width: 0;
   border-bottom: 1px solid var(--line);
-  background: #fff;
-  box-shadow: 0 6px 18px rgba(22, 44, 82, 0.06);
+  padding: 0 22px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 4px 14px rgba(25, 117, 252, 0.05);
 }
 
 .header-left,
@@ -193,6 +195,9 @@ function priorityType(priority) {
 
 .collapse-button {
   flex: 0 0 auto;
+  border: 0;
+  background: #f0f6ff;
+  color: var(--primary);
 }
 
 .title-block {
@@ -203,7 +208,7 @@ h1 {
   overflow: hidden;
   margin: 0;
   color: var(--text);
-  font-size: 26px;
+  font-size: 22px;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -214,13 +219,14 @@ p {
 }
 
 .global-search {
-  width: 360px;
+  width: 340px;
 }
 
 :deep(.global-search .el-input__wrapper) {
   min-height: 44px;
-  border-radius: 10px;
-  box-shadow: 0 0 0 1px #dbe4f3 inset;
+  border-radius: 8px;
+  background: #f8fbff;
+  box-shadow: 0 0 0 1px #d8e7fb inset;
 }
 
 .notify-button {
@@ -230,9 +236,9 @@ p {
   width: 42px;
   height: 42px;
   border: 0;
-  border-radius: 50%;
-  background: #f2f7ff;
-  color: #0f4ea8;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #eef6ff, #e5f2ff);
+  color: var(--primary);
   font-size: 22px;
   cursor: pointer;
 }
@@ -247,7 +253,7 @@ p {
   height: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  background: #ff3347;
+  background: var(--danger);
   color: #fff;
   font-size: 12px;
   font-weight: 800;
@@ -281,14 +287,14 @@ p {
   width: 100%;
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   background: #fff;
   text-align: left;
   cursor: pointer;
 }
 
 .notify-row:hover {
-  border-color: #93c5fd;
+  border-color: #c5ddff;
   background: #f8fbff;
 }
 
@@ -326,7 +332,7 @@ p {
 
 .avatar {
   flex-shrink: 0;
-  background: linear-gradient(135deg, #0c4da2, #2478ff);
+  background: linear-gradient(135deg, #1975fc, #72adff);
 }
 
 .user-block {

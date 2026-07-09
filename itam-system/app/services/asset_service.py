@@ -16,13 +16,14 @@ from sqlalchemy.orm import Session
 from app.models.asset import Asset
 from app.models.audit_response import AuditResponse
 from app.models.audit_log import AssetChangeLog
+from app.models.checkout import AssetCheckout
 from app.models.file import AssetAttachment
 from app.models.lifecycle import Lifecycle
 from app.models.repair import RepairRecord
 from app.models.scrap import ScrapRequest
 from app.models.stocktake import StocktakeItem
 from app.models.user import UserDirectory
-from app.schemas.asset import AssetBatchImport, AssetCreate, AssetImportRow, AssetTextImport, AssetUpdate
+from app.schemas.asset import AssetBatchCheckinCreate, AssetBatchCheckoutCreate, AssetBatchImport, AssetCheckinCreate, AssetCheckoutCreate, AssetCreate, AssetImportRow, AssetTextImport, AssetUpdate
 from app.services.audit_log_service import AuditLogService
 from app.services.lifecycle_service import LifecycleService
 from app.services.notification_service import NotificationService
@@ -37,7 +38,8 @@ class AssetService:
     DEFAULT_COMPANY = "未设置公司"
     ASSIGNED_STATUSES = {"in_use", "borrowed"}
     UNASSIGNED_STATUSES = {"pending_purchase", "pending_acceptance", "in_stock", "idle", "ready_scrap"}
-    WORKFLOW_STATUSES = {"pending_purchase", "pending_acceptance", "pending_scrap", "scrapped"}
+    WORKFLOW_STATUSES = {"pending_purchase", "pending_acceptance", "pending_scrap", "scrapped", "disposed"}
+    TERMINAL_STATUSES = {"scrapped", "disposed"}
     IMPORT_TEMPLATE_HEADERS = [
         "asset_id",
         "asset_no",
@@ -92,6 +94,30 @@ class AssetService:
         return (value or "").strip()
 
     @staticmethod
+    def normalize_asset_no(value: str | None, fallback: str | None = None) -> str:
+        clean = AssetService.normalize_blank(value) or AssetService.normalize_blank(fallback)
+        if not clean:
+            raise AssetValidationError("资产编号不能为空")
+        if clean == "0" or (clean.isdigit() and int(clean) == 0):
+            raise AssetValidationError("资产编号不能为 0")
+        return clean
+
+    @staticmethod
+    def validate_asset_identity_unique(db: Session, *, asset_no: str | None = None, sn: str | None = None, current_asset_id: str | None = None) -> None:
+        if asset_no:
+            query = db.query(Asset).filter(Asset.asset_no == asset_no)
+            if current_asset_id:
+                query = query.filter(Asset.asset_id != current_asset_id)
+            if query.first():
+                raise AssetValidationError(f"资产编号已存在：{asset_no}")
+        if sn:
+            query = db.query(Asset).filter(Asset.sn == sn)
+            if current_asset_id:
+                query = query.filter(Asset.asset_id != current_asset_id)
+            if query.first():
+                raise AssetValidationError(f"序列号已存在：{sn}")
+
+    @staticmethod
     def validate_status_owner(asset: Asset, *, status_changed: bool = True) -> None:
         status = asset.status
         has_owner = bool(AssetService.normalize_blank(asset.owner_user_id))
@@ -104,6 +130,13 @@ class AssetService:
             raise AssetValidationError("在用、借出状态必须填写使用人/责任人")
         if status == "out_stock" and not has_owner and not has_location:
             raise AssetValidationError("已出库状态必须填写使用人/责任人或位置；公用设备请填写位置")
+
+    @staticmethod
+    def ensure_asset_operable(asset: Asset, action: str = "操作") -> None:
+        if asset.status == "scrapped":
+            raise AssetValidationError(f"资产已报废，只能进行处置归档，不能执行{action}")
+        if asset.status == "disposed":
+            raise AssetValidationError(f"资产已处置归档，不能执行{action}")
 
     @staticmethod
     def apply_warranty_expire(asset: Asset) -> None:
@@ -135,15 +168,19 @@ class AssetService:
     @staticmethod
     def create_asset(db: Session, payload: AssetCreate, operator: str = "system") -> Asset:
         user = AssetService.find_user(db, payload.owner_user_id)
+        asset_id = getattr(payload, "asset_id", None) or AssetService.generate_asset_id(db)
+        asset_no = AssetService.normalize_asset_no(payload.asset_no, asset_id)
+        sn = AssetService.normalize_blank(payload.sn) or None
+        AssetService.validate_asset_identity_unique(db, asset_no=asset_no, sn=sn)
         asset = Asset(
-            asset_id=getattr(payload, "asset_id", None) or AssetService.generate_asset_id(db),
-            asset_no=AssetService.normalize_blank(payload.asset_no) or None,
+            asset_id=asset_id,
+            asset_no=asset_no,
             company=AssetService.normalize_company(payload.company),
             name=payload.name,
             category=payload.category,
             brand=payload.brand,
             model=payload.model,
-            sn=payload.sn,
+            sn=sn,
             config=payload.config,
             purchase_price=payload.purchase_price,
             purchase_date=payload.purchase_date,
@@ -176,21 +213,20 @@ class AssetService:
             try:
                 with db.begin_nested():
                     normalized = AssetService.normalize_import_row(row)
-                    if normalized.sn and db.query(Asset).filter(Asset.sn == normalized.sn).first():
+                    asset_id = normalized.asset_id or AssetService.generate_asset_id(db)
+                    asset_no = AssetService.normalize_asset_no(normalized.asset_no, asset_id)
+                    if db.get(Asset, asset_id):
                         skipped += 1
-                        errors.append({"row": index, "message": f"duplicate sn: {normalized.sn}", "data": row.model_dump()})
+                        errors.append({"row": index, "message": f"duplicate asset_id: {asset_id}", "data": row.model_dump()})
                         continue
-                    if normalized.asset_id and db.get(Asset, normalized.asset_id):
-                        skipped += 1
-                        errors.append({"row": index, "message": f"duplicate asset_id: {normalized.asset_id}", "data": row.model_dump()})
-                        continue
+                    AssetService.validate_asset_identity_unique(db, asset_no=asset_no, sn=normalized.sn)
                     AssetService.validate_status_owner(
                         SimpleNamespace(status=normalized.status, owner_user_id=normalized.owner_user_id, location=normalized.location)
                     )
 
                     asset = Asset(
-                        asset_id=normalized.asset_id or AssetService.generate_asset_id(db),
-                        asset_no=AssetService.normalize_blank(normalized.asset_no) or None,
+                        asset_id=asset_id,
+                        asset_no=asset_no,
                         company=AssetService.normalize_company(normalized.company),
                         name=normalized.name,
                         category=normalized.category,
@@ -260,10 +296,16 @@ class AssetService:
         preview_items: list[dict] = []
         seen_sn: set[str] = set()
         seen_asset_id: set[str] = set()
+        seen_asset_no: set[str] = set()
 
         for index, row in enumerate(items, start=1):
             try:
                 normalized = AssetService.normalize_import_row(row)
+                asset_no = AssetService.normalize_asset_no(normalized.asset_no, normalized.asset_id or f"PREVIEW-{index}")
+                if asset_no in seen_asset_no:
+                    raise AssetValidationError(f"duplicate asset_no: {asset_no}")
+                AssetService.validate_asset_identity_unique(db, asset_no=asset_no)
+                seen_asset_no.add(asset_no)
                 if normalized.sn:
                     if normalized.sn in seen_sn or db.query(Asset).filter(Asset.sn == normalized.sn).first():
                         raise AssetValidationError(f"duplicate sn: {normalized.sn}")
@@ -541,6 +583,9 @@ class AssetService:
             data["dept_id"] = data["dept"]
         if data.get("price") is not None and not data.get("purchase_price"):
             data["purchase_price"] = data["price"]
+        data["asset_id"] = AssetService.normalize_blank(data.get("asset_id")) or None
+        data["asset_no"] = AssetService.normalize_blank(data.get("asset_no")) or None
+        data["sn"] = AssetService.normalize_blank(data.get("sn")) or None
 
         config = data.get("config") or {}
         if data.get("spec"):
@@ -638,7 +683,7 @@ class AssetService:
 
         total = db.query(func.count(Asset.asset_id)).scalar() or 0
         total_value = db.query(func.coalesce(func.sum(Asset.purchase_price), 0)).scalar() or 0
-        managed_filter = or_(Asset.status.is_(None), Asset.status != "scrapped")
+        managed_filter = or_(Asset.status.is_(None), ~Asset.status.in_(["scrapped", "disposed"]))
         managed_total = db.query(func.count(Asset.asset_id)).filter(managed_filter).scalar() or 0
         managed_total_value = db.query(func.coalesce(func.sum(Asset.purchase_price), 0)).filter(managed_filter).scalar() or 0
         current_month_count = db.query(func.count(Asset.asset_id)).filter(Asset.created_at >= current_month).scalar() or 0
@@ -699,6 +744,8 @@ class AssetService:
             raise ValueError("asset not found")
 
         data = payload.model_dump(exclude_unset=True)
+        if asset.status in AssetService.TERMINAL_STATUSES and any(key in data for key in {"status", "owner_user_id", "dept_id", "location"}):
+            raise AssetValidationError("已报废/已处置资产不能再修改状态、责任人、部门或位置")
         new_asset_id = AssetService.normalize_blank(data.pop("asset_id", None))
         original_values = AssetService.snapshot_asset(asset)
         if new_asset_id and new_asset_id != asset_id:
@@ -707,7 +754,11 @@ class AssetService:
         should_validate_status_owner = bool({"status", "owner_user_id"} & data.keys())
         for key, value in data.items():
             if key == "asset_no":
+                value = AssetService.normalize_asset_no(value)
+                AssetService.validate_asset_identity_unique(db, asset_no=value, current_asset_id=asset.asset_id)
+            if key == "sn":
                 value = AssetService.normalize_blank(value) or None
+                AssetService.validate_asset_identity_unique(db, sn=value, current_asset_id=asset.asset_id)
             if key == "company":
                 value = AssetService.normalize_company(value)
             if key == "owner_user_id":
@@ -803,7 +854,20 @@ class AssetService:
         finally:
             if mysql_fk_disabled:
                 db.execute(text("SET FOREIGN_KEY_CHECKS=1"))
-        LifecycleService.record(db, new_asset_id, "ASSET_ID_CHANGE", None, asset.status, operator, f"资产ID从 {old_asset_id} 调整为 {new_asset_id}")
+        LifecycleService.record(
+            db,
+            new_asset_id,
+            "ASSET_ID_CHANGE",
+            None,
+            asset.status,
+            operator,
+            LifecycleService.structured_remark(
+                reason="资产编号调整",
+                object=asset.asset_id,
+                location=asset.location,
+                extra={"old_asset_id": old_asset_id, "new_asset_id": new_asset_id},
+            ),
+        )
 
     @staticmethod
     def change_status(
@@ -814,6 +878,7 @@ class AssetService:
         owner_user_id: str | None = None,
         dept_id: str | None = None,
         location: str | None = None,
+        borrow_due_date: str | None = None,
         remark: str | None = None,
     ) -> Asset:
         asset = db.get(Asset, asset_id)
@@ -821,6 +886,8 @@ class AssetService:
             raise ValueError("asset not found")
 
         from_status = asset.status
+        if from_status in AssetService.TERMINAL_STATUSES:
+            raise AssetValidationError("已报废/已处置资产不能再做状态流转")
         previous_owner_user_id = asset.owner_user_id
         previous_user = AssetService.find_user(db, previous_owner_user_id)
         if owner_user_id is not None:
@@ -831,6 +898,7 @@ class AssetService:
         if location is not None:
             asset.location = location
         asset.status = to_status
+        AssetService.apply_borrow_due_date(asset, to_status, borrow_due_date)
         AssetService.validate_status_owner(asset, status_changed=to_status != from_status)
         lifecycle_remark = AssetService.inventory_lifecycle_remark(
             to_status,
@@ -840,12 +908,347 @@ class AssetService:
             asset.owner_user_id,
             user,
             asset.location,
+            borrow_due_date,
         )
         LifecycleService.record(db, asset.asset_id, "STATUS_CHANGE", from_status, to_status, operator, lifecycle_remark)
+        AssetService.sync_checkout_record(
+            db,
+            asset,
+            from_status,
+            to_status,
+            operator,
+            previous_owner_user_id,
+            previous_user,
+            user,
+            borrow_due_date,
+            remark,
+        )
         db.commit()
         db.refresh(asset)
         AssetService.notify_status_change(db, asset, from_status, to_status, operator, previous_user, previous_owner_user_id, user)
         return AssetService.to_out(asset, user)
+
+    @staticmethod
+    def checkout_asset(db: Session, asset_id: str, payload: AssetCheckoutCreate, operator: str = "system") -> Asset:
+        asset = db.get(Asset, asset_id)
+        if not asset:
+            raise ValueError("asset not found")
+        AssetService.ensure_asset_operable(asset, "领用/出库")
+        checkout_type = payload.checkout_type or "in_use"
+        if checkout_type not in {"in_use", "borrowed", "out_stock"}:
+            raise AssetValidationError("领用类型只能是 in_use、borrowed 或 out_stock")
+        return AssetService.change_status(
+            db,
+            asset_id,
+            checkout_type,
+            operator,
+            payload.owner_user_id,
+            payload.dept_id,
+            payload.location,
+            payload.due_date,
+            payload.remark,
+        )
+
+    @staticmethod
+    def checkin_asset(db: Session, asset_id: str, payload: AssetCheckinCreate, operator: str = "system") -> Asset:
+        asset = db.get(Asset, asset_id)
+        if not asset:
+            raise ValueError("asset not found")
+        AssetService.ensure_asset_operable(asset, "归还/入库")
+        return AssetService.change_status(
+            db,
+            asset_id,
+            "in_stock",
+            operator,
+            "",
+            "",
+            payload.location,
+            None,
+            payload.remark or "资产归还入库",
+        )
+
+    @staticmethod
+    def apply_borrow_due_date(asset: Asset, to_status: str, borrow_due_date: str | None) -> None:
+        config = dict(asset.config or {})
+        clean_due_date = AssetService.normalize_blank(borrow_due_date)
+        if to_status == "borrowed":
+            if not clean_due_date:
+                raise AssetValidationError("借出资产必须填写借用到期时间")
+            config["borrow_due_date"] = clean_due_date
+        else:
+            config.pop("borrow_due_date", None)
+        asset.config = config
+
+    @staticmethod
+    def sync_checkout_record(
+        db: Session,
+        asset: Asset,
+        from_status: str | None,
+        to_status: str,
+        operator: str,
+        previous_owner_user_id: str | None,
+        previous_user: UserDirectory | None,
+        current_user: UserDirectory | None,
+        borrow_due_date: str | None,
+        remark: str | None,
+    ) -> None:
+        if to_status == "in_stock":
+            AssetService.close_open_checkout(db, asset, operator, asset.location, remark or "资产归还入库")
+            return
+        if to_status not in {"in_use", "borrowed", "out_stock"}:
+            return
+
+        open_checkout = AssetService.open_checkout_for_asset(db, asset.asset_id)
+        same_assignment = (
+            open_checkout
+            and open_checkout.checkout_type == to_status
+            and (open_checkout.assignee_user_id or "") == (asset.owner_user_id or "")
+            and (open_checkout.location or "") == (asset.location or "")
+        )
+        due_date = AssetService.parse_optional_datetime(borrow_due_date)
+        if same_assignment:
+            open_checkout.dept_id = asset.dept_id
+            open_checkout.assignee_name = AssetService.user_label(current_user, asset.owner_user_id) if asset.owner_user_id else None
+            open_checkout.due_date = due_date
+            open_checkout.remark = AssetService.join_notes(open_checkout.remark, remark)
+            return
+
+        if open_checkout:
+            checkin_note = "重新领用"
+            if previous_owner_user_id and previous_owner_user_id != asset.owner_user_id:
+                checkin_note = f"转交给 {AssetService.user_label(current_user, asset.owner_user_id)}"
+            AssetService.close_checkout(open_checkout, operator, asset.location, checkin_note)
+
+        db.add(AssetCheckout(
+            asset_id=asset.asset_id,
+            checkout_type=to_status,
+            assignee_user_id=AssetService.normalize_blank(asset.owner_user_id),
+            assignee_name=AssetService.user_label(current_user, asset.owner_user_id) if asset.owner_user_id else None,
+            dept_id=asset.dept_id,
+            location=asset.location,
+            due_date=due_date,
+            checked_out_by=operator,
+            remark=remark,
+        ))
+
+    @staticmethod
+    def open_checkout_for_asset(db: Session, asset_id: str) -> AssetCheckout | None:
+        return (
+            db.query(AssetCheckout)
+            .filter(AssetCheckout.asset_id == asset_id, AssetCheckout.status == "open")
+            .order_by(AssetCheckout.checked_out_at.desc(), AssetCheckout.id.desc())
+            .first()
+        )
+
+    @staticmethod
+    def close_open_checkout(db: Session, asset: Asset, operator: str, location: str | None = None, remark: str | None = None) -> None:
+        checkout = AssetService.open_checkout_for_asset(db, asset.asset_id)
+        if checkout:
+            AssetService.close_checkout(checkout, operator, location, remark)
+
+    @staticmethod
+    def close_checkout(checkout: AssetCheckout, operator: str, location: str | None = None, remark: str | None = None) -> None:
+        checkout.status = "closed"
+        checkout.checked_in_at = datetime.utcnow()
+        checkout.checked_in_by = operator
+        checkout.checkin_location = AssetService.normalize_blank(location)
+        checkout.checkin_remark = AssetService.join_notes(checkout.checkin_remark, remark)
+
+    @staticmethod
+    def list_checkouts(db: Session, asset_id: str, limit: int = 200) -> list[dict]:
+        rows = (
+            db.query(AssetCheckout)
+            .filter(AssetCheckout.asset_id == asset_id)
+            .order_by(AssetCheckout.checked_out_at.desc(), AssetCheckout.id.desc())
+            .limit(min(max(limit, 1), 500))
+            .all()
+        )
+        return [AssetService.checkout_out(row) for row in rows]
+
+    @staticmethod
+    def list_checkout_records(
+        db: Session,
+        page: int = 1,
+        page_size: int = 20,
+        keyword: str | None = None,
+        status: str | None = None,
+        checkout_type: str | None = None,
+        assignee_user_id: str | None = None,
+        dept_id: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        due_from: str | None = None,
+        due_to: str | None = None,
+        due_days: int = 7,
+    ) -> dict:
+        now = datetime.utcnow()
+        due_limit = now + AssetService.timedelta_days(max(due_days, 0))
+        query = db.query(AssetCheckout, Asset).outerjoin(Asset, Asset.asset_id == AssetCheckout.asset_id)
+        clean_keyword = AssetService.normalize_blank(keyword)
+        if clean_keyword:
+            pattern = f"%{clean_keyword}%"
+            query = query.filter(
+                or_(
+                    AssetCheckout.asset_id.like(pattern),
+                    AssetCheckout.assignee_user_id.like(pattern),
+                    AssetCheckout.assignee_name.like(pattern),
+                    AssetCheckout.dept_id.like(pattern),
+                    AssetCheckout.location.like(pattern),
+                    AssetCheckout.remark.like(pattern),
+                    Asset.asset_no.like(pattern),
+                    Asset.name.like(pattern),
+                    Asset.category.like(pattern),
+                    Asset.brand.like(pattern),
+                    Asset.model.like(pattern),
+                    Asset.sn.like(pattern),
+                )
+            )
+        if checkout_type:
+            query = query.filter(AssetCheckout.checkout_type == checkout_type)
+        if assignee_user_id:
+            query = query.filter(AssetCheckout.assignee_user_id == assignee_user_id)
+        if dept_id:
+            query = query.filter(AssetCheckout.dept_id == dept_id)
+
+        checked_out_from = AssetService.parse_optional_datetime(date_from)
+        checked_out_to = AssetService.end_of_day(AssetService.parse_optional_datetime(date_to))
+        due_start = AssetService.parse_optional_datetime(due_from)
+        due_end = AssetService.end_of_day(AssetService.parse_optional_datetime(due_to))
+        if checked_out_from:
+            query = query.filter(AssetCheckout.checked_out_at >= checked_out_from)
+        if checked_out_to:
+            query = query.filter(AssetCheckout.checked_out_at <= checked_out_to)
+        if due_start:
+            query = query.filter(AssetCheckout.due_date >= due_start)
+        if due_end:
+            query = query.filter(AssetCheckout.due_date <= due_end)
+
+        if status == "open":
+            query = query.filter(AssetCheckout.status == "open")
+        elif status == "closed":
+            query = query.filter(AssetCheckout.status == "closed")
+        elif status == "overdue":
+            query = query.filter(AssetCheckout.status == "open", AssetCheckout.due_date.isnot(None), AssetCheckout.due_date < now)
+        elif status == "due_soon":
+            query = query.filter(AssetCheckout.status == "open", AssetCheckout.due_date.isnot(None), AssetCheckout.due_date >= now, AssetCheckout.due_date <= due_limit)
+        elif status == "current":
+            query = query.filter(AssetCheckout.status == "open")
+
+        total = query.count()
+        page = max(page, 1)
+        page_size = min(max(page_size or 20, 1), 200)
+        rows = (
+            query.order_by(AssetCheckout.checked_out_at.desc(), AssetCheckout.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        base = db.query(AssetCheckout)
+        summary = {
+            "open": base.filter(AssetCheckout.status == "open").count(),
+            "closed": base.filter(AssetCheckout.status == "closed").count(),
+            "overdue": base.filter(AssetCheckout.status == "open", AssetCheckout.due_date.isnot(None), AssetCheckout.due_date < now).count(),
+            "due_soon": base.filter(AssetCheckout.status == "open", AssetCheckout.due_date.isnot(None), AssetCheckout.due_date >= now, AssetCheckout.due_date <= due_limit).count(),
+        }
+        return {
+            "list": [AssetService.checkout_out(checkout, asset) for checkout, asset in rows],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "summary": summary,
+        }
+
+    @staticmethod
+    def batch_checkout_assets(db: Session, payload: AssetBatchCheckoutCreate, operator: str = "system") -> dict:
+        return AssetService.batch_checkout_action(db, payload.asset_ids, "checkout", payload, operator)
+
+    @staticmethod
+    def batch_checkin_assets(db: Session, payload: AssetBatchCheckinCreate, operator: str = "system") -> dict:
+        return AssetService.batch_checkout_action(db, payload.asset_ids, "checkin", payload, operator)
+
+    @staticmethod
+    def batch_checkout_action(db: Session, asset_ids: list[str], action: str, payload: AssetCheckoutCreate | AssetCheckinCreate, operator: str) -> dict:
+        rows: list[dict] = []
+        errors: list[dict] = []
+        clean_ids = [AssetService.normalize_blank(asset_id) for asset_id in asset_ids if AssetService.normalize_blank(asset_id)]
+        for asset_id in dict.fromkeys(clean_ids):
+            try:
+                if action == "checkout":
+                    asset = AssetService.checkout_asset(db, asset_id, payload, operator)
+                else:
+                    asset = AssetService.checkin_asset(db, asset_id, payload, operator)
+                rows.append(asset)
+            except (AssetValidationError, ValueError) as exc:
+                errors.append({"asset_id": asset_id, "message": str(exc)})
+        return {"success": len(rows), "failed": len(errors), "assets": rows, "errors": errors}
+
+    @staticmethod
+    def checkout_out(row: AssetCheckout, asset: Asset | None = None) -> dict:
+        now = datetime.utcnow()
+        due_date = row.due_date
+        is_open = row.status == "open"
+        is_overdue = bool(is_open and due_date and due_date < now)
+        return {
+            "id": row.id,
+            "asset_id": row.asset_id,
+            "asset_no": asset.asset_no if asset else None,
+            "asset_name": asset.name if asset else None,
+            "asset_category": asset.category if asset else None,
+            "asset_status": asset.status if asset else None,
+            "checkout_type": row.checkout_type,
+            "assignee_user_id": row.assignee_user_id,
+            "assignee_name": row.assignee_name,
+            "dept_id": row.dept_id,
+            "location": row.location,
+            "due_date": row.due_date,
+            "status": row.status,
+            "is_overdue": is_overdue,
+            "days_overdue": (now.date() - due_date.date()).days if is_overdue and due_date else 0,
+            "checked_out_at": row.checked_out_at,
+            "checked_out_by": row.checked_out_by,
+            "checked_in_at": row.checked_in_at,
+            "checked_in_by": row.checked_in_by,
+            "checkin_location": row.checkin_location,
+            "remark": row.remark,
+            "checkin_remark": row.checkin_remark,
+        }
+
+    @staticmethod
+    def parse_optional_datetime(value: str | None) -> datetime | None:
+        clean = AssetService.normalize_blank(value)
+        if not clean:
+            return None
+        try:
+            return datetime.fromisoformat(clean.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            try:
+                return datetime.strptime(clean, "%Y-%m-%d")
+            except ValueError as exc:
+                raise AssetValidationError(f"日期格式不正确：{clean}，请使用 YYYY-MM-DD") from exc
+
+    @staticmethod
+    def end_of_day(value: datetime | None) -> datetime | None:
+        if not value:
+            return None
+        return value.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    @staticmethod
+    def timedelta_days(days: int):
+        from datetime import timedelta
+
+        return timedelta(days=days)
+
+    @staticmethod
+    def join_notes(original: str | None, note: str | None) -> str | None:
+        clean_original = AssetService.normalize_blank(original)
+        clean_note = AssetService.normalize_blank(note)
+        if not clean_note:
+            return clean_original
+        if not clean_original:
+            return clean_note
+        if clean_note in clean_original:
+            return clean_original
+        return f"{clean_original}；{clean_note}"
 
     @staticmethod
     def notify_status_change(
@@ -912,6 +1315,7 @@ class AssetService:
             "ready_scrap": "待报废",
             "pending_scrap": "已提交报废审批",
             "scrapped": "已报废",
+            "disposed": "已处置",
         }.get(value or "", value or "-")
 
     @staticmethod
@@ -937,7 +1341,8 @@ class AssetService:
         owner_user_id: str | None,
         owner_user: UserDirectory | None,
         location: str | None = None,
-    ) -> str | None:
+        borrow_due_date: str | None = None,
+    ) -> dict | str | None:
         base = AssetService.normalize_blank(remark)
         labels = {
             "in_stock": ("退回人", AssetService.user_label(previous_user, previous_owner_user_id)),
@@ -952,10 +1357,37 @@ class AssetService:
             key, value = "入库地址", AssetService.normalize_blank(location) or "-"
         if to_status == "out_stock" and not AssetService.normalize_blank(owner_user_id):
             key, value = "公用设备位置", AssetService.normalize_blank(location) or "-"
-        detail = f"{key}: {value}"
-        if detail in base:
-            return base
-        return f"{base}; {detail}" if base else detail
+        details = []
+        if base:
+            details.append(f"操作原因: {base}")
+        details.append(f"{key}: {value}")
+        if to_status != "in_stock":
+            details.append(f"原责任人: {AssetService.user_label(previous_user, previous_owner_user_id)}")
+            details.append(f"新责任人: {AssetService.user_label(owner_user, owner_user_id)}")
+        details.append(f"位置: {AssetService.normalize_blank(location) or '-'}")
+        if to_status == "borrowed":
+            due_date = AssetService.normalize_blank(borrow_due_date)
+            if due_date:
+                details.append(f"借用到期时间: {due_date}")
+        operation_object = {
+            "in_stock": "资产归还入库",
+            "in_use": "资产领用",
+            "borrowed": "资产借用",
+            "out_stock": "资产出库",
+        }.get(to_status, "资产状态流转")
+        return LifecycleService.structured_remark(
+            reason=base or operation_object,
+            object=operation_object,
+            previous_owner=AssetService.user_label(previous_user, previous_owner_user_id),
+            new_owner=AssetService.user_label(owner_user, owner_user_id),
+            location=AssetService.normalize_blank(location) or "-",
+            due_date=AssetService.normalize_blank(borrow_due_date) if to_status == "borrowed" else "",
+            extra={
+                "owner_label": key,
+                "owner_value": value,
+                "status": to_status,
+            },
+        )
 
     @staticmethod
     def find_user(db: Session, value: str | None) -> UserDirectory | None:

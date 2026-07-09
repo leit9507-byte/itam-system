@@ -13,12 +13,15 @@ PUBLIC_PATHS = {
     "/openapi.json",
     "/redoc",
     "/auth/login",
+    "/auth/me/permissions",
     "/approval/feishu/callback",
 }
 
 RESOURCE_PREFIXES = {
     "/asset": "asset",
     "/company": "asset",
+    "/location": "asset",
+    "/inventory": "asset",
     "/purchase": "purchase",
     "/repair": "repair",
     "/scrap": "asset",
@@ -33,8 +36,9 @@ RESOURCE_PREFIXES = {
     "/rbac": "rbac",
     "/files": "file",
     "/reports": "report",
+    "/todo": "asset",
     "/approval": "rbac",
-    "/ops": "rbac",
+    "/ops": "ops",
 }
 
 

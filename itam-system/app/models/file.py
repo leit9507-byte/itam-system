@@ -19,4 +19,4 @@ class AssetAttachment(Base):
     archived_at = Column(DateTime, nullable=True)
     deleted_at = Column(DateTime, nullable=True)
     remark = Column(String(512), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)

@@ -5,6 +5,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.core.database import Base
+from app.core.config import get_settings
 from app import models  # noqa: F401
 
 config = context.config
@@ -13,7 +14,7 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-database_url = os.getenv("DATABASE_URL")
+database_url = os.getenv("DATABASE_URL") or get_settings().database_url
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
 

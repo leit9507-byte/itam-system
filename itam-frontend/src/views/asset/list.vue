@@ -223,7 +223,7 @@
       <el-form :model="batch.form" label-width="110px" class="batch-form">
         <template v-if="batch.type === 'inbound'">
           <el-form-item label="入库地址" required>
-            <el-select v-model="batch.form.location" filterable clearable allow-create default-first-option style="width: 100%" placeholder="选择或填写入库地址">
+            <el-select v-model="batch.form.location" filterable clearable style="width: 100%" placeholder="选择入库地址">
               <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
             </el-select>
           </el-form-item>
@@ -237,10 +237,13 @@
               <el-option label="已出库" value="out_stock" />
             </el-select>
           </el-form-item>
-          <el-form-item label="领用人" required>
+          <el-form-item :label="batch.form.toStatus === 'borrowed' ? '借用人' : '领用人'" required>
             <el-select v-model="batch.form.owner_user_id" filterable remote reserve-keyword style="width: 100%" placeholder="搜索用户姓名/账号/部门" :remote-method="searchUsers" @change="fillUserToForm(batch.form, $event)">
               <el-option v-for="user in filteredUsers" :key="user.user_id" :label="userLabel(user)" :value="user.user_id" />
             </el-select>
+          </el-form-item>
+          <el-form-item v-if="batch.form.toStatus === 'borrowed'" label="借用到期" required>
+            <el-date-picker v-model="batch.form.borrow_due_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" placeholder="选择借用到期时间" />
           </el-form-item>
           <el-form-item label="部门"><el-input v-model="batch.form.dept_id" disabled /></el-form-item>
           <el-form-item label="意图说明">
@@ -363,7 +366,7 @@ const suppliers = ref([])
 const locations = ref([])
 const faultTypes = ref([])
 const filters = reactive({ keyword: '', status: '', category: '', company: '', supplier: '' })
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const batch = reactive({ visible: false, type: 'inbound', assets: [], form: defaultBatchForm() })
 const batchEdit = reactive({ visible: false, form: defaultBatchEditForm(), fields: defaultBatchEditFields() })
 const importDialog = reactive({ visible: false, loading: false, importing: false, content: '', preview: null, result: null })
@@ -462,6 +465,7 @@ function defaultBatchForm() {
     dept_id: '',
     dept_name: '',
     location: '',
+    borrow_due_date: '',
     applicant: '',
     reason: '',
     disposal_method: '环保回收',
@@ -595,7 +599,7 @@ function fillUserToForm(form, userId) {
 }
 
 function canInbound(row) {
-  return !['in_stock', 'pending_scrap', 'scrapped'].includes(row.status)
+  return !['in_stock', 'pending_scrap', 'scrapped', 'disposed'].includes(row.status)
 }
 
 function canOutbound(row) {
@@ -603,11 +607,11 @@ function canOutbound(row) {
 }
 
 function canRepair(row) {
-  return !['scrapped', 'pending_scrap', 'repair'].includes(row.status)
+  return !['scrapped', 'disposed', 'pending_scrap', 'repair'].includes(row.status)
 }
 
 function canScrap(row) {
-  return !['scrapped', 'pending_scrap'].includes(row.status)
+  return !['scrapped', 'disposed', 'pending_scrap'].includes(row.status)
 }
 
 function hasAssetOwner(row) {
@@ -880,26 +884,54 @@ function importErrorMessage(error, fallback) {
   return fallback
 }
 
+function showBatchOperationResult(results) {
+  const success = results.filter(item => item.ok).length
+  const failed = results.length - success
+  const firstFailed = results.find(item => !item.ok)
+  ElMessage.warning({
+    message: `${batchTitle.value}完成，成功 ${success}，失败 ${failed}${firstFailed ? `；${firstFailed.asset_id}: ${firstFailed.message}` : ''}`,
+    duration: 7000,
+    showClose: true
+  })
+}
+
 async function submitBatch() {
   if (!validateBatchAssets(batch.type, batch.assets)) return
   if (batch.type === 'inbound') {
     if (!batch.form.location) {
-      ElMessage.warning('请选择或填写入库地址')
+      ElMessage.warning('请选择入库地址')
       return
     }
   }
   if (batch.type === 'outbound') {
     if (!batch.form.owner_user_id) {
-      ElMessage.warning('请选择领用人')
+      ElMessage.warning(batch.form.toStatus === 'borrowed' ? '请选择借用人' : '请选择领用人')
+      return
+    }
+    if (batch.form.toStatus === 'borrowed' && !batch.form.borrow_due_date) {
+      ElMessage.warning('请选择借用到期时间')
       return
     }
     batch.form.outboundTarget = 'user'
     batch.form.location = ''
   }
+  const results = []
   for (const asset of batch.assets) {
-    if (batch.type === 'inbound') await inboundAsset(asset.asset_id, batch.form)
-    if (batch.type === 'outbound') await outboundAsset(asset.asset_id, batch.form)
-    if (batch.type === 'scrap') await createScrapRequest(asset.asset_id, batch.form)
+    try {
+      if (batch.type === 'inbound') await inboundAsset(asset.asset_id, batch.form)
+      if (batch.type === 'outbound') await outboundAsset(asset.asset_id, batch.form)
+      if (batch.type === 'scrap') await createScrapRequest(asset.asset_id, batch.form)
+      results.push({ asset_id: asset.asset_id, ok: true })
+    } catch (error) {
+      results.push({ asset_id: asset.asset_id, ok: false, message: error.userMessage || error?.response?.data?.detail || error.message })
+    }
+  }
+  if (results.some(item => !item.ok)) {
+    showBatchOperationResult(results)
+    batch.visible = false
+    selected.value = []
+    await loadAssets()
+    return
   }
   ElMessage.success(`${batchTitle.value}完成`)
   batch.visible = false
@@ -908,7 +940,7 @@ async function submitBatch() {
 }
 
 function isWorkflowLockedStatus(status) {
-  return ['pending_scrap', 'scrapped'].includes(status)
+  return ['pending_scrap', 'scrapped', 'disposed'].includes(status)
 }
 
 function manualStatusOptions(currentStatus) {
@@ -1008,10 +1040,11 @@ function resolveDatePicker() { return resolveComponent('ElDatePicker') }
   justify-content: space-between;
   gap: 12px;
   margin-top: 12px;
-  padding: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid #edf4ff;
   border-radius: 8px;
-  background: #f8fafc;
-  color: #475569;
+  background: var(--panel-soft);
+  color: var(--muted);
   font-size: 13px;
 }
 
@@ -1038,6 +1071,7 @@ function resolveDatePicker() { return resolveComponent('ElDatePicker') }
 .header-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
   flex-wrap: wrap;
 }
@@ -1052,10 +1086,34 @@ function resolveDatePicker() { return resolveComponent('ElDatePicker') }
   margin-top: 14px;
 }
 
+:deep(.toolbar .el-button) {
+  flex: 0 0 auto;
+}
+
+:deep(.el-dialog__body .el-alert) {
+  margin-bottom: 14px;
+}
+
 @media (max-width: 900px) {
   .edit-grid,
   .batch-edit-grid {
     grid-template-columns: 1fr;
+  }
+
+  .header-actions,
+  .pagination-bar,
+  .upload-row,
+  .import-actions {
+    justify-content: flex-start;
+  }
+
+  .header-actions .el-button,
+  .toolbar .el-button {
+    flex: 1 1 140px;
+  }
+
+  .pagination-bar {
+    overflow-x: auto;
   }
 }
 </style>

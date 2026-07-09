@@ -102,16 +102,16 @@ async function submitLogin() {
   place-items: center;
   padding: 32px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(243, 247, 253, 0.92)),
-    repeating-linear-gradient(90deg, rgba(36, 120, 255, 0.06) 0, rgba(36, 120, 255, 0.06) 1px, transparent 1px, transparent 72px),
-    #f3f7fd;
+    radial-gradient(circle at 18% 16%, rgba(130, 184, 255, 0.28), transparent 28%),
+    radial-gradient(circle at 82% 74%, rgba(25, 117, 252, 0.14), transparent 32%),
+    linear-gradient(180deg, #f8fcff 0%, #eef6ff 100%);
 }
 
 .login-shell {
   display: grid;
   grid-template-columns: minmax(360px, 1.05fr) minmax(360px, 440px);
-  gap: 28px;
-  width: min(1040px, 100%);
+  gap: 24px;
+  width: min(1080px, 100%);
   align-items: stretch;
 }
 
@@ -119,11 +119,11 @@ async function submitLogin() {
   display: grid;
   align-content: center;
   gap: 22px;
-  padding: 36px;
+  padding: 38px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--shadow-strong);
 }
 
 .brand-side {
@@ -131,12 +131,14 @@ async function submitLogin() {
   align-content: space-between;
   gap: 28px;
   min-height: 560px;
-  padding: 40px;
-  border: 1px solid #d9e5f4;
-  border-radius: 8px;
-  background: #0f4ea8;
+  padding: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 18% 20%, rgba(130, 184, 255, 0.32), transparent 28%),
+    linear-gradient(145deg, #0b1f44 0%, #0f3675 52%, #1975fc 100%);
   color: #fff;
-  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 20px 50px rgba(25, 117, 252, 0.22);
 }
 
 .brand-head {
@@ -151,9 +153,9 @@ async function submitLogin() {
   flex: 0 0 auto;
   width: 48px;
   height: 48px;
-  border-radius: 8px;
+  border-radius: 14px;
   background: #fff;
-  color: #0f4ea8;
+  color: var(--primary);
   font-weight: 800;
 }
 
@@ -208,8 +210,8 @@ p {
   min-width: 0;
   padding: 14px;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .capability-item .el-icon {
@@ -300,9 +302,7 @@ p {
   .login-page {
     min-height: 100dvh;
     padding: 14px;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(243, 247, 253, 0.96)),
-      #f3f7fd;
+    background: var(--app-bg);
   }
 
   .brand-side,

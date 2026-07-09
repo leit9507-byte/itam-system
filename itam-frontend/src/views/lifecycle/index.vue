@@ -62,7 +62,7 @@ const items = ref([])
 const keyword = ref('')
 const dateRange = ref([])
 const operationType = ref('all')
-const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
+const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 
 onMounted(load)
 

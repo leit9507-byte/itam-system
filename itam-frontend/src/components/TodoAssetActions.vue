@@ -8,7 +8,9 @@
         </el-select>
       </el-form-item>
       <el-form-item label="使用位置">
-        <el-input v-model="assignDialog.form.location" placeholder="可填写办公位置" />
+        <el-select v-model="assignDialog.form.location" filterable clearable placeholder="选择使用位置" style="width: 100%">
+          <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
+        </el-select>
       </el-form-item>
       <el-form-item label="备注">
         <el-input v-model="assignDialog.form.remark" type="textarea" :rows="3" />
@@ -39,14 +41,16 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getAssets, inboundAsset, outboundAsset, submitReclaimApproval } from '../api/asset'
+import { getLocations } from '../api/location'
 import { getUsers } from '../api/user'
 
 const emit = defineEmits(['completed'])
 const processing = ref(false)
 const users = ref([])
+const locations = ref([])
 const assignDialog = reactive({
   visible: false,
   todo: null,
@@ -61,17 +65,23 @@ const reclaimDialog = reactive({
   selected: []
 })
 
+const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
+
 async function handle(item) {
   if (item.type === 'onboarding_assign') {
     await openAssignDialog(item)
     return true
   }
   if (item.type === 'offboarding_reclaim') {
-    await reclaimAsset(item)
+    await openUserReclaimDialog(item)
     return true
   }
   if (item.type === 'user_reclaim') {
     await openUserReclaimDialog(item)
+    return true
+  }
+  if (item.type === 'borrow_due_return') {
+    await returnBorrowedAsset(item)
     return true
   }
   return false
@@ -80,7 +90,7 @@ async function handle(item) {
 async function openAssignDialog(item) {
   assignDialog.todo = item
   Object.assign(assignDialog.form, { asset_id: '', location: '', remark: '入职资产分配' })
-  await ensureUsers()
+  await ensureOptions()
   assignDialog.assets = await loadAssignableAssets('')
   assignDialog.visible = true
 }
@@ -121,21 +131,6 @@ async function submitAssign() {
   }
 }
 
-async function reclaimAsset(item) {
-  const confirmed = await ElMessageBox.confirm(`确认回收 ${item.asset_id} 到在库状态？`, '离职资产回收', { type: 'warning' }).then(() => true).catch(() => false)
-  if (!confirmed) return
-  processing.value = true
-  try {
-    await submitReclaimApproval(item.asset_id, { location: '', remark: '离职资产回收审批' })
-    ElMessage.success('已提交飞书回收审批')
-    emit('completed')
-  } catch (error) {
-    ElMessage.error(`回收失败：${error?.message || '请稍后重试'}`)
-  } finally {
-    processing.value = false
-  }
-}
-
 async function openUserReclaimDialog(item) {
   reclaimDialog.user = item
   reclaimDialog.userName = item.name || item.owner || item.display_name || item.username || ''
@@ -145,7 +140,9 @@ async function openUserReclaimDialog(item) {
     const { list } = await getAssets({ page: 1, page_size: 500 })
     reclaimDialog.assets = list.filter(asset => {
       if (!['in_use', 'borrowed', 'out_stock', 'repair'].includes(asset.status)) return false
-      return [asset.owner_user_id, asset.owner, asset.owner_username].includes(item.user_id) || [asset.owner_user_id, asset.owner, asset.owner_username].includes(item.username)
+      if (item.asset_ids?.length) return item.asset_ids.includes(asset.asset_id)
+      const ownerValues = [asset.owner_user_id, asset.owner, asset.owner_username]
+      return ownerValues.includes(item.user_id) || ownerValues.includes(item.username)
     })
     if (!reclaimDialog.assets.length) {
       ElMessage.info('该人员当前没有需要回收的资产')
@@ -176,13 +173,42 @@ async function submitUserReclaim() {
   }
 }
 
+async function returnBorrowedAsset(item) {
+  const confirmed = await ElMessageBox.confirm(`确认将 ${item.asset_id} 回收入库？`, '借用资产归还', { type: 'warning' }).then(() => true).catch(() => false)
+  if (!confirmed) return
+  processing.value = true
+  try {
+    await inboundAsset(item.asset_id, { location: '', remark: `借用到期归还${item.borrow_due_date ? `，到期时间：${item.borrow_due_date}` : ''}` })
+    ElMessage.success('借用资产已回收入库')
+    emit('completed')
+  } catch (error) {
+    ElMessage.error(`回收入库失败：${error?.message || '请稍后重试'}`)
+  } finally {
+    processing.value = false
+  }
+}
+
 async function ensureUsers() {
   if (users.value.length) return
   users.value = await getUsers().catch(() => [])
 }
 
+async function ensureOptions() {
+  const [userRows, locationRows] = await Promise.all([
+    users.value.length ? Promise.resolve(users.value) : getUsers().catch(() => []),
+    locations.value.length ? Promise.resolve(locations.value) : getLocations().catch(() => [])
+  ])
+  users.value = userRows
+  locations.value = locationRows
+}
+
 function assetLabel(item) {
   return `${item.asset_id} / ${item.name || '-'} / ${item.sn || '-'} / ${item.location || '未填写位置'}`
+}
+
+function locationLabel(item) {
+  const meta = [item.code, item.type].filter(Boolean).join(' / ')
+  return meta ? `${item.name} (${meta})` : item.name
 }
 
 function statusLabel(status) {

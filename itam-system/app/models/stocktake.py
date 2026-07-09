@@ -15,8 +15,8 @@ class StocktakeTask(Base):
     target = Column(String(128), nullable=True)
     owner = Column(String(128), nullable=True)
     status = Column(String(32), nullable=False, default="待开始")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, index=True)
 
     items = relationship("StocktakeItem", back_populates="task", cascade="all, delete-orphan")
 

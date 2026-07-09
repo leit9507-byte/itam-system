@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, time
 
 from fastapi import APIRouter, Depends
@@ -55,20 +56,47 @@ def list_lifecycles(
     if page_size and page_size > 0:
         query = query.offset((max(page, 1) - 1) * page_size).limit(page_size)
     rows = query.all()
-    items = [
-        {
-            "id": lifecycle.id,
-            "asset_id": lifecycle.asset_id,
-            "asset_name": asset.name,
-            "company": asset.company,
-            "type": lifecycle.action_type,
-            "from_status": lifecycle.from_status,
-            "to_status": lifecycle.to_status,
-            "status": lifecycle.to_status or lifecycle.from_status,
-            "operator": lifecycle.operator,
-            "time": lifecycle.timestamp,
-            "description": lifecycle.remark or f"{lifecycle.from_status or '-'} -> {lifecycle.to_status or '-'}",
-        }
-        for lifecycle, asset in rows
-    ]
+    items = [lifecycle_out(lifecycle, asset) for lifecycle, asset in rows]
     return {"list": items, "total": total, "page": max(page, 1), "page_size": page_size or total}
+
+
+def lifecycle_out(lifecycle: Lifecycle, asset: Asset) -> dict:
+    structured = parse_structured_remark(lifecycle.remark)
+    return {
+        "id": lifecycle.id,
+        "asset_id": lifecycle.asset_id,
+        "asset_name": asset.name,
+        "company": asset.company,
+        "type": lifecycle.action_type,
+        "from_status": lifecycle.from_status,
+        "to_status": lifecycle.to_status,
+        "status": lifecycle.to_status or lifecycle.from_status,
+        "operator": lifecycle.operator,
+        "time": lifecycle.timestamp,
+        "description": structured_description(structured) if structured else lifecycle.remark or f"{lifecycle.from_status or '-'} -> {lifecycle.to_status or '-'}",
+        "remark_structured": structured,
+    }
+
+
+def parse_structured_remark(value: str | None) -> dict | None:
+    if not value or not value.startswith("{"):
+        return None
+    try:
+        data = json.loads(value)
+    except json.JSONDecodeError:
+        return None
+    if data.get("format") != "itam.lifecycle.v1":
+        return None
+    return data
+
+
+def structured_description(data: dict) -> str:
+    parts = [
+        ("操作原因", data.get("reason")),
+        ("操作对象", data.get("object")),
+        ("原责任人", data.get("previous_owner")),
+        ("新责任人", data.get("new_owner")),
+        ("位置", data.get("location")),
+        ("到期时间", data.get("due_date")),
+    ]
+    return "；".join(f"{label}：{value}" for label, value in parts if value)

@@ -8,8 +8,8 @@ export function uploadAssetFile(assetId, file) {
   })
 }
 
-export function listAssetFiles(assetId) {
-  return request.get(`/files/asset/${assetId}`)
+export function listAssetFiles(assetId, params = {}) {
+  return request.get(`/files/asset/${assetId}`, { params })
 }
 
 export function archiveAssetFile(fileId) {

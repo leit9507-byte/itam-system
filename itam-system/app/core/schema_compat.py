@@ -24,6 +24,7 @@ def ensure_compatible_schema(engine) -> None:
         columns = {column["name"] for column in inspector.get_columns("purchase_items")}
         add_column(engine, columns, "purchase_items", "retirement_years", "INTEGER NULL")
         add_column(engine, columns, "purchase_items", "purchase_reason", "TEXT NULL")
+        add_column(engine, columns, "purchase_items", "spec", "VARCHAR(255) NULL")
 
     if "product_catalogs" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("product_catalogs")}
@@ -62,6 +63,12 @@ def ensure_compatible_schema(engine) -> None:
         add_column(engine, columns, "stocktake_items", "review_note", "TEXT NULL")
         add_column(engine, columns, "stocktake_items", "reviewed_by", "VARCHAR(128) NULL")
         add_column(engine, columns, "stocktake_items", "reviewed_at", "DATETIME NULL")
+    if "scrap_requests" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("scrap_requests")}
+        add_column(engine, columns, "scrap_requests", "final_residual_value", "FLOAT DEFAULT 0")
+        add_column(engine, columns, "scrap_requests", "disposal_remark", "TEXT NULL")
+        add_column(engine, columns, "scrap_requests", "disposed_by", "VARCHAR(128) NULL")
+        add_column(engine, columns, "scrap_requests", "disposed_at", "DATETIME NULL")
     if "asset_attachments" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("asset_attachments")}
         add_column(engine, columns, "asset_attachments", "status", "VARCHAR(32) DEFAULT 'active' NOT NULL")

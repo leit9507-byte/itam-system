@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from app.core.auth import decode_access_token
 from app.core.database import get_db
 from app.core.security import operator_from_request
+from app.models.user import RolePermission, UserDirectory
 from app.schemas.user import (
     IdentityProviderOut,
     IdentityProviderSave,
@@ -32,6 +34,37 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=423, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+@router.get("/auth/me/permissions")
+def current_permissions(request: Request, db: Session = Depends(get_db)):
+    authorization = request.headers.get("authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    payload = decode_access_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    user = db.get(UserDirectory, payload["sub"])
+    if not user or user.status != "active":
+        raise HTTPException(status_code=403, detail="User disabled or not found")
+    if user.role == "admin":
+        return {
+            "role": user.role,
+            "resources": ["asset", "purchase", "repair", "supplier", "catalog", "audit", "identity", "rbac", "file", "report", "ops"],
+            "permissions": [],
+        }
+    rows = (
+        db.query(RolePermission)
+        .filter(RolePermission.role == user.role, RolePermission.allowed.is_(True), RolePermission.action.in_(["read", "*"]))
+        .all()
+    )
+    resources = sorted({row.resource for row in rows})
+    return {
+        "role": user.role,
+        "resources": resources,
+        "permissions": [{"resource": row.resource, "action": row.action, "allowed": row.allowed} for row in rows],
+    }
 
 
 @router.get("/auth/sso/{provider_type}/start")
@@ -123,9 +156,20 @@ def update_user_permissions(user_id: str, payload: UserPermissionUpdate, request
 
 
 @router.post("/users/sync", response_model=SyncUsersResponse)
-def sync_users(payload: SyncUsersRequest, db: Session = Depends(get_db)):
+def sync_users(payload: SyncUsersRequest, request: Request, db: Session = Depends(get_db)):
     try:
         created, updated, offboarded, users = IdentityService.sync_users(db, payload.provider_id, payload.users)
+        AuditLogService.record_operation(
+            db,
+            "identity",
+            "sync_users",
+            operator_from_request(request),
+            "user_directory",
+            "batch",
+            f"同步用户：新增 {created}，更新 {updated}，离职 {offboarded}",
+            {"provider_id": payload.provider_id, "submitted_users": len(payload.users or [])},
+        )
+        db.commit()
         return {"created": created, "updated": updated, "offboarded": offboarded, "users": users}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

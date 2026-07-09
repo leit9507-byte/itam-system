@@ -9,6 +9,7 @@ class PurchaseItemCreate(BaseModel):
     category: str
     brand: Optional[str] = None
     model: Optional[str] = None
+    spec: Optional[str] = None
     quantity: int = Field(default=1, ge=1)
     unit_price: float = Field(default=0, ge=0)
     retirement_years: Optional[int] = None
@@ -37,6 +38,7 @@ class PurchaseApprove(BaseModel):
 
 
 class AcceptedAssetCreate(BaseModel):
+    asset_id: Optional[str] = None
     sn: Optional[str] = None
     name: Optional[str] = None
     brand: Optional[str] = None
@@ -53,6 +55,7 @@ class AcceptedAssetCreate(BaseModel):
     purchase_supplier_name: Optional[str] = None
     warranty_expire_date: Optional[datetime] = None
     warranty_months: Optional[int] = None
+    retirement_years: Optional[int] = None
 
 
 class PurchaseItemAcceptance(BaseModel):
@@ -73,6 +76,7 @@ class PurchaseItemOut(BaseModel):
     category: str
     brand: Optional[str]
     model: Optional[str]
+    spec: Optional[str] = None
     quantity: int
     unit_price: float
     retirement_years: Optional[int]

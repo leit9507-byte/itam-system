@@ -64,7 +64,7 @@ async function loadAll() {
   const [healthResult, jobsResult, logsResult] = await Promise.all([getOpsHealth(), getScheduledJobs(), getOperationLogs({ limit: 100 })])
   health.value = healthResult
   jobs.value = jobsResult
-  logs.value = logsResult
+  logs.value = logsResult.list || logsResult
 }
 </script>
 

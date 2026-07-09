@@ -12,6 +12,7 @@ export async function getCompanies() {
     repair_count: Number(row.repair_count || 0),
     ready_scrap_count: Number(row.ready_scrap_count || 0),
     scrapped_count: Number(row.scrapped_count || 0),
+    disposed_count: Number(row.disposed_count || 0),
     pending_scrap_count: Number(row.pending_scrap_count || 0)
   }))
 }

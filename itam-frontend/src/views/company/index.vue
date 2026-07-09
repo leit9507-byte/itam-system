@@ -142,8 +142,8 @@ const assetTotal = ref(0)
 const assetLoading = ref(false)
 const keyword = ref('')
 const dialog = reactive({ visible: false, form: defaultForm() })
-const companyPagination = reactive({ page: 1, pageSize: 20 })
-const assetPagination = reactive({ page: 1, pageSize: 20 })
+const companyPagination = reactive({ page: 1, pageSize: 10 })
+const assetPagination = reactive({ page: 1, pageSize: 10 })
 
 const filteredCompanies = computed(() => {
   const text = keyword.value.trim().toLowerCase()

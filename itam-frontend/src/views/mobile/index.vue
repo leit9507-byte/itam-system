@@ -11,7 +11,29 @@
       </div>
     </header>
 
-    <el-card shadow="never" class="todo-card">
+    <section class="mobile-summary" aria-label="移动端概览">
+      <div class="summary-item">
+        <strong>{{ todos.length }}</strong>
+        <span>待办</span>
+      </div>
+      <div class="summary-item">
+        <strong>{{ currentSectionTitle }}</strong>
+        <span>当前页面</span>
+      </div>
+      <div class="summary-item">
+        <strong>{{ stocktakeTasks.length }}</strong>
+        <span>盘点任务</span>
+      </div>
+    </section>
+
+    <nav class="mobile-top-menu" aria-label="移动端菜单">
+      <button v-for="item in sectionMenus" :key="item.value" type="button" class="top-menu-item" :class="{ active: activeSection === item.value }" @click="selectSection(item.value)">
+        <span>{{ item.label }}</span>
+        <small v-if="item.count !== undefined">{{ item.count }}</small>
+      </button>
+    </nav>
+
+    <el-card v-if="activeSection === 'todo'" shadow="never" class="todo-card mobile-panel">
       <template #header>
         <div class="card-header">
           <span>待办事项</span>
@@ -34,23 +56,34 @@
     </el-card>
     <TodoAssetActions ref="todoAssetActionsRef" @completed="loadTodos" />
 
-    <section class="mode-strip">
-      <button v-for="item in modes" :key="item.value" type="button" class="mode-card" :class="{ active: mode === item.value }" @click="selectMode(item.value)">
+    <section v-if="activeSection === 'work'" class="mode-strip">
+      <button v-for="item in workModes" :key="item.value" type="button" class="mode-card" :class="{ active: mode === item.value }" @click="selectMode(item.value)">
         <el-icon><component :is="item.icon" /></el-icon>
         <span>{{ item.label }}</span>
         <small>{{ item.hint }}</small>
       </button>
     </section>
 
-    <el-card v-if="mode === 'stocktake'" shadow="never">
+    <el-card v-if="activeSection === 'stocktake'" shadow="never" class="mobile-panel">
       <template #header>
         <div class="card-header">
           <span>盘点任务</span>
           <el-button text type="primary" @click="loadStocktakeTasks">刷新</el-button>
         </div>
       </template>
-      <el-select v-model="form.task_id" placeholder="请选择后台创建的盘点任务" style="width: 100%" @change="selectTask">
-        <el-option v-for="task in stocktakeTasks" :key="task.id" :label="`${task.name} / ${task.status} / ${task.checked || 0}/${task.total || 0}`" :value="task.id" />
+      <el-select
+        v-model="form.task_id"
+        filterable
+        remote
+        reserve-keyword
+        :remote-method="searchTasks"
+        placeholder="搜索并选择盘点任务"
+        class="mobile-select"
+        style="width: 100%"
+        @visible-change="visible => visible && resetTaskOptions()"
+        @change="selectTask"
+      >
+        <el-option v-for="task in visibleStocktakeTasks" :key="task.id" :label="taskLabel(task)" :value="task.id" />
       </el-select>
       <div v-if="selectedTask" class="task-progress">
         <span>{{ selectedTask.checked || 0 }}/{{ selectedTask.total || 0 }}</span>
@@ -59,7 +92,7 @@
       <p class="tip">盘点必须先在后台「资产盘点」创建任务，移动端只负责扫码执行任务明细。</p>
     </el-card>
 
-    <el-card shadow="never" class="scan-card">
+    <el-card v-if="activeSection === 'work' || activeSection === 'stocktake'" shadow="never" class="scan-card mobile-panel">
       <template #header>
         <div class="card-header">
           <span>{{ currentMode.label }}</span>
@@ -84,7 +117,7 @@
       </div>
     </el-card>
 
-    <el-card v-if="asset" shadow="never" class="asset-card">
+    <el-card v-if="asset && (activeSection === 'work' || activeSection === 'stocktake')" shadow="never" class="asset-card mobile-panel">
       <template #header>
         <div class="card-header">
           <span>资产信息</span>
@@ -109,7 +142,7 @@
       </div>
     </el-card>
 
-    <el-card v-if="asset" shadow="never" class="form-card">
+    <el-card v-if="asset && (activeSection === 'work' || activeSection === 'stocktake')" shadow="never" class="form-card mobile-panel">
       <template #header>{{ currentMode.formTitle }}</template>
       <el-form label-position="top">
         <template v-if="mode === 'stocktake'">
@@ -122,8 +155,19 @@
 
         <template v-if="mode === 'inbound'">
           <el-form-item label="入库地址">
-            <el-select v-model="form.location" filterable clearable allow-create default-first-option placeholder="选择或填写入库地址" style="width: 100%">
-              <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
+            <el-select
+              v-model="form.location"
+              filterable
+              remote
+              clearable
+              reserve-keyword
+              :remote-method="searchLocations"
+              placeholder="搜索入库地址"
+              class="mobile-select"
+              style="width: 100%"
+              @visible-change="visible => visible && resetLocationOptions()"
+            >
+              <el-option v-for="item in visibleLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
             </el-select>
           </el-form-item>
         </template>
@@ -133,13 +177,24 @@
             <el-segmented v-model="form.outboundTarget" :options="outboundTargetOptions" @change="changeOutboundTarget" />
           </el-form-item>
           <el-form-item label="领用人">
-            <el-select v-model="form.owner_user_id" :disabled="form.outboundTarget === 'location'" filterable remote clearable reserve-keyword :remote-method="searchUsers" placeholder="搜索姓名/账号" @change="selectUser">
+            <el-select v-model="form.owner_user_id" :disabled="form.outboundTarget === 'location'" filterable remote clearable reserve-keyword :remote-method="searchUsers" placeholder="搜索姓名/账号" class="mobile-select" @visible-change="visible => visible && searchUsers('')" @change="selectUser">
               <el-option v-for="user in filteredUsers" :key="user.user_id" :label="`${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`" :value="user.user_id" />
             </el-select>
           </el-form-item>
           <el-form-item :label="form.outboundTarget === 'location' ? '公用位置' : '使用位置'">
-            <el-select v-model="form.location" filterable clearable allow-create default-first-option placeholder="选择或填写位置" style="width: 100%">
-              <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
+            <el-select
+              v-model="form.location"
+              filterable
+              remote
+              clearable
+              reserve-keyword
+              :remote-method="searchLocations"
+              placeholder="搜索位置"
+              class="mobile-select"
+              style="width: 100%"
+              @visible-change="visible => visible && resetLocationOptions()"
+            >
+              <el-option v-for="item in visibleLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
             </el-select>
           </el-form-item>
         </template>
@@ -149,8 +204,21 @@
             <el-date-picker v-model="form.repair_time" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
           </el-form-item>
           <el-form-item label="故障类型">
-            <el-select v-model="form.fault_reason" filterable clearable allow-create default-first-option placeholder="选择或输入故障类型" style="width: 100%">
-              <el-option v-for="item in activeFaultTypes" :key="item.id || item.name" :label="item.name" :value="item.name" />
+            <el-select
+              v-model="form.fault_reason"
+              filterable
+              remote
+              clearable
+              allow-create
+              default-first-option
+              reserve-keyword
+              :remote-method="searchFaultTypes"
+              placeholder="搜索或输入故障类型"
+              class="mobile-select"
+              style="width: 100%"
+              @visible-change="visible => visible && resetFaultTypeOptions()"
+            >
+              <el-option v-for="item in visibleFaultTypes" :key="item.id || item.name" :label="item.name" :value="item.name" />
             </el-select>
           </el-form-item>
           <el-form-item label="维修费用">
@@ -187,7 +255,7 @@
       </div>
     </el-card>
 
-    <el-card shadow="never" class="log-card">
+    <el-card v-if="activeSection === 'logs'" shadow="never" class="log-card mobile-panel">
       <template #header>
         <div class="card-header">
           <span>今日操作</span>
@@ -229,11 +297,13 @@ const modes = [
   { value: 'repair', label: '扫码维修', hint: '创建今日维修', icon: Setting, formTitle: '维修信息', submitText: '创建维修' },
   { value: 'scrap', label: '扫码报废', hint: '提交审批申请', icon: Delete, formTitle: '报废申请', submitText: '提交报废' }
 ]
+const workModes = modes.filter(item => item.value !== 'stocktake')
 const outboundTargetOptions = [
   { label: '人员', value: 'user' },
   { label: '位置', value: 'location' }
 ]
 
+const activeSection = ref('todo')
 const mode = ref('stocktake')
 const assetCode = ref('')
 const asset = ref(null)
@@ -241,12 +311,15 @@ const submitting = ref(false)
 const users = ref([])
 const filteredUsers = ref([])
 const locations = ref([])
+const visibleLocations = ref([])
 const faultTypes = ref([])
+const visibleFaultTypes = ref([])
 const logs = ref([])
 const todos = ref([])
 const todoLoading = ref(false)
 const todoAssetActionsRef = ref(null)
 const stocktakeTasks = ref([])
+const visibleStocktakeTasks = ref([])
 const form = reactive(defaultForm())
 
 const currentMode = computed(() => modes.find(item => item.value === mode.value) || modes[0])
@@ -260,6 +333,16 @@ const activeLocations = computed(() => locations.value.filter(item => item.statu
 const activeFaultTypes = computed(() => faultTypes.value.filter(item => item.enabled !== '停用'))
 const recentCodes = computed(() => [...new Set(logs.value.map(item => item.asset_id).filter(Boolean))].slice(0, 4))
 const mobileTodos = computed(() => todos.value.slice(0, 5))
+const currentSectionTitle = computed(() => {
+  if (activeSection.value === 'work') return currentMode.value.label
+  return ({ todo: '待办中心', stocktake: '扫码盘点', logs: '今日记录' })[activeSection.value] || '移动作业'
+})
+const sectionMenus = computed(() => [
+  { value: 'todo', label: '待办', count: todos.value.length },
+  { value: 'work', label: '扫码作业' },
+  { value: 'stocktake', label: '盘点' },
+  { value: 'logs', label: '记录', count: logs.value.length }
+])
 
 onMounted(async () => {
   logs.value = JSON.parse(localStorage.getItem('itam_mobile_logs') || '[]')
@@ -272,6 +355,8 @@ onMounted(async () => {
   locations.value = locationRows
   faultTypes.value = faultRows
   filteredUsers.value = users.value.slice(0, 20)
+  resetLocationOptions()
+  resetFaultTypeOptions()
   await Promise.all([loadStocktakeTasks(), loadTodos()])
 })
 
@@ -298,10 +383,15 @@ function defaultForm() {
 
 async function loadStocktakeTasks() {
   stocktakeTasks.value = await getStocktakeTasks()
+  resetTaskOptions()
   if (!form.task_id && stocktakeTasks.value.length) {
     const activeTask = stocktakeTasks.value.find(task => ['进行中', '待开始', '待确认'].includes(task.status))
     form.task_id = activeTask?.id || stocktakeTasks.value[0].id
   }
+}
+
+function taskLabel(task) {
+  return `${task.name} / ${task.status} / ${task.checked || 0}/${task.total || 0}`
 }
 
 async function loadTodos() {
@@ -317,6 +407,15 @@ async function loadTodos() {
 
 function priorityLabel(priority) {
   return ({ high: '高', medium: '中', low: '低' })[priority] || '-'
+}
+
+function selectSection(value) {
+  activeSection.value = value
+  if (value === 'stocktake') {
+    mode.value = 'stocktake'
+  } else if (value === 'work' && mode.value === 'stocktake') {
+    mode.value = 'inbound'
+  }
 }
 
 async function goTodo(item) {
@@ -431,6 +530,39 @@ function searchUsers(query = '') {
   const keyword = query.trim().toLowerCase()
   filteredUsers.value = users.value
     .filter(user => !keyword || [user.user_id, user.username, user.display_name, user.dept_name, user.dept_id].join(' ').toLowerCase().includes(keyword))
+    .slice(0, 30)
+}
+
+function resetTaskOptions() {
+  visibleStocktakeTasks.value = stocktakeTasks.value.slice(0, 30)
+}
+
+function searchTasks(query = '') {
+  const keyword = query.trim().toLowerCase()
+  visibleStocktakeTasks.value = stocktakeTasks.value
+    .filter(task => !keyword || [task.id, task.name, task.status].join(' ').toLowerCase().includes(keyword))
+    .slice(0, 30)
+}
+
+function resetLocationOptions() {
+  visibleLocations.value = activeLocations.value.slice(0, 30)
+}
+
+function searchLocations(query = '') {
+  const keyword = query.trim().toLowerCase()
+  visibleLocations.value = activeLocations.value
+    .filter(item => !keyword || [item.name, item.code, item.type, item.owner_dept].join(' ').toLowerCase().includes(keyword))
+    .slice(0, 30)
+}
+
+function resetFaultTypeOptions() {
+  visibleFaultTypes.value = activeFaultTypes.value.slice(0, 30)
+}
+
+function searchFaultTypes(query = '') {
+  const keyword = query.trim().toLowerCase()
+  visibleFaultTypes.value = activeFaultTypes.value
+    .filter(item => !keyword || [item.name, item.description].join(' ').toLowerCase().includes(keyword))
     .slice(0, 30)
 }
 
@@ -586,10 +718,13 @@ function statusType(value) {
 <style scoped>
 .mobile-page {
   min-height: 100vh;
-  padding: 14px 12px 22px;
+  padding: 82px 12px 24px;
   display: grid;
-  gap: 12px;
-  background: #f4f7fb;
+  align-content: start;
+  gap: 14px;
+  background:
+    linear-gradient(180deg, #eef7f6 0, #f7fafc 220px, #f3f6fb 100%);
+  color: #172033;
 }
 
 .mobile-header {
@@ -597,13 +732,18 @@ function statusType(value) {
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
-  padding: 10px 2px 2px;
+  padding: 16px 14px;
+  border: 1px solid rgba(15, 118, 110, 0.14);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
 }
 
 .mobile-header h1 {
   margin: 4px 0 0;
-  font-size: 24px;
+  font-size: 23px;
   line-height: 1.2;
+  letter-spacing: 0;
 }
 
 .header-status {
@@ -623,35 +763,131 @@ function statusType(value) {
   color: #64748b;
 }
 
+.eyebrow {
+  font-size: 12px;
+  font-weight: 800;
+  color: #0f766e;
+}
+
+.mobile-summary {
+  display: grid;
+  grid-template-columns: 0.72fr 1.28fr 0.9fr;
+  gap: 8px;
+}
+
+.summary-item {
+  min-width: 0;
+  padding: 12px 10px;
+  border: 1px solid #e1e8f0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.045);
+  display: grid;
+  gap: 3px;
+}
+
+.summary-item strong {
+  min-width: 0;
+  color: #102a43;
+  font-size: 16px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summary-item span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.mobile-top-menu {
+  position: fixed;
+  top: 8px;
+  left: 10px;
+  right: 10px;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+  padding: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(10px);
+}
+
+.top-menu-item {
+  min-width: 0;
+  min-height: 46px;
+  padding: 7px 4px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+}
+
+.top-menu-item.active {
+  border-color: rgba(15, 118, 110, 0.22);
+  background: #0f766e;
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(15, 118, 110, 0.22);
+}
+
+.top-menu-item small {
+  min-width: 20px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.top-menu-item.active small {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
 .mode-strip {
   display: flex;
   gap: 10px;
   overflow-x: auto;
-  padding: 2px 2px 8px;
+  padding: 1px 1px 6px;
   scroll-snap-type: x proximity;
 }
 
 .mode-strip::-webkit-scrollbar,
-.quick-codes::-webkit-scrollbar {
+.quick-codes::-webkit-scrollbar,
+.mobile-top-menu::-webkit-scrollbar {
   display: none;
 }
 
 .mode-card {
-  flex: 0 0 132px;
-  min-height: 98px;
-  padding: 13px;
-  border: 1px solid #d9e2df;
+  flex: 0 0 128px;
+  min-height: 92px;
+  padding: 12px;
+  border: 1px solid #dfe8ee;
   border-radius: 8px;
-  background: #fff;
+  background: #ffffff;
   text-align: left;
   display: grid;
   gap: 6px;
   scroll-snap-align: start;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.045);
 }
 
 .mode-card.active {
-  border-color: #0f766e;
-  box-shadow: 0 8px 24px rgba(15, 118, 110, 0.14);
+  border-color: rgba(15, 118, 110, 0.34);
+  background: #f0fdfa;
+  box-shadow: 0 12px 26px rgba(15, 118, 110, 0.14);
 }
 
 .mode-card .el-icon {
@@ -671,6 +907,11 @@ function statusType(value) {
   gap: 10px;
 }
 
+.card-header {
+  font-weight: 800;
+  color: #172033;
+}
+
 .scan-actions {
   flex-shrink: 0;
 }
@@ -683,6 +924,10 @@ function statusType(value) {
 
 .todo-card :deep(.el-card__body) {
   padding-top: 10px;
+}
+
+.mobile-panel {
+  overflow: hidden;
 }
 
 .task-progress {
@@ -712,11 +957,12 @@ function statusType(value) {
   grid-template-columns: 36px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
-  padding: 10px;
-  border: 1px solid #dbe7f3;
+  padding: 11px;
+  border: 1px solid #e0e9f2;
   border-radius: 8px;
-  background: #fff;
+  background: #ffffff;
   text-align: left;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.035);
 }
 
 .todo-priority {
@@ -776,8 +1022,19 @@ function statusType(value) {
   padding-bottom: 2px;
 }
 
+.quick-codes button,
 .quick-codes .el-button {
   flex: 0 0 auto;
+}
+
+.quick-codes button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #dbe5ef;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
 }
 
 .asset-main {
@@ -817,13 +1074,38 @@ function statusType(value) {
 .log-item {
   gap: 3px;
   padding: 10px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #e0e9f2;
   border-radius: 8px;
   background: #fff;
 }
 
 :deep(.el-card) {
   border-radius: 8px;
+  border-color: #e0e9f2;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
+}
+
+:deep(.el-card__header) {
+  padding: 13px 14px;
+  border-bottom-color: #edf2f7;
+}
+
+:deep(.el-card__body) {
+  padding: 14px;
+}
+
+:deep(.el-button) {
+  border-radius: 8px;
+}
+
+:deep(.el-input__wrapper),
+:deep(.el-select__wrapper),
+:deep(.el-textarea__inner) {
+  border-radius: 8px;
+}
+
+:deep(.mobile-select .el-select__wrapper) {
+  min-height: 44px;
 }
 
 :deep(.el-form-item) {
@@ -842,6 +1124,26 @@ function statusType(value) {
   .mobile-page {
     max-width: 560px;
     margin: 0 auto;
+  }
+
+  .mobile-top-menu {
+    left: 50%;
+    right: auto;
+    width: 536px;
+    transform: translateX(-50%);
+  }
+}
+
+@media (max-width: 380px) {
+  .mobile-top-menu {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+  }
+
+  .top-menu-item {
+    flex: 0 0 76px;
+    scroll-snap-align: start;
   }
 }
 </style>

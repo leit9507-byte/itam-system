@@ -1,8 +1,17 @@
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -43,6 +52,7 @@ class AuditResponsePayload(BaseModel):
 
 
 last_report_path: str | None = None
+last_report_pdf_path: str | None = None
 
 
 def default_rules() -> list[dict]:
@@ -233,9 +243,10 @@ def save_audit_response(payload: AuditResponsePayload, db: Session = Depends(get
 
 @router.post("/run")
 def run_audit(payload: AuditRunRequest | None = None, db: Session = Depends(get_db)):
-    global last_report_path
+    global last_report_path, last_report_pdf_path
     result = AuditEngine(db).run(users=payload.users if payload else [])
     last_report_path = AuditReportGenerator().generate(result)
+    last_report_pdf_path = None
     violations = result.get("violations") or []
     if payload and payload.notify and violations:
         summary = result.get("audit_summary") or {}
@@ -263,3 +274,126 @@ def get_audit_report(db: Session = Depends(get_db)):
         result = AuditEngine(db).run()
         last_report_path = AuditReportGenerator().generate(result)
     return FileResponse(last_report_path, media_type="text/html", filename="audit_report.html")
+
+
+@router.get("/report.pdf")
+def get_audit_report_pdf(db: Session = Depends(get_db)):
+    global last_report_pdf_path
+    if not last_report_pdf_path or not Path(last_report_pdf_path).exists():
+        result = AuditEngine(db).run()
+        last_report_pdf_path = generate_audit_pdf(result)
+    return FileResponse(last_report_pdf_path, media_type="application/pdf", filename="audit_report.pdf")
+
+
+def generate_audit_pdf(result: dict) -> str:
+    output_dir = Path(get_settings().upload_dir) / "reports"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"audit_report_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.pdf"
+
+    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("AuditTitle", parent=styles["Title"], fontName="STSong-Light", fontSize=20, leading=26, alignment=TA_CENTER, spaceAfter=10)
+    heading_style = ParagraphStyle("AuditHeading", parent=styles["Heading2"], fontName="STSong-Light", fontSize=13, leading=18, spaceBefore=12, spaceAfter=8)
+    body_style = ParagraphStyle("AuditBody", parent=styles["BodyText"], fontName="STSong-Light", fontSize=9, leading=14)
+    cell_style = ParagraphStyle("AuditCell", parent=body_style, fontSize=8, leading=11)
+
+    doc = SimpleDocTemplate(
+        str(output_path),
+        pagesize=A4,
+        rightMargin=14 * mm,
+        leftMargin=14 * mm,
+        topMargin=14 * mm,
+        bottomMargin=14 * mm,
+        title="ITAM 审计报告",
+    )
+    story = [
+        Paragraph("ITAM 资产审计报告", title_style),
+        Paragraph(f"生成时间：{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC", body_style),
+        Spacer(1, 8),
+    ]
+
+    violations = result.get("violations") or []
+    summary = result.get("audit_summary") or {}
+    high_count = len([item for item in violations if item.get("severity") == "high"])
+    medium_count = len([item for item in violations if item.get("severity") == "medium"])
+    low_count = len([item for item in violations if item.get("severity") == "low"])
+    response_count = len([item for item in violations if item.get("response_reason") or item.get("decision") not in (None, "", "pending")])
+
+    story.append(Paragraph("一、审计概览", heading_style))
+    story.append(build_table([
+        ["资产总数", "风险评分", "风险总数", "人员风险", "资产风险", "已答复"],
+        [
+            str(result.get("total_assets", 0)),
+            str(result.get("risk_score", 0)),
+            str(len(violations)),
+            str(summary.get("person", 0)),
+            str(summary.get("asset", 0)),
+            str(response_count),
+        ],
+        ["高风险", "中风险", "低风险", "审计范围", "报告格式", "生成方式"],
+        [str(high_count), str(medium_count), str(low_count), "人员 + 资产", "PDF", "系统自动生成"],
+    ], cell_style))
+
+    story.append(Paragraph("二、风险规则统计", heading_style))
+    rule_rows = [["规则", "命中数"]]
+    for rule, count in sorted((summary.get("rules") or {}).items(), key=lambda item: item[1], reverse=True):
+        rule_rows.append([safe_text(rule), str(count)])
+    if len(rule_rows) == 1:
+        rule_rows.append(["当前无规则命中", "0"])
+    story.append(build_table(rule_rows, cell_style, col_widths=[120 * mm, 40 * mm]))
+
+    story.append(Paragraph("三、处置建议", heading_style))
+    for item in result.get("suggestions") or ["当前未发现显著审计风险，建议保持月度盘点和季度审计节奏。"]:
+        story.append(Paragraph(f"• {safe_text(item)}", body_style))
+
+    story.append(Paragraph("四、风险明细（最多显示前 100 条）", heading_style))
+    detail_rows = [["对象", "资产/责任人", "风险类型", "等级", "答复状态", "说明"]]
+    for item in violations[:100]:
+        target = "人员" if item.get("audit_scope") == "person" else "资产"
+        subject = item.get("owner_name") or item.get("owner_user_id") if target == "人员" else item.get("asset_id")
+        decision = decision_label(item.get("decision"))
+        if item.get("response_reason"):
+            decision = f"{decision}：{item.get('response_reason')}"
+        detail_rows.append([
+            target,
+            safe_text(subject or "-"),
+            safe_text(item.get("type") or item.get("rule") or "-"),
+            severity_label(item.get("severity")),
+            safe_text(decision),
+            safe_text(item.get("message") or "-"),
+        ])
+    if len(detail_rows) == 1:
+        detail_rows.append(["-", "-", "无风险", "-", "-", "当前无审计命中记录"])
+    story.append(build_table(detail_rows, cell_style, repeat_rows=1))
+
+    doc.build(story)
+    return str(output_path)
+
+
+def build_table(rows: list[list[str]], cell_style: ParagraphStyle, col_widths: list[float] | None = None, repeat_rows: int = 0) -> Table:
+    wrapped = [[Paragraph(safe_text(cell), cell_style) for cell in row] for row in rows]
+    table = Table(wrapped, colWidths=col_widths, repeatRows=repeat_rows)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eef6f5")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#0f3f3a")),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#d7e3e8")),
+        ("FONTNAME", (0, 0), (-1, -1), "STSong-Light"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    return table
+
+
+def safe_text(value) -> str:
+    return str(value if value is not None else "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def severity_label(value: str | None) -> str:
+    return {"high": "高", "medium": "中", "low": "低"}.get(value or "", value or "-")
+
+
+def decision_label(value: str | None) -> str:
+    return {"accepted": "合规有理由", "non_compliant": "不合规", "pending": "待确认"}.get(value or "pending", "待确认")

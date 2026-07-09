@@ -104,10 +104,22 @@
             </div>
           </div>
           <pre>{{ activePreview?.message || '暂无预览' }}</pre>
+          <div v-if="activePreview?.rich" class="rich-message" :class="`tone-${activePreview.rich.color || 'blue'}`">
+            <div class="rich-title">{{ activePreview.rich.title }}</div>
+            <div class="rich-lines">
+              <div v-for="line in activePreview.rich.lines" :key="line" class="rich-line">
+                <template v-if="line.includes('：')">
+                  <strong>{{ line.split('：')[0] }}：</strong>
+                  <span>{{ line.slice(line.indexOf('：') + 1) }}</span>
+                </template>
+                <span v-else>{{ line }}</span>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="preview-note">
           <strong>{{ activePreview?.label || '消息预览' }}</strong>
-          <p>这里展示的是系统实际发送到飞书机器人的文本内容。飞书安全关键词校验会按这段文本匹配。</p>
+          <p>系统会使用飞书 post 富文本消息发送，字段按行分组展示；下方仍保留纯文本内容，便于核对安全关键词。</p>
         </div>
       </div>
     </el-card>
@@ -126,7 +138,13 @@ const form = reactive({
   event_types: {
     inbound: true,
     outbound: true,
+    purchase: true,
+    acceptance: true,
+    scrap: true,
+    repair: true,
     stocktake: true,
+    borrow_due: true,
+    todo: true,
     risk: true
   }
 })
@@ -142,7 +160,13 @@ const testMessage = ref(`资产管理系统消息通知测试\n发送时间：${
 const eventOptions = [
   { key: 'inbound', label: '入库通知', description: '资产回收入库、扫码入库、验收入库后发送' },
   { key: 'outbound', label: '出库通知', description: '资产领用、借出、公用设备出库后发送' },
+  { key: 'purchase', label: '采购通知', description: '采购审批、采购流程待处理时发送' },
+  { key: 'acceptance', label: '验收通知', description: '采购验收待完善资产编号、SN、使用人时发送' },
+  { key: 'scrap', label: '报废通知', description: '报废申请、审批和处置进度提醒' },
+  { key: 'repair', label: '维修通知', description: '维修创建、跟进和完成提醒' },
   { key: 'stocktake', label: '盘点通知', description: '盘点任务开始后发送任务范围和数量' },
+  { key: 'borrow_due', label: '借用到期', description: '借用即将到期或已超期时提醒回收入库' },
+  { key: 'todo', label: '待办提醒', description: '待办中心新增高优先级事项或汇总提醒' },
   { key: 'risk', label: '风险通知', description: '审计发现风险时发送风险摘要' }
 ]
 
@@ -205,12 +229,7 @@ function applySetting(data = {}) {
   form.enabled = Boolean(data.enabled)
   form.webhook_url = data.webhook_url || ''
   form.secret = data.secret || ''
-  form.event_types = {
-    inbound: data.event_types?.inbound ?? true,
-    outbound: data.event_types?.outbound ?? true,
-    stocktake: data.event_types?.stocktake ?? true,
-    risk: data.event_types?.risk ?? true
-  }
+  form.event_types = Object.fromEntries(eventOptions.map(item => [item.key, data.event_types?.[item.key] ?? true]))
   setting.last_test_status = data.last_test_status || ''
   setting.last_test_message = data.last_test_message || ''
 }
@@ -387,15 +406,79 @@ h2 {
 }
 
 .feishu-preview pre {
-  margin: 0;
-  padding: 16px;
+  margin: 12px 0 0;
+  padding: 12px;
   white-space: pre-wrap;
   word-break: break-word;
   border-radius: 8px;
-  background: #fff;
-  color: #20314f;
+  background: #eef3fb;
+  color: #52637d;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  line-height: 1.7;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.rich-message {
+  overflow: hidden;
+  border: 1px solid #dfe8f5;
+  border-left: 4px solid #2f73ff;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(16, 36, 77, 0.06);
+}
+
+.rich-title {
+  padding: 13px 14px;
+  border-bottom: 1px solid #edf2f8;
+  color: #10244d;
+  font-weight: 800;
+}
+
+.rich-lines {
+  display: grid;
+  gap: 1px;
+  padding: 10px 14px 13px;
+}
+
+.rich-line {
+  display: grid;
+  grid-template-columns: minmax(84px, 0.34fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 0;
+  color: #33415f;
+  line-height: 1.5;
+}
+
+.rich-line strong {
+  color: #65758f;
+  font-weight: 700;
+}
+
+.rich-line span {
+  min-width: 0;
+  word-break: break-word;
+}
+
+.tone-red {
+  border-left-color: #e5484d;
+}
+
+.tone-orange,
+.tone-yellow {
+  border-left-color: #f59e0b;
+}
+
+.tone-green {
+  border-left-color: #10b981;
+}
+
+.tone-purple {
+  border-left-color: #8b5cf6;
+}
+
+.tone-turquoise,
+.tone-wathet {
+  border-left-color: #0ea5e9;
 }
 
 .preview-note {
