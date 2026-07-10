@@ -11,34 +11,42 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "inventory_items",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("item_type", sa.String(length=32), nullable=False),
-        sa.Column("code", sa.String(length=64), nullable=False),
-        sa.Column("name", sa.String(length=128), nullable=False),
-        sa.Column("brand", sa.String(length=64), nullable=True),
-        sa.Column("model", sa.String(length=64), nullable=True),
-        sa.Column("spec", sa.String(length=255), nullable=True),
-        sa.Column("total_qty", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("available_qty", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("assigned_qty", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("min_qty", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("unit_cost", sa.Float(), nullable=False, server_default="0"),
-        sa.Column("license_key", sa.String(length=255), nullable=True),
-        sa.Column("expire_date", sa.DateTime(), nullable=True),
-        sa.Column("supplier", sa.String(length=128), nullable=True),
-        sa.Column("location", sa.String(length=128), nullable=True),
-        sa.Column("status", sa.String(length=32), nullable=False, server_default="active"),
-        sa.Column("remark", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("code"),
-    )
-    op.create_index("ix_inventory_items_item_type", "inventory_items", ["item_type"])
-    op.create_index("ix_inventory_items_status", "inventory_items", ["status"])
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    tables = inspector.get_table_names()
+    if "inventory_items" in tables and "inventory_ledger" in tables:
+        return
+    if "inventory_items" not in tables:
+        op.create_table(
+            "inventory_items",
+            sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+            sa.Column("item_type", sa.String(length=32), nullable=False),
+            sa.Column("code", sa.String(length=64), nullable=False),
+            sa.Column("name", sa.String(length=128), nullable=False),
+            sa.Column("brand", sa.String(length=64), nullable=True),
+            sa.Column("model", sa.String(length=64), nullable=True),
+            sa.Column("spec", sa.String(length=255), nullable=True),
+            sa.Column("total_qty", sa.Integer(), nullable=False, server_default="0"),
+            sa.Column("available_qty", sa.Integer(), nullable=False, server_default="0"),
+            sa.Column("assigned_qty", sa.Integer(), nullable=False, server_default="0"),
+            sa.Column("min_qty", sa.Integer(), nullable=False, server_default="0"),
+            sa.Column("unit_cost", sa.Float(), nullable=False, server_default="0"),
+            sa.Column("license_key", sa.String(length=255), nullable=True),
+            sa.Column("expire_date", sa.DateTime(), nullable=True),
+            sa.Column("supplier", sa.String(length=128), nullable=True),
+            sa.Column("location", sa.String(length=128), nullable=True),
+            sa.Column("status", sa.String(length=32), nullable=False, server_default="active"),
+            sa.Column("remark", sa.Text(), nullable=True),
+            sa.Column("created_at", sa.DateTime(), nullable=False),
+            sa.Column("updated_at", sa.DateTime(), nullable=False),
+            sa.PrimaryKeyConstraint("id"),
+            sa.UniqueConstraint("code"),
+        )
+        op.create_index("ix_inventory_items_item_type", "inventory_items", ["item_type"])
+        op.create_index("ix_inventory_items_status", "inventory_items", ["status"])
 
+    if "inventory_ledger" in tables:
+        return
     op.create_table(
         "inventory_ledger",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),

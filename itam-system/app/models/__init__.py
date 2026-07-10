@@ -11,6 +11,8 @@ from app.models.file import AssetAttachment
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.repair import RepairFaultType, RepairRecord
 from app.models.product import DeviceType, ProductCatalog
+from app.models.report import AuditReportArchive
+from app.models.scan_binding import AssetScanBinding
 from app.models.supplier import Supplier
 from app.models.stocktake import StocktakeItem, StocktakeScanLog, StocktakeTask
 from app.models.user import IdentityProviderConfig, RolePermission, UserDirectory
@@ -33,6 +35,8 @@ __all__ = [
     "RepairFaultType",
     "DeviceType",
     "ProductCatalog",
+    "AuditReportArchive",
+    "AssetScanBinding",
     "Supplier",
     "StocktakeItem",
     "StocktakeScanLog",

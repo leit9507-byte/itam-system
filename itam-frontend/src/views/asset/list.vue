@@ -27,6 +27,11 @@
         <el-select v-model="filters.supplier" clearable filterable placeholder="供应商" style="width: 180px" @change="refreshAssets">
           <el-option v-for="item in suppliers" :key="item.id || item.name" :label="item.name" :value="item.name" />
         </el-select>
+        <el-select v-model="filters.risk_filter" clearable placeholder="风险筛选" style="width: 210px" @change="refreshAssets">
+          <el-option label="仍在使用且已过保" value="active_warranty_overdue" />
+          <el-option label="仍在使用且超服役" value="active_retirement_overdue" />
+          <el-option label="仍在使用且过保/超服役" value="active_warranty_or_retirement_overdue" />
+        </el-select>
         <el-divider direction="vertical" />
         <el-button :disabled="!selected.length" @click="openBatchEdit">批量编辑</el-button>
         <el-button :disabled="!selected.length" @click="openBatchRepair">批量维修</el-button>
@@ -365,7 +370,7 @@ const filteredUsers = ref([])
 const suppliers = ref([])
 const locations = ref([])
 const faultTypes = ref([])
-const filters = reactive({ keyword: '', status: '', category: '', company: '', supplier: '' })
+const filters = reactive({ keyword: '', status: '', category: '', company: '', supplier: '', risk_filter: '' })
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const batch = reactive({ visible: false, type: 'inbound', assets: [], form: defaultBatchForm() })
 const batchEdit = reactive({ visible: false, form: defaultBatchEditForm(), fields: defaultBatchEditFields() })

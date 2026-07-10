@@ -80,11 +80,13 @@ export async function getRiskAnalytics() {
   }
 }
 
-export function getReports() {
-  return Promise.resolve([])
+export async function getReports(params = {}) {
+  const result = await request.get('/reports/audit-reports', { params })
+  return result.list || result
 }
 
 export async function generateReport() {
+  return request.post('/reports/audit-reports')
   const result = await request.post('/audit/run', { users: [], notify: false })
   const html = await request.get('/audit/report', { responseType: 'text' })
   return {
@@ -97,6 +99,20 @@ export async function generateReport() {
     risk_score: result.risk_score,
     html
   }
+}
+
+export function getReportHtml(reportId) {
+  return request.get(`/reports/audit-reports/${encodeURIComponent(reportId)}/html`, { responseType: 'text' })
+}
+
+export async function downloadArchivedAuditReport(reportId, type = 'pdf') {
+  const blob = await request.get(`/reports/audit-reports/${encodeURIComponent(reportId)}/${type}`, { responseType: 'blob' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${reportId}.${type === 'xlsx' ? 'xlsx' : 'pdf'}`
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 function normalizeViolations(rows, assets, users, rules, responses) {

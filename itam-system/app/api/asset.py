@@ -40,10 +40,11 @@ def list_assets(
     category: str | None = None,
     company: str | None = None,
     supplier: str | None = None,
+    risk_filter: str | None = None,
     request: Request = None,
     db: Session = Depends(get_db),
 ):
-    return AssetService.list_assets(db, page, page_size, keyword, status, category, company, supplier, user_context_from_request(request))
+    return AssetService.list_assets(db, page, page_size, keyword, status, category, company, supplier, user_context_from_request(request), risk_filter)
 
 
 @router.get("/summary")

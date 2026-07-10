@@ -66,10 +66,13 @@
           <el-table-column prop="type" label="类型" width="120" />
           <el-table-column prop="status" label="状态" width="110" />
           <el-table-column prop="risk_score" label="风险评分" width="100" />
+          <el-table-column prop="violation_count" label="风险数" width="90" />
           <el-table-column prop="created_at" label="日期" width="130" />
-          <el-table-column label="操作" width="110">
+          <el-table-column label="操作" width="190">
             <template #default="{ row }">
-              <el-button type="primary" link @click="previewHtml = row.html">预览</el-button>
+              <el-button type="primary" link @click="previewReport(row)">预览</el-button>
+              <el-button link @click="downloadReport(row, 'pdf')">PDF</el-button>
+              <el-button link @click="downloadReport(row, 'xlsx')">Excel</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -103,16 +106,17 @@
 <script setup>
 import { ElMessage } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { generateReport, getReports } from '../../api/audit'
+import { downloadArchivedAuditReport, generateReport, getReportHtml, getReports } from '../../api/audit'
 import { downloadAssetCsv, downloadAssetPdf, downloadAuditReport, downloadAuditReportExcel, downloadDepartmentAssetsCsv, downloadOverdueBorrowingsCsv, downloadPersonHoldingsCsv, downloadScrapDisposalLedgerCsv, downloadWarrantyExpiringCsv, getReportAnalytics } from '../../api/reporting'
 
 const reports = ref([])
 const previewHtml = ref('')
+const activeReportId = ref('')
 const generating = ref(false)
 const pagination = reactive({ page: 1, pageSize: 10 })
 const analytics = reactive({ department_occupancy: [], per_capita_value: [], idle_trend: [], repair_cost_trend: [], stocktake_diff_trend: [] })
 
-const activeReport = computed(() => reports.value.find(item => item.html === previewHtml.value))
+const activeReport = computed(() => reports.value.find(item => item.id === activeReportId.value))
 const pagedReports = computed(() => {
   const start = (pagination.page - 1) * pagination.pageSize
   return reports.value.slice(start, start + pagination.pageSize)
@@ -136,10 +140,21 @@ async function handleGenerate() {
     reports.value.unshift(report)
     pagination.page = 1
     previewHtml.value = report.html
+    activeReportId.value = report.id
     ElMessage.success('审计报告已生成，已包含审计答复和合规判断')
   } finally {
     generating.value = false
   }
+}
+
+async function previewReport(row) {
+  previewHtml.value = await getReportHtml(row.id)
+  activeReportId.value = row.id
+}
+
+async function downloadReport(row, type) {
+  await downloadArchivedAuditReport(row.id, type)
+  ElMessage.success(`${type === 'xlsx' ? 'Excel' : 'PDF'} 已下载`)
 }
 
 async function handleDownloadAudit() {

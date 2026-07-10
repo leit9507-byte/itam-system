@@ -33,6 +33,7 @@
         <el-menu-item v-if="canRead('identity')" index="/personnel">人员管理</el-menu-item>
         <el-menu-item v-if="canRead('identity')" index="/notification">消息通知</el-menu-item>
         <el-menu-item v-if="canRead('ops')" index="/ops">运维面板</el-menu-item>
+        <el-menu-item v-if="canRead('ops')" index="/operation-log">操作日志</el-menu-item>
       </el-sub-menu>
       <el-sub-menu v-if="reportGroupVisible" index="/report-audit">
         <template #title><el-icon><View /></el-icon><span>报告审核</span></template>

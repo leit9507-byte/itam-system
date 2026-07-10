@@ -42,6 +42,7 @@ export async function getAssets(params = {}) {
       category: params.category || undefined,
       company: params.company || undefined,
       supplier: params.supplier || undefined,
+      risk_filter: params.risk_filter || undefined,
       page: params.page || undefined,
       page_size: params.page_size ?? params.pageSize ?? undefined
     }
@@ -169,7 +170,7 @@ export async function getAssetDetail(assetId) {
       { user: asset?.owner_name || asset?.owner || '未分配', dept: asset?.dept_name || asset?.dept || '未绑定', from: asset?.created_at || '-', to: '至今' }
     ],
     inventoryRecords,
-    risks: buildAssetRisks(asset)
+    risks: buildAssetRisksV2(asset)
   }
 }
 
@@ -697,6 +698,57 @@ function lifecycleGroup(row) {
 
 function emptyText(value) {
   return value === undefined || value === null || value === '' ? '-' : String(value)
+}
+
+function buildAssetRisksV2(asset) {
+  if (!asset) return []
+  const risks = []
+  const today = startOfToday()
+  const activeStatuses = ['in_use', 'borrowed', 'out_stock']
+  const isActive = activeStatuses.includes(asset.status)
+  const warrantyDate = parseDate(asset.warranty_expire_date)
+  const retirementDate = parseDate(asset.retirement_date)
+
+  if (!asset.owner && asset.status === 'in_use') risks.push({ level: 'high', message: '在用资产未绑定责任人', detail: '资产处于在用状态，但没有明确责任人，后续盘点、归还和追责都会受影响。' })
+  if (!asset.dept && asset.price >= 50000) risks.push({ level: 'high', message: '高价值资产未绑定部门', detail: `资产原值 ¥${Number(asset.price || 0).toLocaleString()}，建议绑定部门用于预算归属和审计。` })
+
+  if (warrantyDate) {
+    const days = daysUntil(warrantyDate, today)
+    if (days < 0) risks.push({ level: isActive ? 'high' : 'medium', message: `已过保 ${Math.abs(days)} 天`, detail: `质保到期日：${asset.warranty_expire_date}。仍在使用的过保设备建议评估延保、替换或纳入重点巡检。` })
+    else if (days <= 30) risks.push({ level: 'medium', message: `质保 ${days} 天后到期`, detail: `质保到期日：${asset.warranty_expire_date}，建议提前确认是否续保或安排替换。` })
+    else if (days <= 90) risks.push({ level: 'low', message: `质保 ${days} 天后到期`, detail: `质保到期日：${asset.warranty_expire_date}，可加入到期提醒清单。` })
+  }
+
+  if (retirementDate) {
+    const days = daysUntil(retirementDate, today)
+    if (days < 0) risks.push({ level: isActive ? 'high' : 'medium', message: `已超过服役年限 ${Math.abs(days)} 天`, detail: `预计退役时间：${asset.retirement_date}。仍在使用的超服役设备建议评估性能、安全和替换计划。` })
+    else if (days <= 30) risks.push({ level: 'medium', message: `距离预计退役 ${days} 天`, detail: `预计退役时间：${asset.retirement_date}，建议提前准备替换或处置方案。` })
+    else if (days <= 90) risks.push({ level: 'low', message: `距离预计退役 ${days} 天`, detail: `预计退役时间：${asset.retirement_date}，可纳入季度资产复核。` })
+  }
+
+  if (asset.status === 'idle') risks.push({ level: 'medium', message: '资产处于闲置状态', detail: '建议优先调拨复用，长期无法复用时进入报废或处置评估。' })
+  if (asset.status === 'repair') risks.push({ level: 'medium', message: '资产维修中', detail: '请关注维修周期、费用和供应商反馈，避免长期占用资产。' })
+  if (asset.status === 'ready_scrap') risks.push({ level: 'medium', message: '资产待报废', detail: '资产已标记待报废，可提交报废审批并补充处置依据。' })
+  if (asset.status === 'pending_scrap') risks.push({ level: 'medium', message: '报废审批中', detail: '资产已提交报废审批，请关注审批结果，审批通过前不建议继续领用。' })
+  if (asset.status === 'scrapped') risks.push({ level: 'low', message: '资产已报废', detail: '资产已报废，等待处置归档，后续盘点应作为非在用资产处理。' })
+  if (asset.status === 'disposed') risks.push({ level: 'low', message: '资产已处置归档', detail: '资产已完成处置，保留审计记录和附件归档即可。' })
+  return risks.length ? risks : [{ level: 'low', message: '暂无显著风险', detail: '责任人、状态、质保和预计退役时间未发现明显异常。' }]
+}
+
+function parseDate(value) {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function startOfToday() {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+}
+
+function daysUntil(date, base = startOfToday()) {
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  return Math.ceil((target.getTime() - base.getTime()) / 86400000)
 }
 
 function buildAssetRisks(asset) {

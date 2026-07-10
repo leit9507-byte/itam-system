@@ -28,14 +28,18 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: mysql+pymysql://itam:itam_pass@mysql:3306/itam_system?charset=utf8mb4
+      APP_CONFIG_DIR: /app/runtime
       AUDIT_REPORT_PATH: /app/audit_report.html
       MAX_ASSETS_PER_USER: 5
       HIGH_VALUE_THRESHOLD: 50000
       IDLE_DAYS_THRESHOLD: 90
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-Admin@123456}
       INITIAL_AUDITOR_PASSWORD: ${INITIAL_AUDITOR_PASSWORD:-Auditor@123456}
+      INIT_DATABASE_TOKEN: ${INIT_DATABASE_TOKEN:-dev-init-token}
     ports:
       - "8000:8000"
+    volumes:
+      - backend_runtime:/app/runtime
 
   frontend:
     build:
@@ -54,3 +58,4 @@ services:
 
 volumes:
   mysql_data:
+  backend_runtime:

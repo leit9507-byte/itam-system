@@ -1,5 +1,25 @@
 <template>
   <div class="dashboard-page">
+    <section class="dashboard-toolbar">
+      <div>
+        <h2>资产总览</h2>
+        <p>{{ dashboardRangeText }}</p>
+      </div>
+      <div class="toolbar-actions">
+        <el-date-picker
+          v-model="dashboardDateRange"
+          type="daterange"
+          value-format="YYYY-MM-DD"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          :shortcuts="dateShortcuts"
+          clearable
+          @change="load"
+        />
+        <el-button @click="clearDateRange">全部时间</el-button>
+      </div>
+    </section>
+
     <section class="summary-grid">
       <article v-for="item in summaryCards" :key="item.label" class="summary-card">
         <div class="summary-icon" :class="item.tone">
@@ -144,6 +164,7 @@ const purchaseScrapRef = ref(null)
 const retirementTrendRef = ref(null)
 const charts = []
 let resizeTimer = null
+const dashboardDateRange = ref([])
 const data = reactive({
   metrics: [],
   categoryDistribution: [],
@@ -160,12 +181,21 @@ const data = reactive({
 
 const statusColors = ['#2478ff', '#38c5d8', '#ff9345', '#9b5de5', '#6389ff', '#9db5f4']
 const categoryColors = ['#2478ff', '#38c5d8', '#44c486', '#ff9345', '#6683ff', '#8ba4f8']
+const dateShortcuts = [
+  { text: '近30天', value: () => recentRange(30) },
+  { text: '近90天', value: () => recentRange(90) },
+  { text: '今年', value: () => [new Date(new Date().getFullYear(), 0, 1), new Date()] }
+]
 const totalAssets = computed(() => metricValue('在管资产'))
 const inUseAssets = computed(() => metricValue('在用资产'))
 const idleAssets = computed(() => metricValue('闲置资产'))
 const repairAssets = computed(() => metricValue('维修中资产'))
 const pendingScrapAssets = computed(() => lifecycleValue('待报废') + lifecycleValue('已提交报废审批'))
 const expiringAssets = computed(() => metricValue('即将过保资产'))
+const dashboardRangeText = computed(() => {
+  if (!dashboardDateRange.value?.length) return '全部时间范围'
+  return `${dashboardDateRange.value[0]} 至 ${dashboardDateRange.value[1]}`
+})
 
 const summaryCards = computed(() => [
   card('在管资产', totalAssets.value, metricChange('在管资产'), trendTone('在管资产'), 'blue', Files, `本月新增 ${formatValue(metricValue('本月新增资产'))}`),
@@ -211,9 +241,21 @@ onUnmounted(() => {
 })
 
 async function load() {
-  Object.assign(data, await getEnterpriseDashboard())
+  Object.assign(data, await getEnterpriseDashboard({ dateRange: dashboardDateRange.value }))
   await nextTick()
   renderCharts()
+}
+
+function clearDateRange() {
+  dashboardDateRange.value = []
+  load()
+}
+
+function recentRange(days) {
+  const end = new Date()
+  const start = new Date()
+  start.setDate(end.getDate() - days + 1)
+  return [start, end]
 }
 
 function renderCharts() {
@@ -369,6 +411,37 @@ function percentValue(value) {
 .dashboard-page {
   display: grid;
   gap: 16px;
+}
+
+.dashboard-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.dashboard-toolbar h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 20px;
+}
+
+.dashboard-toolbar p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .summary-grid {
@@ -586,6 +659,15 @@ function percentValue(value) {
 }
 
 @media (max-width: 900px) {
+  .dashboard-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .toolbar-actions {
+    justify-content: flex-start;
+  }
+
   .summary-grid,
   .main-grid,
   .trend-grid,

@@ -254,6 +254,7 @@ import {
 import { assetStatuses, getAssets } from '../../api/asset'
 import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
+import { resolveScanBinding } from '../../api/scanBinding'
 import { assetCodeMatches, parseAssetCode } from '../../utils/assetCode'
 
 const tasks = ref([])
@@ -454,10 +455,22 @@ async function registerQuickItem() {
   const code = parseAssetCode(quickForm.code)
   if (!code) return ElMessage.warning('请扫码或输入资产编号 / 序列号')
   if (!currentTask.value) return
-  const row = currentTaskItems.value.find(item => assetCodeMatches(item, quickForm.code))
+  const resolvedAsset = await resolveAssetFromScan(quickForm.code)
+  const row = resolvedAsset
+    ? currentTaskItems.value.find(item => item.asset_id === resolvedAsset.asset_id)
+    : currentTaskItems.value.find(item => assetCodeMatches(item, quickForm.code))
   if (!row) return ElMessage.error('该资产不在当前盘点任务范围内')
   await confirmScannedItem(row)
   quickForm.code = ''
+}
+
+async function resolveAssetFromScan(value) {
+  try {
+    const result = await resolveScanBinding(value)
+    return result?.bound ? result.asset : null
+  } catch {
+    return null
+  }
 }
 
 async function reportLocationException(row) {

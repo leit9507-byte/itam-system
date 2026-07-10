@@ -1,10 +1,18 @@
-# ITAM Production Runbook
+# ITAM Linux Production Runbook
 
-## 1. Prepare environment
+This runbook is for Linux servers using Docker Compose.
 
-Copy `.env.production.example` to `.env.production` and change every password/secret before startup.
+## 1. First Deployment
 
-Required values:
+Install Docker Engine and Docker Compose Plugin, then clone or upload this project to the server.
+
+```bash
+cd itam-system
+cp .env.production.example .env.production
+chmod +x scripts/prod-init-db.sh
+```
+
+Edit `.env.production` before startup. These values must be changed:
 
 - `MYSQL_ROOT_PASSWORD`
 - `MYSQL_PASSWORD`
@@ -12,15 +20,30 @@ Required values:
 - `JWT_SECRET`
 - `INITIAL_ADMIN_PASSWORD`
 - `INITIAL_AUDITOR_PASSWORD`
+- `INIT_DATABASE_TOKEN`
 - `CORS_ORIGINS`
+- `VITE_MOBILE_PUBLIC_URL`
 
 Production startup refuses weak default admin/auditor passwords.
 
-## 2. Start production
+Build and initialize the system:
 
-```powershell
-.\scripts\prod-up.ps1 -Build
+```bash
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production build
+./scripts/prod-init-db.sh
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production up -d
 ```
+
+Check service status:
+
+```bash
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production ps
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production logs -f backend
+```
+
+Do not run `docker compose down -v` in production unless you intentionally want to delete all Docker volume data.
+
+## 2. Production Runtime
 
 Production uses:
 
@@ -28,11 +51,13 @@ Production uses:
 - Gunicorn + Uvicorn workers, no reload
 - MySQL without public port exposure
 - Backend behind frontend `/backend`
-- Persistent Docker volumes for MySQL, uploads, reports, backups
+- Persistent Docker volumes for MySQL, uploads, reports, backups, and `/app/runtime`
 
-## 2.1 Database configuration
+Runtime database configuration is stored under `/app/runtime` in the backend container and is persisted by `backend_runtime_prod`.
 
-Production uses MySQL. Keep `MYSQL_*` and `DB_*` consistent in `.env.production`:
+## 3. Database Configuration
+
+Keep `MYSQL_*` and `DB_*` consistent in `.env.production`:
 
 - `MYSQL_DATABASE` / `DB_NAME`
 - `MYSQL_USER` / `DB_USER`
@@ -47,29 +72,58 @@ Connection pool defaults:
 - `DB_POOL_TIMEOUT=30`
 - `DB_CONNECT_TIMEOUT=10`
 
-MySQL container defaults:
+If the database is changed from the admin backend page, restart the backend, run migration, then run initialization:
 
-- `MYSQL_MAX_CONNECTIONS=200`
-- `MYSQL_INNODB_BUFFER_POOL_SIZE=512M`
-- `MYSQL_TIMEZONE=+08:00`
-
-For a small server, keep the defaults first. For a larger concurrent deployment, increase `MYSQL_MAX_CONNECTIONS` together with backend worker count and database pool size.
-
-## 3. Database migration
-
-Production migration is fixed to Alembic:
-
-```powershell
-docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production exec backend alembic upgrade head
+```bash
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production restart backend
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production exec -T backend alembic upgrade head
+./scripts/prod-init-db.sh
 ```
 
-The backend image also runs `alembic upgrade head` on container startup.
+## 4. Migration
 
-Do not use `docker compose down -v` in production unless you intentionally want to delete all data.
+Run Alembic for every release:
 
-## 4. Backup
+```bash
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production exec -T backend alembic upgrade head
+```
 
-The production compose includes an automatic backup container.
+Check current revision:
+
+```bash
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production exec -T backend alembic current
+```
+
+The first migration creates the base tables. Later migrations adjust schema incrementally.
+
+## 5. System Initialization
+
+The initialization API is:
+
+```text
+POST /ops/init-database
+Header: X-Init-Token: <INIT_DATABASE_TOKEN>
+Body: {"force": true}
+```
+
+It creates missing tables and seeds:
+
+- Initial administrator and auditor
+- Roles and base permissions
+- Audit rules
+- Notification settings
+- Repair fault types
+- Product catalog seed data
+
+On Linux, use:
+
+```bash
+./scripts/prod-init-db.sh
+```
+
+## 6. Backup
+
+The production Compose file includes an automatic backup container.
 
 Defaults:
 
@@ -77,31 +131,42 @@ Defaults:
 - Upload attachment archive every 24 hours
 - Keep backups for 14 days
 
-Manual backup:
+Manual Linux backup:
 
-```powershell
-.\scripts\prod-backup.ps1
+```bash
+BACKUP_DIR="backups/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$BACKUP_DIR"
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production exec -T mysql sh -c 'mysqldump -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" --single-transaction --routines --triggers --events "$MYSQL_DATABASE"' > "$BACKUP_DIR/database.sql"
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production exec -T backend tar -czf - /app/uploads > "$BACKUP_DIR/uploads.tar.gz"
 ```
 
-## 5. Restore drill
+## 7. Restore
 
 Restore database:
 
-```powershell
-.\scripts\prod-restore.ps1 -BackupPath .\backups\YYYYMMDD-HHMMSS
+```bash
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production exec -T mysql sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' < backups/YYYYMMDD-HHMMSS/database.sql
 ```
 
-Restore database and attachments:
+Restore attachments:
 
-```powershell
-.\scripts\prod-restore.ps1 -BackupPath .\backups\YYYYMMDD-HHMMSS -RestoreUploads
+```bash
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production exec -T backend tar -xzf - -C / < backups/YYYYMMDD-HHMMSS/uploads.tar.gz
+```
+
+After restore:
+
+```bash
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production restart backend frontend
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production exec -T backend alembic upgrade head
 ```
 
 Run a restore drill before first production use and after any major schema change.
 
-## 6. Security checklist
+## 8. Security Checklist
 
 - Change built-in admin and auditor passwords.
+- Keep `INIT_DATABASE_TOKEN` secret and rotate it after initial deployment if needed.
 - Use HTTPS in front of Nginx when exposed outside LAN.
 - Set `CORS_ORIGINS` to the real domain, not `*`.
 - Keep `JWT_SECRET` long and random.
@@ -109,7 +174,7 @@ Run a restore drill before first production use and after any major schema chang
 - Limit attachment file types and size with `ALLOWED_UPLOAD_EXTENSIONS` and `MAX_UPLOAD_SIZE_MB`.
 - Review RBAC before inviting real users.
 
-## 7. Role intent
+## 9. Role Intent
 
 - `admin`: full system administration.
 - `asset_manager`: asset operation, purchase, repair, supplier, file management.
@@ -117,9 +182,9 @@ Run a restore drill before first production use and after any major schema chang
 - `auditor`: read assets, read files, run/export audits.
 - `user`: read own scoped assets and catalog only.
 
-## 8. Report exports
+## 10. Report Exports
 
-The report center includes production ledger exports:
+Before first production use, download these reports once with an admin account and a department manager account to confirm data-scope isolation:
 
 - Department asset list
 - Person holding list
@@ -129,11 +194,9 @@ The report center includes production ledger exports:
 - Audit report PDF
 - Audit report Excel
 
-Before first production use, download each report once with an admin account and a department manager account to confirm data-scope isolation.
+## 11. Mobile Stocktake Scan Acceptance
 
-## 9. Mobile stocktake scan acceptance
-
-PC workflows can go live first. Field stocktake needs a separate real-device pass:
+Field stocktake needs a separate real-device pass:
 
 - WeChat embedded browser opens `/mobile` successfully.
 - Feishu embedded browser opens `/mobile` successfully.

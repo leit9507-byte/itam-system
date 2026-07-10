@@ -54,6 +54,7 @@ services:
       LOGIN_LOCK_MINUTES: ${LOGIN_LOCK_MINUTES:-15}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD}
       INITIAL_AUDITOR_PASSWORD: ${INITIAL_AUDITOR_PASSWORD}
+      INIT_DATABASE_TOKEN: ${INIT_DATABASE_TOKEN}
       CORS_ORIGINS: ${CORS_ORIGINS}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
       WEB_TIMEOUT: ${WEB_TIMEOUT:-120}
@@ -63,11 +64,13 @@ services:
       MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-20}
       ALLOWED_UPLOAD_EXTENSIONS: ${ALLOWED_UPLOAD_EXTENSIONS:-.pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip}
       UPLOAD_DIR: /app/uploads
+      APP_CONFIG_DIR: /app/runtime
       AUDIT_REPORT_PATH: /app/reports/audit_report.html
     volumes:
       - uploads_prod:/app/uploads
       - reports_prod:/app/reports
       - backend_logs_prod:/app/logs
+      - backend_runtime_prod:/app/runtime
     expose:
       - "8000"
     healthcheck:
@@ -123,4 +126,5 @@ volumes:
   uploads_prod:
   reports_prod:
   backend_logs_prod:
+  backend_runtime_prod:
   backups_prod:

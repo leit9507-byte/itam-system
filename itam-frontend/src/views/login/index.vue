@@ -99,6 +99,7 @@ async function submitLogin() {
 .login-page {
   display: grid;
   min-height: 100vh;
+  min-height: 100dvh;
   place-items: center;
   padding: 32px;
   background:
@@ -278,103 +279,167 @@ p {
 
 @media (max-width: 900px) {
   .login-page {
-    align-items: start;
     place-items: start center;
+    padding: 20px;
   }
 
   .login-shell {
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: 14px;
     width: min(520px, 100%);
   }
 
   .brand-side {
     min-height: auto;
     align-content: start;
+    padding: 24px;
   }
 
   .capability-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 640px) {
   .login-page {
-    min-height: 100dvh;
-    padding: 14px;
-    background: var(--app-bg);
+    display: block;
+    padding: max(12px, env(safe-area-inset-top)) 12px max(14px, env(safe-area-inset-bottom));
+    background:
+      linear-gradient(180deg, rgba(239, 246, 255, 0.92) 0%, rgba(248, 250, 252, 1) 42%),
+      var(--app-bg);
+    overflow-x: hidden;
   }
 
-  .brand-side,
+  .login-shell {
+    width: 100%;
+    gap: 10px;
+  }
+
+  .brand-side {
+    min-height: 0;
+    padding: 14px 14px 12px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #0f3f78 0%, #1d6ed8 64%, #12a3b8 100%);
+    box-shadow: 0 10px 24px rgba(29, 78, 216, 0.18);
+  }
+
   .login-panel {
-    padding: 18px;
+    padding: 18px 16px;
+    border-radius: 14px;
   }
 
   .brand-head {
     align-items: center;
+    gap: 10px;
   }
 
   .brand-mark {
-    width: 42px;
-    height: 42px;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
   }
 
-  h1,
+  h1 {
+    font-size: 19px;
+  }
+
   h2 {
-    font-size: 22px;
+    margin-top: 2px;
+    font-size: 24px;
   }
 
   .brand-head p {
+    max-width: 240px;
+    overflow: hidden;
     font-size: 12px;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .brand-copy {
-    gap: 8px;
-  }
-
-  .brand-copy strong {
-    font-size: 20px;
-  }
-
+  .brand-copy,
   .brand-copy span {
     display: none;
   }
 
   .capability-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-  }
-
-  .capability-item {
-    padding: 10px 8px;
-    justify-items: center;
-    text-align: center;
-  }
-
-  .capability-item .el-icon {
-    font-size: 20px;
-  }
-
-  .capability-item strong {
-    font-size: 12px;
-  }
-
-  .capability-item span {
     display: none;
   }
 
   .login-panel {
-    gap: 16px;
-    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+    gap: 14px;
+    min-height: calc(100dvh - 98px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    align-content: start;
+    box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
   }
 
-  .form-head p,
-  .login-foot {
+  .form-head {
+    gap: 8px;
+  }
+
+  .form-head > span {
     font-size: 12px;
   }
 
+  .form-head p {
+    display: none;
+  }
+
+  .login-form {
+    gap: 2px;
+  }
+
   :deep(.el-form-item) {
-    margin-bottom: 14px;
+    margin-bottom: 13px;
+  }
+
+  :deep(.el-form-item__label) {
+    padding-bottom: 6px;
+    font-size: 13px;
+    line-height: 1.2;
+  }
+
+  :deep(.el-input__wrapper),
+  :deep(.el-segmented) {
+    min-height: 48px;
+    border-radius: 10px;
+  }
+
+  :deep(.el-input__inner) {
+    font-size: 16px;
+  }
+
+  :deep(.provider-segment .el-segmented__item) {
+    min-height: 40px;
+  }
+
+  .login-button {
+    min-height: 48px;
+    margin-top: 2px;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .login-foot {
+    margin-top: auto;
+    padding-top: 10px;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+}
+
+@media (max-width: 380px) {
+  .login-page {
+    padding-inline: 10px;
+  }
+
+  .login-panel {
+    padding-inline: 14px;
+  }
+
+  h2 {
+    font-size: 22px;
   }
 }
 </style>

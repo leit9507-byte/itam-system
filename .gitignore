@@ -20,6 +20,7 @@ artifacts/
 uploads/qrcodes/*.png
 itam-system/uploads/qrcodes/*.png
 itam-system/uploads/reports/*.pdf
+itam-system/uploads/reports/audit-archives/
 
 # Local env files
 .env

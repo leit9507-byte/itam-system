@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
@@ -14,18 +14,120 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.security import user_context_from_request
+from app.core.security import operator_from_request, user_context_from_request
 from app.models.asset import Asset
 from app.models.checkout import AssetCheckout
 from app.models.repair import RepairRecord
+from app.models.report import AuditReportArchive
 from app.models.scrap import ScrapRequest
 from app.models.stocktake import StocktakeItem, StocktakeTask
 from app.models.user import UserDirectory
 from app.services.asset_service import AssetService
 from app.services.audit_engine import AuditEngine
+from app.reports.generator import AuditReportGenerator
 
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
+
+
+def audit_report_out(row: AuditReportArchive) -> dict:
+    return {
+        "id": row.report_no,
+        "archive_id": row.id,
+        "name": row.name,
+        "type": "审计报告",
+        "status": row.status,
+        "created_at": date_text(row.created_at),
+        "total_assets": row.total_assets,
+        "risk_score": row.risk_score,
+        "violation_count": row.violation_count,
+        "created_by": row.created_by or "",
+        "has_pdf": bool(row.pdf_path),
+        "has_xlsx": bool(row.xlsx_path),
+    }
+
+
+@router.get("/audit-reports")
+def list_audit_report_archives(page: int = 1, page_size: int = 50, db: Session = Depends(get_db)):
+    clean_page = max(page, 1)
+    clean_page_size = min(max(page_size, 1), 200)
+    query = db.query(AuditReportArchive).order_by(AuditReportArchive.created_at.desc(), AuditReportArchive.id.desc())
+    total = query.count()
+    rows = query.offset((clean_page - 1) * clean_page_size).limit(clean_page_size).all()
+    return {"list": [audit_report_out(row) for row in rows], "total": total, "page": clean_page, "page_size": clean_page_size}
+
+
+@router.post("/audit-reports")
+def create_audit_report_archive(request: Request, db: Session = Depends(get_db)):
+    result = AuditEngine(db).run()
+    report_no = f"AR-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    output_dir = Path(get_settings().upload_dir) / "reports" / "audit-archives"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    generated_html = Path(AuditReportGenerator().generate(result))
+    html_path = output_dir / f"{report_no}.html"
+    html_path.write_text(generated_html.read_text(encoding="utf-8"), encoding="utf-8")
+
+    from app.api.audit import generate_audit_pdf
+
+    pdf_source = Path(generate_audit_pdf(result))
+    pdf_path = output_dir / f"{report_no}.pdf"
+    pdf_path.write_bytes(pdf_source.read_bytes())
+
+    xlsx_path = output_dir / f"{report_no}.xlsx"
+    build_audit_workbook(result).save(xlsx_path)
+
+    row = AuditReportArchive(
+        report_no=report_no,
+        name=f"审计报告 {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
+        report_type="audit",
+        status="已生成",
+        total_assets=int(result.get("total_assets") or 0),
+        risk_score=int(result.get("risk_score") or 0),
+        violation_count=len(result.get("violations") or []),
+        html_path=str(html_path),
+        pdf_path=str(pdf_path),
+        xlsx_path=str(xlsx_path),
+        created_by=operator_from_request(request),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {**audit_report_out(row), "html": html_path.read_text(encoding="utf-8")}
+
+
+@router.get("/audit-reports/{report_no}/html")
+def get_archived_audit_report_html(report_no: str, db: Session = Depends(get_db)):
+    row = get_audit_report_archive(db, report_no)
+    path = Path(row.html_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="report file not found")
+    return FileResponse(path, media_type="text/html; charset=utf-8", filename=f"{report_no}.html")
+
+
+@router.get("/audit-reports/{report_no}/pdf")
+def download_archived_audit_report_pdf(report_no: str, db: Session = Depends(get_db)):
+    row = get_audit_report_archive(db, report_no)
+    path = Path(row.pdf_path or "")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="report pdf not found")
+    return FileResponse(path, media_type="application/pdf", filename=f"{report_no}.pdf")
+
+
+@router.get("/audit-reports/{report_no}/xlsx")
+def download_archived_audit_report_xlsx(report_no: str, db: Session = Depends(get_db)):
+    row = get_audit_report_archive(db, report_no)
+    path = Path(row.xlsx_path or "")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="report excel not found")
+    return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=f"{report_no}.xlsx")
+
+
+def get_audit_report_archive(db: Session, report_no: str) -> AuditReportArchive:
+    row = db.query(AuditReportArchive).filter(AuditReportArchive.report_no == report_no).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="report not found")
+    return row
 
 
 @router.get("/assets.csv")
@@ -316,6 +418,14 @@ def users_by_identity(db: Session) -> dict[str, UserDirectory]:
             if key:
                 result[str(key)] = user
     return result
+
+
+def build_audit_workbook(result: dict) -> Workbook:
+    workbook = Workbook()
+    build_audit_summary_sheet(workbook.active, result)
+    build_audit_violations_sheet(workbook.create_sheet("风险明细"), result.get("violations") or [])
+    build_audit_responses_sheet(workbook.create_sheet("审计答复"), result.get("responses") or [])
+    return workbook
 
 
 def csv_response(filename: str, headers: list[str], rows: list[list]) -> PlainTextResponse:

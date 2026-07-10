@@ -16,10 +16,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("scrap_requests", sa.Column("final_residual_value", sa.Float(), server_default="0", nullable=True))
-    op.add_column("scrap_requests", sa.Column("disposal_remark", sa.Text(), nullable=True))
-    op.add_column("scrap_requests", sa.Column("disposed_by", sa.String(length=128), nullable=True))
-    op.add_column("scrap_requests", sa.Column("disposed_at", sa.DateTime(), nullable=True))
+    add_column("scrap_requests", sa.Column("final_residual_value", sa.Float(), server_default="0", nullable=True))
+    add_column("scrap_requests", sa.Column("disposal_remark", sa.Text(), nullable=True))
+    add_column("scrap_requests", sa.Column("disposed_by", sa.String(length=128), nullable=True))
+    add_column("scrap_requests", sa.Column("disposed_at", sa.DateTime(), nullable=True))
 
 
 def downgrade() -> None:
@@ -27,3 +27,13 @@ def downgrade() -> None:
     op.drop_column("scrap_requests", "disposed_by")
     op.drop_column("scrap_requests", "disposal_remark")
     op.drop_column("scrap_requests", "final_residual_value")
+
+
+def add_column(table_name: str, column: sa.Column) -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if table_name not in inspector.get_table_names():
+        return
+    columns = {item["name"] for item in inspector.get_columns(table_name)}
+    if column.name not in columns:
+        op.add_column(table_name, column)

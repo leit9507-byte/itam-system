@@ -15,6 +15,8 @@ PUBLIC_PATHS = {
     "/auth/login",
     "/auth/me/permissions",
     "/approval/feishu/callback",
+    "/ops/database-status",
+    "/ops/init-database",
 }
 
 RESOURCE_PREFIXES = {
@@ -26,6 +28,7 @@ RESOURCE_PREFIXES = {
     "/repair": "repair",
     "/scrap": "asset",
     "/stocktake": "asset",
+    "/scan-bindings": "asset",
     "/lifecycle": "asset",
     "/supplier": "supplier",
     "/catalog": "catalog",

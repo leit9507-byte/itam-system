@@ -418,7 +418,7 @@ const pagedPersonRows = computed(() => paginate(filteredPersonRows.value, result
 const pagedAssetRows = computed(() => paginate(filteredAssetRows.value, resultPagination))
 
 onMounted(async () => {
-  await Promise.all([loadCategories(), handleRun(false)])
+  await loadCategories()
 })
 onUnmounted(() => charts.forEach(chart => chart.dispose()))
 
@@ -474,7 +474,6 @@ async function saveRules() {
     await saveAuditRules(rulesDrawer.rules)
     rulesDrawer.visible = false
     ElMessage.success('规则已保存')
-    await handleRun(false)
   } finally {
     rulesDrawer.saving = false
   }
@@ -567,7 +566,6 @@ async function submitResponse() {
     })
     responseDrawer.visible = false
     ElMessage.success('审计答复已保存')
-    await handleRun(false)
   } finally {
     responseDrawer.saving = false
   }

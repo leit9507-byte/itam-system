@@ -6,7 +6,8 @@ Create Date: 2026-06-23
 """
 
 from alembic import op
-import sqlalchemy as sa
+from app import models  # noqa: F401
+from app.core.database import Base
 
 
 revision = "20260623_0001"
@@ -16,8 +17,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Existing deployments still use startup compatibility for additive columns.
-    pass
+    Base.metadata.create_all(bind=op.get_bind())
 
 
 def downgrade() -> None:

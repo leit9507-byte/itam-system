@@ -605,6 +605,7 @@ class AssetService:
         company: str | None = None,
         supplier: str | None = None,
         user_context: dict | None = None,
+        risk_filter: str | None = None,
     ) -> dict:
         users = AssetService.users_by_identity(db)
         query = db.query(Asset)
@@ -636,6 +637,7 @@ class AssetService:
         if company:
             stored = AssetService.normalize_company(company)
             query = query.filter(Asset.company.is_(None) if stored is None else Asset.company == stored)
+        query = AssetService.apply_asset_risk_filter(query, risk_filter)
 
         total = query.count()
         query = query.order_by(Asset.created_at.desc())
@@ -658,6 +660,27 @@ class AssetService:
         if changed:
             db.commit()
         return {"list": rows, "total": total, "page": max(page, 1), "page_size": page_size or total}
+
+    @staticmethod
+    def apply_asset_risk_filter(query, risk_filter: str | None):
+        clean_filter = (risk_filter or "").strip()
+        if not clean_filter:
+            return query
+        active_status_filter = Asset.status.in_(["in_use", "borrowed", "out_stock"])
+        warranty_overdue_filter = Asset.warranty_expire_date.isnot(None) & (Asset.warranty_expire_date < datetime.utcnow())
+        retirement_overdue_filter = text(
+            "purchase_date IS NOT NULL "
+            "AND JSON_UNQUOTE(JSON_EXTRACT(config, '$.retirement_years')) IS NOT NULL "
+            "AND CAST(JSON_UNQUOTE(JSON_EXTRACT(config, '$.retirement_years')) AS UNSIGNED) > 0 "
+            "AND TIMESTAMPADD(YEAR, CAST(JSON_UNQUOTE(JSON_EXTRACT(config, '$.retirement_years')) AS UNSIGNED), purchase_date) < NOW()"
+        )
+        if clean_filter == "active_warranty_overdue":
+            return query.filter(active_status_filter, warranty_overdue_filter)
+        if clean_filter == "active_retirement_overdue":
+            return query.filter(active_status_filter, retirement_overdue_filter)
+        if clean_filter == "active_warranty_or_retirement_overdue":
+            return query.filter(active_status_filter).filter(or_(warranty_overdue_filter, retirement_overdue_filter))
+        return query
 
     @staticmethod
     def apply_data_scope(query, user_context: dict | None):

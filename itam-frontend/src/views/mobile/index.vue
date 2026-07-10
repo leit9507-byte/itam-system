@@ -285,6 +285,7 @@ import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
 import { getStocktakeTasks, startStocktakeTask, submitStocktakeItem } from '../../api/stocktake'
 import { getTodoItems } from '../../api/todo'
+import { resolveScanBinding } from '../../api/scanBinding'
 import TodoAssetActions from '../../components/TodoAssetActions.vue'
 import { assetCodeCandidates, assetCodeMatches, parseAssetCode } from '../../utils/assetCode'
 import { isFeishuClient, scanByFeishuSdk } from '../../utils/feishuSdk'
@@ -492,10 +493,13 @@ function handleScanResult(value) {
 async function loadAsset() {
   const code = parseAssetCode(assetCode.value)
   if (!code) return ElMessage.warning('请先扫码或输入资产编号')
+  const resolvedAsset = await resolveAssetFromScan(assetCode.value)
   const candidates = assetCodeCandidates(assetCode.value)
   if (mode.value === 'stocktake') {
     if (!selectedTask.value) return ElMessage.warning('请先选择后台创建的盘点任务')
-    const taskItem = selectedTask.value.items.find(item => assetCodeMatches(item, assetCode.value))
+    const taskItem = resolvedAsset
+      ? selectedTask.value.items.find(item => item.asset_id === resolvedAsset.asset_id)
+      : selectedTask.value.items.find(item => assetCodeMatches(item, assetCode.value))
     if (!taskItem) {
       asset.value = null
       return ElMessage.error('该资产不在当前盘点任务范围内')
@@ -504,6 +508,12 @@ async function loadAsset() {
     form.location = taskItem.book_location || ''
     form.stocktake_result = '正常'
     ElMessage[taskItem.checked_at ? 'info' : 'success'](taskItem.checked_at ? '该资产已登记，可重新扫码确认' : '已读取盘点资产')
+    return
+  }
+  if (resolvedAsset) {
+    asset.value = resolvedAsset
+    form.location = resolvedAsset.location || resolvedAsset.warehouse || ''
+    ElMessage.success('已通过扫码绑定读取资产')
     return
   }
   let found = null
@@ -519,6 +529,15 @@ async function loadAsset() {
   asset.value = found
   form.location = found.location || found.warehouse || ''
   ElMessage.success('已读取资产信息')
+}
+
+async function resolveAssetFromScan(value) {
+  try {
+    const result = await resolveScanBinding(value)
+    return result?.bound ? result.asset : null
+  } catch {
+    return null
+  }
 }
 
 function resetAsset() {
@@ -718,12 +737,13 @@ function statusType(value) {
 <style scoped>
 .mobile-page {
   min-height: 100vh;
-  padding: 82px 12px 24px;
+  padding: 14px 12px 92px;
   display: grid;
   align-content: start;
   gap: 14px;
   background:
-    linear-gradient(180deg, #eef7f6 0, #f7fafc 220px, #f3f6fb 100%);
+    radial-gradient(circle at 18% 0%, rgba(37, 99, 235, 0.15), transparent 28%),
+    linear-gradient(180deg, #eef6ff 0, #f8fafc 230px, #f3f6fb 100%);
   color: #172033;
 }
 
@@ -732,11 +752,11 @@ function statusType(value) {
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
-  padding: 16px 14px;
-  border: 1px solid rgba(15, 118, 110, 0.14);
+  padding: 18px 16px;
+  border: 1px solid rgba(37, 99, 235, 0.14);
   border-radius: 8px;
   background: #ffffff;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 14px 32px rgba(30, 41, 59, 0.08);
 }
 
 .mobile-header h1 {
@@ -766,7 +786,7 @@ function statusType(value) {
 .eyebrow {
   font-size: 12px;
   font-weight: 800;
-  color: #0f766e;
+  color: #2563eb;
 }
 
 .mobile-summary {
@@ -777,11 +797,11 @@ function statusType(value) {
 
 .summary-item {
   min-width: 0;
-  padding: 12px 10px;
+  padding: 13px 10px;
   border: 1px solid #e1e8f0;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.045);
+  box-shadow: 0 8px 22px rgba(30, 41, 59, 0.05);
   display: grid;
   gap: 3px;
 }
@@ -803,9 +823,9 @@ function statusType(value) {
 
 .mobile-top-menu {
   position: fixed;
-  top: 8px;
-  left: 10px;
-  right: 10px;
+  left: 12px;
+  right: 12px;
+  bottom: calc(10px + env(safe-area-inset-bottom));
   z-index: 20;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -813,14 +833,14 @@ function statusType(value) {
   padding: 6px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
-  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(12px);
 }
 
 .top-menu-item {
   min-width: 0;
-  min-height: 46px;
+  min-height: 54px;
   padding: 7px 4px;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -834,10 +854,10 @@ function statusType(value) {
 }
 
 .top-menu-item.active {
-  border-color: rgba(15, 118, 110, 0.22);
-  background: #0f766e;
+  border-color: rgba(37, 99, 235, 0.24);
+  background: linear-gradient(135deg, #2563eb, #0891b2);
   color: #fff;
-  box-shadow: 0 8px 18px rgba(15, 118, 110, 0.22);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.24);
 }
 
 .top-menu-item small {
@@ -871,9 +891,9 @@ function statusType(value) {
 }
 
 .mode-card {
-  flex: 0 0 128px;
-  min-height: 92px;
-  padding: 12px;
+  flex: 0 0 136px;
+  min-height: 104px;
+  padding: 14px;
   border: 1px solid #dfe8ee;
   border-radius: 8px;
   background: #ffffff;
@@ -885,14 +905,14 @@ function statusType(value) {
 }
 
 .mode-card.active {
-  border-color: rgba(15, 118, 110, 0.34);
-  background: #f0fdfa;
-  box-shadow: 0 12px 26px rgba(15, 118, 110, 0.14);
+  border-color: rgba(37, 99, 235, 0.34);
+  background: #eff6ff;
+  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.14);
 }
 
 .mode-card .el-icon {
-  font-size: 22px;
-  color: #0f766e;
+  font-size: 24px;
+  color: #2563eb;
 }
 
 .mode-card span {
@@ -913,7 +933,14 @@ function statusType(value) {
 }
 
 .scan-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  width: 100%;
   flex-shrink: 0;
+}
+
+.scan-actions :deep(.el-button) {
+  min-height: 46px;
 }
 
 .todo-actions {
@@ -957,7 +984,8 @@ function statusType(value) {
   grid-template-columns: 36px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
-  padding: 11px;
+  min-height: 58px;
+  padding: 12px;
   border: 1px solid #e0e9f2;
   border-radius: 8px;
   background: #ffffff;
@@ -1028,8 +1056,8 @@ function statusType(value) {
 }
 
 .quick-codes button {
-  min-height: 30px;
-  padding: 0 10px;
+  min-height: 36px;
+  padding: 0 12px;
   border: 1px solid #dbe5ef;
   border-radius: 999px;
   background: #fff;
@@ -1059,9 +1087,13 @@ function statusType(value) {
   margin-top: 12px;
 }
 
+.asset-actions :deep(.el-button) {
+  min-height: 42px;
+}
+
 .sticky-submit {
   position: sticky;
-  bottom: 0;
+  bottom: 78px;
   z-index: 2;
   padding-top: 10px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0), #fff 38%);
@@ -1069,6 +1101,8 @@ function statusType(value) {
 
 .submit-btn {
   width: 100%;
+  min-height: 48px;
+  font-weight: 800;
 }
 
 .log-item {
@@ -1096,12 +1130,18 @@ function statusType(value) {
 
 :deep(.el-button) {
   border-radius: 8px;
+  min-height: 40px;
 }
 
 :deep(.el-input__wrapper),
 :deep(.el-select__wrapper),
 :deep(.el-textarea__inner) {
   border-radius: 8px;
+}
+
+:deep(.el-input__wrapper),
+:deep(.el-select__wrapper) {
+  min-height: 44px;
 }
 
 :deep(.mobile-select .el-select__wrapper) {
@@ -1142,7 +1182,7 @@ function statusType(value) {
   }
 
   .top-menu-item {
-    flex: 0 0 76px;
+    flex: 0 0 82px;
     scroll-snap-align: start;
   }
 }

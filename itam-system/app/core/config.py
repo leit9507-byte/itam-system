@@ -1,7 +1,12 @@
 from functools import lru_cache
 from pydantic import BaseModel
+import json
 import os
+from pathlib import Path
 from urllib.parse import quote_plus
+
+
+DATABASE_CONFIG_FILENAME = "database.json"
 
 
 def env_bool(name: str, default: str = "false") -> bool:
@@ -12,7 +17,41 @@ def env_int(name: str, default: str) -> int:
     return int(os.getenv(name, default))
 
 
+def app_config_dir() -> Path:
+    return Path(os.getenv("APP_CONFIG_DIR", "runtime"))
+
+
+def database_config_path() -> Path:
+    return Path(os.getenv("DATABASE_CONFIG_FILE", app_config_dir() / DATABASE_CONFIG_FILENAME))
+
+
+def load_database_override() -> dict | None:
+    path = database_config_path()
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not data.get("enabled", True):
+        return None
+    return data
+
+
+def build_mysql_url(data: dict) -> str:
+    host = data.get("host") or "mysql"
+    port = data.get("port") or "3306"
+    database = data.get("database") or "itam_system"
+    user = data.get("username") or "itam"
+    password = quote_plus(data.get("password") or "")
+    charset = data.get("charset") or "utf8mb4"
+    return f"mysql+pymysql://{quote_plus(user)}:{password}@{host}:{port}/{database}?charset={charset}"
+
+
 def build_database_url() -> str:
+    override = load_database_override()
+    if override:
+        return build_mysql_url(override)
     explicit = os.getenv("DATABASE_URL")
     if explicit:
         return explicit
@@ -60,6 +99,7 @@ class Settings(BaseModel):
     production_mode: bool = os.getenv("APP_ENV", "development").lower() in {"prod", "production"}
     initial_admin_password: str | None = os.getenv("INITIAL_ADMIN_PASSWORD")
     initial_auditor_password: str | None = os.getenv("INITIAL_AUDITOR_PASSWORD")
+    init_database_token: str | None = os.getenv("INIT_DATABASE_TOKEN")
 
 
 @lru_cache
