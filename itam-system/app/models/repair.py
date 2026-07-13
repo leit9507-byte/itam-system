@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, Integer, String
+from sqlalchemy import Column, DateTime, Integer, Numeric, String
 
 from app.core.database import Base
 
@@ -13,7 +13,7 @@ class RepairRecord(Base):
     asset_id = Column(String(64), nullable=False, index=True)
     repair_time = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     fault_reason = Column(String(512), nullable=False)
-    repair_cost = Column(Float, default=0, nullable=False)
+    repair_cost = Column(Numeric(12, 2, asdecimal=False), default=0, nullable=False)
     vendor = Column(String(128), nullable=True)
     operator = Column(String(64), default="资产管理员", nullable=False)
     status = Column(String(32), default="维修中", nullable=False, index=True)

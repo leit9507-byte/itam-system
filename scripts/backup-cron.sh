@@ -1,8 +1,6 @@
 #!/bin/sh
 set -eu
 
-apk add --no-cache mysql-client tzdata tar gzip >/dev/null
-
 INTERVAL="${BACKUP_INTERVAL_SECONDS:-86400}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
 DB_HOST="${DB_HOST:-mysql}"

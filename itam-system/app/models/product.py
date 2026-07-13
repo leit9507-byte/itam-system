@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, Integer, String
+from sqlalchemy import Column, DateTime, Integer, Numeric, String
 
 from app.core.database import Base
 
@@ -23,7 +23,7 @@ class ProductCatalog(Base):
     brand = Column(String(64), nullable=True)
     model = Column(String(64), nullable=True)
     spec = Column(String(255), nullable=True)
-    unit_price = Column(Float, default=0)
+    unit_price = Column(Numeric(12, 2, asdecimal=False), default=0)
     default_warehouse = Column(String(128), nullable=True)
     retirement_years = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

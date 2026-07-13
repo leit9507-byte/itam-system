@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text
 
 from app.core.database import Base
 
@@ -19,7 +19,7 @@ class InventoryItem(Base):
     available_qty = Column(Integer, default=0, nullable=False)
     assigned_qty = Column(Integer, default=0, nullable=False)
     min_qty = Column(Integer, default=0, nullable=False)
-    unit_cost = Column(Float, default=0, nullable=False)
+    unit_cost = Column(Numeric(12, 2, asdecimal=False), default=0, nullable=False)
     license_key = Column(String(255), nullable=True)
     expire_date = Column(DateTime, nullable=True)
     supplier = Column(String(128), nullable=True)

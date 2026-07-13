@@ -153,15 +153,6 @@ def export_operation_logs(
         .limit(min(max(limit, 1), 20000))
         .all()
     )
-
-
-def parse_log_datetime(value: str, fallback_time) -> datetime:
-    clean = (value or "").strip()
-    if not clean:
-        return datetime.combine(datetime.utcnow().date(), fallback_time)
-    if len(clean) == 10:
-        return datetime.combine(datetime.fromisoformat(clean).date(), fallback_time)
-    return datetime.fromisoformat(clean.replace("Z", "+00:00")).replace(tzinfo=None)
     output = StringIO()
     writer = csv.writer(output)
     writer.writerow(["id", "module", "action", "target_type", "target_id", "operator", "summary", "detail", "created_at"])
@@ -184,6 +175,15 @@ def parse_log_datetime(value: str, fallback_time) -> datetime:
     )
 
 
+def parse_log_datetime(value: str, fallback_time) -> datetime:
+    clean = (value or "").strip()
+    if not clean:
+        return datetime.combine(datetime.utcnow().date(), fallback_time)
+    if len(clean) == 10:
+        return datetime.combine(datetime.fromisoformat(clean).date(), fallback_time)
+    return datetime.fromisoformat(clean.replace("Z", "+00:00")).replace(tzinfo=None)
+
+
 @router.get("/jobs")
 def scheduled_jobs():
     return [
@@ -202,14 +202,14 @@ def get_database_config():
 @router.post("/database-config/test")
 def test_database(payload: DatabaseConfigPayload):
     try:
-        return test_database_config(payload.dict())
+        return test_database_config(payload.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.put("/database-config")
 def update_database_config(payload: DatabaseConfigPayload, db: Session = Depends(get_db)):
-    data = payload.dict()
+    data = payload.model_dump()
     test_result = test_database_config(data)
     if not test_result.get("ok"):
         raise HTTPException(status_code=400, detail=f"数据库连接失败：{test_result.get('message')}")

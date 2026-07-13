@@ -48,6 +48,7 @@
               <strong>{{ formatValue(item.value) }}</strong>
               <em>{{ percent(item.value, totalAssets) }}</em>
             </div>
+            <p class="status-note">其他包含待采购、待验收、借出、已出库、已报废、已处置等未展开状态。</p>
           </div>
         </div>
       </article>
@@ -188,6 +189,7 @@ const dateShortcuts = [
 ]
 const totalAssets = computed(() => metricValue('在管资产'))
 const inUseAssets = computed(() => metricValue('在用资产'))
+const stockAssets = computed(() => lifecycleValue('库存中') + lifecycleValue('在库'))
 const idleAssets = computed(() => metricValue('闲置资产'))
 const repairAssets = computed(() => metricValue('维修中资产'))
 const pendingScrapAssets = computed(() => lifecycleValue('待报废') + lifecycleValue('已提交报废审批'))
@@ -209,10 +211,11 @@ const summaryCards = computed(() => [
 const statusDistribution = computed(() => {
   const rows = [
     { name: '在用', value: inUseAssets.value },
+    { name: '库存', value: stockAssets.value },
     { name: '闲置', value: idleAssets.value },
     { name: '维修中', value: repairAssets.value },
     { name: '待报废', value: pendingScrapAssets.value },
-    { name: '其他', value: Math.max(totalAssets.value - inUseAssets.value - idleAssets.value - repairAssets.value - pendingScrapAssets.value, 0) }
+    { name: '其他', value: Math.max(totalAssets.value - inUseAssets.value - stockAssets.value - idleAssets.value - repairAssets.value - pendingScrapAssets.value, 0) }
   ]
   return rows.map((item, index) => ({ ...item, color: statusColors[index] }))
 })
@@ -601,6 +604,16 @@ function percentValue(value) {
   font-style: normal;
   font-weight: 700;
   text-align: right;
+}
+
+.status-note {
+  margin: 2px 0 0;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: #f5f7fb;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .people-layout {

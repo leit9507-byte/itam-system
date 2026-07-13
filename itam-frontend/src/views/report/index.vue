@@ -57,7 +57,7 @@
       </el-card>
     </div>
 
-    <div class="two-column">
+    <div class="report-list-section">
       <el-card shadow="never">
         <template #header>报告列表</template>
         <el-table :data="pagedReports" border empty-text="暂无已生成报告，请点击生成审计报告">
@@ -86,20 +86,23 @@
           />
         </div>
       </el-card>
-
-      <el-card shadow="never">
-        <template #header>
-          <div class="card-header">
-            <span>HTML 报告预览</span>
-            <el-tag v-if="activeReport" type="success">{{ activeReport.name }}</el-tag>
-          </div>
-        </template>
-        <div v-loading="generating" class="report-preview-shell" element-loading-text="正在生成报告">
-          <div v-if="previewHtml" class="report-preview" v-html="previewHtml" />
-          <el-empty v-else class="preview-empty" description="生成审计报告后，可在这里预览正式报告内容" />
-        </div>
-      </el-card>
     </div>
+
+    <el-dialog v-model="previewDialog" class="report-preview-dialog" width="92vw" top="4vh" destroy-on-close :lock-scroll="false" @closed="restorePreviewScroll">
+      <template #header>
+        <div class="card-header">
+          <span>HTML 报告预览</span>
+          <el-tag v-if="activeReport" type="success">{{ activeReport.name }}</el-tag>
+        </div>
+      </template>
+      <div v-loading="generating" class="report-preview-shell" element-loading-text="正在生成报告">
+        <div v-if="previewHtml" class="report-preview" v-html="previewHtml" />
+        <el-empty v-else class="preview-empty" description="暂无报告内容" />
+      </div>
+      <template #footer>
+        <el-button @click="closePreviewDialog">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -112,6 +115,8 @@ import { downloadAssetCsv, downloadAssetPdf, downloadAuditReport, downloadAuditR
 const reports = ref([])
 const previewHtml = ref('')
 const activeReportId = ref('')
+const previewDialog = ref(false)
+const previewScrollTop = ref(0)
 const generating = ref(false)
 const pagination = reactive({ page: 1, pageSize: 10 })
 const analytics = reactive({ department_occupancy: [], per_capita_value: [], idle_trend: [], repair_cost_trend: [], stocktake_diff_trend: [] })
@@ -141,6 +146,7 @@ async function handleGenerate() {
     pagination.page = 1
     previewHtml.value = report.html
     activeReportId.value = report.id
+    openPreviewDialog()
     ElMessage.success('审计报告已生成，已包含审计答复和合规判断')
   } finally {
     generating.value = false
@@ -150,6 +156,22 @@ async function handleGenerate() {
 async function previewReport(row) {
   previewHtml.value = await getReportHtml(row.id)
   activeReportId.value = row.id
+  openPreviewDialog()
+}
+
+function openPreviewDialog() {
+  previewScrollTop.value = window.scrollY || document.documentElement.scrollTop || 0
+  previewDialog.value = true
+}
+
+function closePreviewDialog() {
+  previewDialog.value = false
+}
+
+function restorePreviewScroll() {
+  requestAnimationFrame(() => {
+    window.scrollTo({ top: previewScrollTop.value, left: 0, behavior: 'auto' })
+  })
 }
 
 async function downloadReport(row, type) {
@@ -211,12 +233,16 @@ function latestTrendValue(rows, key, fallback = 0) {
 }
 
 .report-preview-shell {
-  height: min(640px, calc(100vh - 260px));
-  min-height: 420px;
+  height: calc(92vh - 150px);
+  min-height: 520px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
+}
+
+:deep(.report-preview-dialog .el-dialog__body) {
+  padding-top: 8px;
 }
 
 .report-preview :deep(main) {

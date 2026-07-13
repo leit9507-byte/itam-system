@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Integer, Numeric, String, Text
 
 from app.core.database import Base
 
@@ -12,8 +12,8 @@ class ApprovalRule(Base):
     flow_type = Column(String(32), nullable=False, index=True)
     name = Column(String(128), nullable=False)
     enabled = Column(Boolean, default=True, nullable=False, index=True)
-    min_amount = Column(Float, nullable=True)
-    max_amount = Column(Float, nullable=True)
+    min_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
+    max_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
     dept_id = Column(String(64), nullable=True, index=True)
     approver_role = Column(String(64), nullable=True)
     approver_user_id = Column(String(64), nullable=True)

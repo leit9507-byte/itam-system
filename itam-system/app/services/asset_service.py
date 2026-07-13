@@ -644,21 +644,17 @@ class AssetService:
         if page_size and page_size > 0:
             query = query.offset((max(page, 1) - 1) * page_size).limit(page_size)
         assets = query.all()
-        changed = False
         rows = []
         for asset in assets:
             user = users.get(asset.owner_user_id or "")
+            row = AssetService.to_out(asset, user)
+            # 展示层归一化：负责人/部门与用户目录保持一致，持久化同步由写路径的 sync_owner_department 负责
             if user:
+                row["owner_user_id"] = user.user_id
                 target_dept = user.dept_id or user.dept_name or asset.dept_id
-                if asset.owner_user_id != user.user_id:
-                    asset.owner_user_id = user.user_id
-                    changed = True
-                if target_dept and asset.dept_id != target_dept:
-                    asset.dept_id = target_dept
-                    changed = True
-            rows.append(AssetService.to_out(asset, user))
-        if changed:
-            db.commit()
+                if target_dept:
+                    row["dept_id"] = target_dept
+            rows.append(row)
         return {"list": rows, "total": total, "page": max(page, 1), "page_size": page_size or total}
 
     @staticmethod
@@ -1202,6 +1198,8 @@ class AssetService:
                     asset = AssetService.checkin_asset(db, asset_id, payload, operator)
                 rows.append(asset)
             except (AssetValidationError, ValueError) as exc:
+                # 失败条目在校验前可能已修改 ORM 对象，必须回滚，否则残留变更会随下一条的 commit 一起提交
+                db.rollback()
                 errors.append({"asset_id": asset_id, "message": str(exc)})
         return {"success": len(rows), "failed": len(errors), "assets": rows, "errors": errors}
 

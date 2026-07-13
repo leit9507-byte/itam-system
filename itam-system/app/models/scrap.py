@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, Integer, String, Text
+from sqlalchemy import Column, DateTime, Integer, Numeric, String, Text
 
 from app.core.database import Base
 
@@ -20,15 +20,15 @@ class ScrapRequest(Base):
     owner_user_id = Column(String(64), nullable=True)
     dept_id = Column(String(64), nullable=True)
     location = Column(String(128), nullable=True)
-    purchase_price = Column(Float, default=0)
+    purchase_price = Column(Numeric(12, 2, asdecimal=False), default=0)
     purchase_date = Column(DateTime, nullable=True)
     purchase_approval_no = Column(String(128), nullable=True)
     purchase_supplier_name = Column(String(128), nullable=True)
     applicant = Column(String(128), nullable=True)
     reason = Column(Text, nullable=True)
     disposal_method = Column(String(64), nullable=True)
-    estimated_residual_value = Column(Float, default=0)
-    final_residual_value = Column(Float, default=0)
+    estimated_residual_value = Column(Numeric(12, 2, asdecimal=False), default=0)
+    final_residual_value = Column(Numeric(12, 2, asdecimal=False), default=0)
     disposal_remark = Column(Text, nullable=True)
     disposed_by = Column(String(128), nullable=True)
     disposed_at = Column(DateTime, nullable=True)

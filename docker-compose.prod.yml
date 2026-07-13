@@ -1,8 +1,15 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 services:
   mysql:
     image: mysql:8.0
     container_name: itam-mysql-prod
     restart: unless-stopped
+    logging: *default-logging
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -30,6 +37,7 @@ services:
       context: ./itam-system
     container_name: itam-backend-prod
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       mysql:
         condition: service_healthy
@@ -69,7 +77,6 @@ services:
     volumes:
       - uploads_prod:/app/uploads
       - reports_prod:/app/reports
-      - backend_logs_prod:/app/logs
       - backend_runtime_prod:/app/runtime
     expose:
       - "8000"
@@ -90,6 +97,7 @@ services:
         VITE_FEISHU_SDK_AUTO_LOAD: ${VITE_FEISHU_SDK_AUTO_LOAD:-}
     container_name: itam-frontend-prod
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       backend:
         condition: service_healthy
@@ -103,9 +111,12 @@ services:
       start_period: 10s
 
   backup:
-    image: alpine:3.20
+    build:
+      context: ./scripts
+      dockerfile: backup.Dockerfile
     container_name: itam-backup-prod
     restart: unless-stopped
+    logging: *default-logging
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
@@ -118,13 +129,10 @@ services:
     volumes:
       - backups_prod:/backups
       - uploads_prod:/uploads:ro
-      - ./scripts/backup-cron.sh:/usr/local/bin/backup-cron.sh:ro
-    command: ["/bin/sh", "/usr/local/bin/backup-cron.sh"]
 
 volumes:
   mysql_data_prod:
   uploads_prod:
   reports_prod:
-  backend_logs_prod:
   backend_runtime_prod:
   backups_prod:

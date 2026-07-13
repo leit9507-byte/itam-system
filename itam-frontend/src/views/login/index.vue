@@ -70,7 +70,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useAppStore()
 const loading = ref(false)
-const form = reactive({ provider: 'local', username: 'admin', password: 'Admin@123456' })
+const form = reactive({ provider: 'local', username: '', password: '' })
 const providerOptions = [
   { label: '本地账号', value: 'local' },
   { label: 'LDAP', value: 'ldap' }
@@ -87,7 +87,12 @@ async function submitLogin() {
     const result = await login(form)
     store.setSession(result)
     ElMessage.success('登录成功')
-    router.replace(route.query.redirect || '/dashboard')
+    const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/') && !route.query.redirect.startsWith('//')
+      ? route.query.redirect
+      : '/dashboard'
+    router.replace(redirect)
+  } catch {
+    // 错误提示已由 request 拦截器统一展示
   } finally {
     loading.value = false
   }

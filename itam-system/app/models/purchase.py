@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -15,7 +15,7 @@ class Purchase(Base):
     approval_no = Column(String(128), nullable=True, index=True)
     supplier_name = Column(String(128), nullable=True, index=True)
     purchase_reason = Column(Text, nullable=True)
-    total_amount = Column(Float, default=0)
+    total_amount = Column(Numeric(12, 2, asdecimal=False), default=0)
     status = Column(String(32), default="created", index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
@@ -33,7 +33,7 @@ class PurchaseItem(Base):
     model = Column(String(64), nullable=True)
     spec = Column(String(255), nullable=True)
     quantity = Column(Integer, default=1)
-    unit_price = Column(Float, default=0)
+    unit_price = Column(Numeric(12, 2, asdecimal=False), default=0)
     retirement_years = Column(Integer, nullable=True)
     purchase_reason = Column(Text, nullable=True)
     location = Column(String(128), nullable=True)

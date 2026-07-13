@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Column, DateTime, Float, Integer, String, Text
+from sqlalchemy import JSON, Column, DateTime, Integer, Numeric, String, Text
 
 from app.core.database import Base
 
@@ -17,7 +17,7 @@ class Asset(Base):
     model = Column(String(64), nullable=True)
     sn = Column(String(128), unique=True, nullable=True, index=True)
     config = Column(JSON, nullable=True)
-    purchase_price = Column(Float, default=0)
+    purchase_price = Column(Numeric(12, 2, asdecimal=False), default=0)
     purchase_date = Column(DateTime, nullable=True)
     purchase_approval_no = Column(String(128), nullable=True, index=True)
     purchase_supplier_name = Column(String(128), nullable=True, index=True)

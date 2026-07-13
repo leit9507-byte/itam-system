@@ -51,6 +51,11 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    watch: {
+      // Windows/macOS 的 Docker 挂载不传递文件变更事件，容器内需轮询才能热更新
+      usePolling: process.env.CHOKIDAR_USEPOLLING === 'true',
+      interval: 300
+    },
     proxy: {
       '/backend': {
         target: process.env.VITE_BACKEND_PROXY_TARGET || 'http://localhost:8000',

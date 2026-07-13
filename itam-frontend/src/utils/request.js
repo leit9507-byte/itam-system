@@ -19,13 +19,17 @@ request.interceptors.response.use(
   error => {
     const message = normalizeErrorMessage(error)
     error.userMessage = message
-    if (error.response?.status === 401) {
+    const isLoginRequest = (error.config?.url || '').includes('/auth/login')
+    if (error.response?.status === 401 && !isLoginRequest) {
+      // 会话过期：清理凭证并回到登录页
       localStorage.removeItem('itam_token')
       localStorage.removeItem('itam_user')
       if (window.location.pathname !== '/login') {
+        ElMessage.error('登录状态已过期，请重新登录')
         window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`
       }
     } else if (!error.config?.silentError) {
+      // 登录接口本身的 401（密码错误等）走正常错误提示
       ElMessage.error(message)
     }
     return Promise.reject(error)
@@ -40,6 +44,8 @@ function normalizeErrorMessage(error) {
   const serverMessage = Array.isArray(detail) ? '' : detail
   if (serverMessage) return serverMessage
   if (status === 400) return '请求内容不正确，请检查输入'
+  if (status === 401) return '用户名或密码错误'
+  if (status === 423) return '账号已被锁定，请稍后再试'
   if (status === 403) return '没有权限执行该操作'
   if (status === 404) return '数据不存在或已被删除'
   if (status === 409) return '数据冲突，请刷新后重试'
