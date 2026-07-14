@@ -12,6 +12,22 @@ export function startSso(providerType) {
   return request.get(`/auth/sso/${providerType}/start`)
 }
 
+export function startSsoWithState(providerType, state, redirectUri) {
+  return request.get(`/auth/sso/${providerType}/start`, { params: { state, redirect_uri: redirectUri } })
+}
+
+export function completeSso(providerType, params) {
+  return request.get(`/auth/callback/${providerType}`, { params })
+}
+
+export function getFeishuLoginFreeConfig() {
+  return request.get('/auth/feishu/login-free/config', { silentError: true })
+}
+
+export function feishuLoginFree(payload) {
+  return request.post('/auth/feishu/login-free', payload)
+}
+
 export function getUsers() {
   return request.get('/users/list')
 }

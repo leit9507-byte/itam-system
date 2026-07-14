@@ -334,13 +334,17 @@
                   <el-steps :active="4" finish-status="success" align-center>
                     <el-step title="创建企业自建应用" description="进入开发者后台，创建企业自建应用" />
                     <el-step title="复制凭证" description="在凭证与基础信息中复制 App ID / App Secret" />
-                    <el-step title="开通权限" description="通讯录读取部门、用户基础信息权限" />
+                    <el-step title="配置登录" description="仅登录时配置 OAuth 回调地址即可" />
                     <el-step title="发布测试" description="发布应用后回到本页保存并测试连接" />
                   </el-steps>
                   <div class="guide-list">
                     <div>
                       <strong>建议开通权限</strong>
-                      <span>获取部门组织架构、获取用户基本信息、获取用户邮箱等通讯录只读权限；权限名称以飞书后台实际显示为准。</span>
+                      <span>仅飞书登录不需要同步组织架构；如需通讯录同步，再开通部门和用户只读权限。</span>
+                    </div>
+                    <div>
+                      <strong>网页应用免登</strong>
+                      <span>飞书工作台入口指向系统地址；客户端内会优先调用 requestAccess，低版本自动回退 requestAuthCode。</span>
                     </div>
                     <div>
                       <strong>根部门 ID</strong>
@@ -348,13 +352,20 @@
                     </div>
                     <div>
                       <strong>发布后再测试</strong>
-                      <span>飞书权限变更需要发布应用后生效；保存配置后点击右侧“测试”确认 App Secret 和权限可用。</span>
+                      <span>飞书回调地址和权限变更需要发布应用后生效；保存配置后点击右侧“测试”确认 App Secret 可用。</span>
                     </div>
                   </div>
                 </el-card>
                 <el-divider content-position="left">飞书应用</el-divider>
                 <el-form-item label="App ID" required><el-input v-model="providerConfig.app_id" placeholder="cli_xxx" /></el-form-item>
                 <el-form-item label="App Secret" required><el-input v-model="providerConfig.app_secret" type="password" show-password placeholder="飞书应用凭证" /></el-form-item>
+                <el-form-item label="仅用于登录">
+                  <el-switch v-model="providerConfig.login_only" />
+                </el-form-item>
+                <el-form-item label="登录回调地址"><el-input v-model="providerConfig.redirect_uri" placeholder="https://你的域名/login" /></el-form-item>
+                <el-form-item label="免登授权范围">
+                  <el-input v-model="providerConfig.login_scope_list" type="textarea" :rows="2" placeholder="默认留空；需要以用户身份调用 OpenAPI 时再填写 scope，可逗号或换行分隔" />
+                </el-form-item>
                 <el-form-item label="根部门 ID"><el-input v-model="providerConfig.root_department_id" placeholder="0 表示从根部门同步" /></el-form-item>
                 <el-form-item label="指定部门 ID">
                   <el-input v-model="providerConfig.department_ids" type="textarea" :rows="2" placeholder="没有根部门权限时填写，可多个，用逗号或换行分隔" />
@@ -378,7 +389,7 @@
                   type="info"
                   show-icon
                   :closable="false"
-                  title="飞书仅用于通讯录同步。请在飞书开放平台给应用开通通讯录读取权限，并发布后再测试。"
+                  title="选择“仅用于登录”时不会同步飞书组织架构；用户首次飞书登录会自动创建为默认角色。"
                 />
               </template>
 
@@ -1014,6 +1025,9 @@ function defaultConfig(type = 'ldap') {
     feishu: {
         app_id: '',
         app_secret: '',
+        login_only: true,
+        redirect_uri: '',
+        login_scope_list: '',
         root_department_id: '0',
         department_ids: '',
         discover_child_departments: true,
@@ -1065,6 +1079,7 @@ async function saveProvider() {
 
 function setProviderConfig(config) {
   Object.keys(providerConfig).forEach(key => delete providerConfig[key])
+  if (Array.isArray(config.login_scope_list)) config.login_scope_list = config.login_scope_list.join('\n')
   Object.assign(providerConfig, config)
 }
 
@@ -1073,7 +1088,8 @@ function buildProviderConfig() {
   Object.entries(providerConfig).forEach(([key, value]) => {
     if (value === '' || value == null) return
     if (['port', 'sync_limit', 'department_limit', 'page_size'].includes(key)) config[key] = Number(value)
-    else if (['discover_child_departments'].includes(key)) config[key] = Boolean(value)
+    else if (['discover_child_departments', 'login_only'].includes(key)) config[key] = Boolean(value)
+    else if (key === 'login_scope_list') config[key] = String(value).replace(/\n/g, ',').split(',').map(item => item.trim()).filter(Boolean)
     else config[key] = value
   })
   return config

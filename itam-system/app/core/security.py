@@ -13,6 +13,8 @@ PUBLIC_PATHS = {
     "/openapi.json",
     "/redoc",
     "/auth/login",
+    "/auth/feishu/login-free",
+    "/auth/feishu/login-free/config",
     "/auth/me/permissions",
     "/approval/feishu/callback",
     "/ops/database-status",

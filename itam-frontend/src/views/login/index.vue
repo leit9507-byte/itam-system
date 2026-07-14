@@ -37,6 +37,7 @@
           <el-form-item label="登录方式">
             <el-segmented v-model="form.provider" :options="providerOptions" class="provider-segment" />
           </el-form-item>
+          <template v-if="form.provider !== 'feishu'">
           <el-form-item label="账号">
             <el-input v-model="form.username" size="large" autocomplete="username" placeholder="请输入账号">
               <template #prefix><el-icon><User /></el-icon></template>
@@ -48,6 +49,8 @@
             </el-input>
           </el-form-item>
           <el-button type="primary" size="large" class="login-button" :loading="loading" @click="submitLogin">登录系统</el-button>
+          </template>
+          <el-button v-else type="primary" size="large" class="login-button" :loading="loading" @click="startFeishuLogin">使用飞书登录</el-button>
         </el-form>
 
         <div class="login-foot">
@@ -59,27 +62,42 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Box, Lock, Setting, Tickets, User } from '@element-plus/icons-vue'
 import { useAppStore } from '../../store'
-import { login } from '../../api/user'
+import { completeSso, feishuLoginFree, getFeishuLoginFreeConfig, login, startSsoWithState } from '../../api/user'
+import { isFeishuClient, requestFeishuLoginCode } from '../../utils/feishuSdk'
 
 const route = useRoute()
 const router = useRouter()
 const store = useAppStore()
 const loading = ref(false)
+const feishuLoginTried = ref(false)
 const form = reactive({ provider: 'local', username: '', password: '' })
 const providerOptions = [
   { label: '本地账号', value: 'local' },
-  { label: 'LDAP', value: 'ldap' }
+  { label: 'LDAP', value: 'ldap' },
+  { label: '飞书', value: 'feishu' }
 ]
 const capabilities = [
   { title: '资产运营', desc: '台账、入库、领用和维修集中处理', icon: Box },
   { title: '流程待办', desc: '入职分配、离职回收和审批统一提醒', icon: Tickets },
   { title: '审计控制', desc: '规则审计、答复和报告闭环管理', icon: Setting }
 ]
+
+onMounted(async () => {
+  if ((route.query.sso === 'feishu' || route.query.code) && route.query.code) {
+    form.provider = 'feishu'
+    finishFeishuLogin()
+    return
+  }
+  if (isFeishuClient()) {
+    form.provider = 'feishu'
+    await startFeishuLogin(true)
+  }
+})
 
 async function submitLogin() {
   loading.value = true
@@ -96,6 +114,64 @@ async function submitLogin() {
   } finally {
     loading.value = false
   }
+}
+
+async function startFeishuLogin(auto = false) {
+  if (isFeishuClient()) {
+    await startFeishuLoginFree(auto)
+    return
+  }
+  loading.value = true
+  try {
+    const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/') && !route.query.redirect.startsWith('//')
+      ? route.query.redirect
+      : '/dashboard'
+    const result = await startSsoWithState('feishu', redirect, `${window.location.origin}/login`)
+    window.location.href = result.redirect_url
+  } catch {
+    // 错误提示已由 request 拦截器统一展示
+    loading.value = false
+  }
+}
+
+async function startFeishuLoginFree(auto = false) {
+  if (feishuLoginTried.value && auto) return
+  feishuLoginTried.value = true
+  loading.value = true
+  try {
+    const config = await getFeishuLoginFreeConfig()
+    if (!config?.enabled || !config.app_id) throw new Error(config?.message || '飞书免登未配置')
+    const code = await requestFeishuLoginCode(config.app_id, config.scope_list || [])
+    const result = await feishuLoginFree({ code, source: 'feishu-webapp' })
+    store.setSession(result)
+    ElMessage.success('飞书免登成功')
+    router.replace(resolveRedirect())
+  } catch (error) {
+    if (!auto) ElMessage.error(error.userMessage || error.message || '飞书免登失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function finishFeishuLogin() {
+  loading.value = true
+  try {
+    const result = await completeSso('feishu', {
+      code: route.query.code,
+      state: route.query.state
+    })
+    store.setSession(result)
+    ElMessage.success('飞书登录成功')
+    router.replace(resolveRedirect(route.query.state))
+  } catch {
+    // 错误提示已由 request 拦截器统一展示
+  } finally {
+    loading.value = false
+  }
+}
+
+function resolveRedirect(value = route.query.redirect) {
+  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : '/dashboard'
 }
 
 </script>

@@ -61,6 +61,19 @@ class SsoService:
         return f"{config.get('authorization_endpoint', config.get('issuer', '').rstrip('/') + '/authorize')}?{urlencode(params)}"
 
     @staticmethod
+    def build_feishu_url(config: dict, state: str | None = None, redirect_uri: str | None = None) -> str:
+        app_id = config.get("app_id")
+        if not app_id:
+            raise ValueError("Feishu provider missing app_id")
+        redirect_uri = redirect_uri or config.get("redirect_uri") or "http://127.0.0.1:5173/login"
+        params = {
+            "app_id": app_id,
+            "redirect_uri": redirect_uri,
+            "state": state or config.get("state") or "itam",
+        }
+        return f"https://open.feishu.cn/open-apis/authen/v1/authorize?{urlencode(params)}"
+
+    @staticmethod
     def oidc_callback_login(db: Session, code: str, state: str | None = None) -> dict:
         provider = (
             db.query(IdentityProviderConfig)
@@ -116,6 +129,51 @@ class SsoService:
             "token_type": "bearer",
             "expires_in": get_settings().jwt_expire_minutes * 60,
             "user": user,
+        }
+
+    @staticmethod
+    def feishu_callback_login(db: Session, code: str, state: str | None = None) -> dict:
+        return SsoService.feishu_login_by_code(db, code, state=state, source="feishu-sso")
+
+    @staticmethod
+    def feishu_login_by_code(db: Session, code: str, state: str | None = None, source: str = "feishu-webapp") -> dict:
+        provider = (
+            db.query(IdentityProviderConfig)
+            .filter(IdentityProviderConfig.provider_type == "feishu", IdentityProviderConfig.enabled.is_(True))
+            .order_by(IdentityProviderConfig.id.desc())
+            .first()
+        )
+        if not provider:
+            raise ValueError("Feishu provider is not configured")
+        config = provider.config or {}
+        token = FeishuClient.tenant_access_token(config)
+        user_token = FeishuClient.user_access_token(token, code)
+        userinfo = FeishuClient.user_info(user_token)
+        external_id = userinfo.get("user_id") or userinfo.get("open_id") or userinfo.get("union_id")
+        if not external_id:
+            raise ValueError("Feishu user info missing user_id/open_id")
+        username = str(userinfo.get("email") or userinfo.get("mobile") or external_id)[:64]
+        user, _ = IdentityService.upsert_user(
+            db,
+            UserUpsert(
+                user_id=FeishuClient.local_user_id(external_id),
+                username=username,
+                display_name=userinfo.get("name") or userinfo.get("en_name") or username,
+                email=userinfo.get("email"),
+                role=config.get("default_role", "user"),
+                source="feishu",
+                external_id=f"feishu:{external_id}",
+            ),
+        )
+        from app.core.auth import create_access_token
+        from app.core.config import get_settings
+
+        return {
+            "access_token": create_access_token(user.user_id, user.role),
+            "token_type": "bearer",
+            "expires_in": get_settings().jwt_expire_minutes * 60,
+            "user": user,
+            "source": source,
         }
 
     @staticmethod
@@ -425,6 +483,8 @@ class FeishuClient:
     @staticmethod
     def test(config: dict) -> str:
         token = FeishuClient.tenant_access_token(config)
+        if FeishuClient.login_only(config):
+            return "Feishu login configuration success. Organization sync is disabled."
         manual_departments = FeishuClient.configured_department_ids(config)
         try:
             if manual_departments and not FeishuClient.discover_child_departments(config):
@@ -517,6 +577,25 @@ class FeishuClient:
         return token
 
     @staticmethod
+    def user_access_token(tenant_access_token: str, code: str) -> str:
+        data = FeishuClient.request_json(
+            "POST",
+            "/authen/v1/access_token",
+            token=tenant_access_token,
+            body={"grant_type": "authorization_code", "code": code},
+        )
+        payload = data.get("data") or data
+        access_token = payload.get("access_token") or payload.get("user_access_token")
+        if not access_token:
+            raise ValueError("Feishu user access_token missing in response")
+        return access_token
+
+    @staticmethod
+    def user_info(user_access_token: str) -> dict:
+        data = FeishuClient.request_json("GET", "/authen/v1/user_info", token=user_access_token)
+        return data.get("data") or data
+
+    @staticmethod
     def department_children(config: dict, token: str, department_id: str, page_size: int | None = None, limit: int | None = None) -> list[dict]:
         query = {
             "department_id_type": config.get("department_id_type", "open_department_id"),
@@ -603,6 +682,13 @@ class FeishuClient:
         if isinstance(value, bool):
             return value
         return str(value).strip().lower() not in {"0", "false", "no", "off"}
+
+    @staticmethod
+    def login_only(config: dict) -> bool:
+        value = config.get("login_only", False)
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
     @staticmethod
     def is_no_dept_authority(exc: Exception) -> bool:
