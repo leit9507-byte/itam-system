@@ -4,6 +4,10 @@ export function resolveScanBinding(scanRaw) {
   return request.post('/scan-bindings/resolve', { scan_raw: scanRaw }, { silentError: true })
 }
 
+export function getFeishuJsapiSignature(url) {
+  return request.get('/scan-bindings/feishu-jsapi-signature', { params: { url }, silentError: true })
+}
+
 export function getAssetScanBindings(assetId) {
   return request.get(`/scan-bindings/asset/${encodeURIComponent(assetId)}`)
 }
