@@ -2,6 +2,7 @@ import hashlib
 import json
 import secrets
 import time
+from urllib.error import HTTPError, URLError
 from urllib.parse import urldefrag
 from urllib.request import Request as UrlRequest, urlopen
 
@@ -13,25 +14,17 @@ from app.services.approval_service import ApprovalService
 
 
 DEFAULT_JSAPI_TICKET_URL = "https://open.feishu.cn/open-apis/jssdk/ticket/get"
+TICKET_REFRESH_SKEW_SECONDS = 300
 
 
 class FeishuJsapiService:
+    _ticket_cache: dict[str, tuple[str, float]] = {}
+
     @staticmethod
     def build_signature(db: Session, url: str) -> dict:
         clean_url = FeishuJsapiService.clean_url(url)
         app_id, app_secret = FeishuJsapiService.find_credentials(db)
-        token = ApprovalService.fetch_tenant_access_token(
-            type(
-                "FeishuTokenConfig",
-                (),
-                {
-                    "app_id": app_id,
-                    "app_secret": app_secret,
-                    "tenant_access_token_url": None,
-                },
-            )()
-        )
-        ticket = FeishuJsapiService.fetch_jsapi_ticket(token)
+        ticket = FeishuJsapiService.get_cached_jsapi_ticket(app_id, app_secret)
         timestamp = str(int(time.time() * 1000))
         nonce_str = secrets.token_hex(12)
         raw = f"jsapi_ticket={ticket}&noncestr={nonce_str}&timestamp={timestamp}&url={clean_url}"
@@ -43,6 +36,7 @@ class FeishuJsapiService:
             "signature": signature,
             "url": clean_url,
             "jsApiList": ["scanCode"],
+            "expiresIn": 600,
         }
 
     @staticmethod
@@ -79,14 +73,45 @@ class FeishuJsapiService:
         raise ValueError("未配置启用的飞书 App ID/App Secret")
 
     @staticmethod
-    def fetch_jsapi_ticket(tenant_access_token: str) -> str:
+    def get_cached_jsapi_ticket(app_id: str, app_secret: str) -> str:
+        cached = FeishuJsapiService._ticket_cache.get(app_id)
+        now = time.time()
+        if cached and cached[1] > now:
+            return cached[0]
+
+        token = ApprovalService.fetch_tenant_access_token(
+            type(
+                "FeishuTokenConfig",
+                (),
+                {
+                    "app_id": app_id,
+                    "app_secret": app_secret,
+                    "tenant_access_token_url": None,
+                },
+            )()
+        )
+        ticket, expires_in = FeishuJsapiService.fetch_jsapi_ticket(token)
+        ttl = max(int(expires_in or 7200) - TICKET_REFRESH_SKEW_SECONDS, 60)
+        FeishuJsapiService._ticket_cache[app_id] = (ticket, now + ttl)
+        return ticket
+
+    @staticmethod
+    def fetch_jsapi_ticket(tenant_access_token: str) -> tuple[str, int]:
         request = UrlRequest(DEFAULT_JSAPI_TICKET_URL, headers={"Authorization": f"Bearer {tenant_access_token}"}, method="GET")
-        with urlopen(request, timeout=15) as response:
-            result = json.loads(response.read().decode("utf-8") or "{}")
+        try:
+            with urlopen(request, timeout=15) as response:
+                result = json.loads(response.read().decode("utf-8") or "{}")
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="ignore")
+            raise ValueError(f"jsapi ticket fetch failed: HTTP {exc.code} {detail}") from exc
+        except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise ValueError(f"jsapi ticket fetch failed: {exc}") from exc
         code = result.get("code", 0)
         if code not in (0, None):
             raise ValueError(result.get("msg") or "jsapi ticket fetch failed")
-        ticket = result.get("data", {}).get("ticket") or result.get("ticket")
+        data = result.get("data") or {}
+        ticket = data.get("ticket") or result.get("ticket")
         if not ticket:
             raise ValueError("jsapi ticket missing")
-        return ticket
+        expires_in = data.get("expire_in") or data.get("expires_in") or result.get("expire_in") or result.get("expires_in") or 7200
+        return ticket, int(expires_in)
