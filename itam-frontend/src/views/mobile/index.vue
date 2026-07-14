@@ -241,6 +241,28 @@
           </el-form-item>
         </template>
 
+        <template v-if="mode === 'bind'">
+          <el-alert class="inline-alert" title="请先确认上方资产信息，再扫描需要绑定到该资产的二维码或条码。" type="info" show-icon :closable="false" />
+          <el-form-item label="扫码内容">
+            <el-input v-model="bindingForm.scan_raw" type="textarea" :rows="3" placeholder="扫描二维码/条码，或输入旧标签编号" />
+          </el-form-item>
+          <div class="binding-actions">
+            <el-button type="primary" :icon="Camera" @click="scanBindingRaw">扫描绑定码</el-button>
+            <el-button :icon="Refresh" @click="bindingForm.scan_raw = ''">清空内容</el-button>
+          </div>
+          <el-form-item label="扫码类型">
+            <el-select v-model="bindingForm.scan_type" style="width: 100%">
+              <el-option label="通用" value="generic" />
+              <el-option label="二维码" value="qrcode" />
+              <el-option label="条码" value="barcode" />
+              <el-option label="旧标签" value="legacy" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="重新绑定">
+            <el-switch v-model="bindingForm.force" active-text="允许覆盖已绑定资产" />
+          </el-form-item>
+        </template>
+
         <el-form-item label="备注">
           <el-input v-model="form.remark" type="textarea" :rows="3" placeholder="补充说明" />
         </el-form-item>
@@ -280,7 +302,7 @@ import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
 import { getStocktakeTasks, startStocktakeTask, submitStocktakeItem } from '../../api/stocktake'
 import { getTodoItems } from '../../api/todo'
-import { resolveScanBinding } from '../../api/scanBinding'
+import { bindAssetScanCode, resolveScanBinding } from '../../api/scanBinding'
 import TodoAssetActions from '../../components/TodoAssetActions.vue'
 import { assetCodeCandidates, assetCodeMatches, parseAssetCode } from '../../utils/assetCode'
 import { feishuRuntimeStatus, getLastFeishuScanError, isFeishuClient, scanByFeishuSdk } from '../../utils/feishuSdk'
@@ -291,7 +313,8 @@ const modes = [
   { value: 'inbound', label: '扫码入库', hint: '归还/验收入库', icon: Box, formTitle: '入库信息', submitText: '确认入库' },
   { value: 'outbound', label: '扫码出库', hint: '关联领用人', icon: CircleCheck, formTitle: '出库信息', submitText: '确认出库' },
   { value: 'repair', label: '扫码维修', hint: '创建今日维修', icon: Setting, formTitle: '维修信息', submitText: '创建维修' },
-  { value: 'scrap', label: '扫码报废', hint: '提交审批申请', icon: Delete, formTitle: '报废申请', submitText: '提交报废' }
+  { value: 'scrap', label: '扫码报废', hint: '提交审批申请', icon: Delete, formTitle: '报废申请', submitText: '提交报废' },
+  { value: 'bind', label: '扫码绑定', hint: '绑定外部标签', icon: Search, formTitle: '绑定扫码内容', submitText: '确认绑定' }
 ]
 const workModes = modes.filter(item => item.value !== 'stocktake')
 const outboundTargetOptions = [
@@ -319,6 +342,7 @@ const visibleStocktakeTasks = ref([])
 const scanRuntimeStatus = ref(feishuRuntimeStatus())
 const scanRuntimeError = ref('')
 const form = reactive(defaultForm())
+const bindingForm = reactive(defaultBindingForm())
 
 const currentMode = computed(() => modes.find(item => item.value === mode.value) || modes[0])
 const selectedTask = computed(() => stocktakeTasks.value.find(task => task.id === form.task_id))
@@ -392,6 +416,14 @@ function defaultForm() {
   }
 }
 
+function defaultBindingForm() {
+  return {
+    scan_raw: '',
+    scan_type: 'generic',
+    force: false
+  }
+}
+
 async function loadStocktakeTasks() {
   stocktakeTasks.value = await getStocktakeTasks()
   resetTaskOptions()
@@ -442,6 +474,7 @@ function selectMode(value) {
   mode.value = value
   const taskId = form.task_id
   Object.assign(form, defaultForm(), { task_id: taskId })
+  Object.assign(bindingForm, defaultBindingForm())
 }
 
 function fillExample() {
@@ -463,6 +496,23 @@ async function scanCode() {
   const fromBrowser = await scanByBrowser()
   if (fromBrowser) return handleScanResult(fromBrowser)
   ElMessage.info(isFeishuClient() ? '飞书扫码未返回内容，请确认已在飞书客户端内打开' : '当前环境暂未开放摄像头扫码，请手动输入资产编号')
+}
+
+async function scanBindingRaw() {
+  refreshScanRuntime()
+  scanRuntimeError.value = ''
+  const fromFeishu = await scanByFeishu()
+  refreshScanRuntime()
+  if (fromFeishu) {
+    bindingForm.scan_raw = fromFeishu
+    return ElMessage.success('已读取绑定码')
+  }
+  const fromBrowser = await scanByBrowser()
+  if (fromBrowser) {
+    bindingForm.scan_raw = fromBrowser
+    return ElMessage.success('已读取绑定码')
+  }
+  ElMessage.info(isFeishuClient() ? '飞书扫码未返回内容，请确认已在飞书客户端内打开' : '当前环境暂未开放摄像头扫码，请手动输入绑定内容')
 }
 
 function refreshScanRuntime() {
@@ -562,6 +612,7 @@ async function resolveAssetFromScan(value) {
 function resetAsset() {
   asset.value = null
   assetCode.value = ''
+  Object.assign(bindingForm, defaultBindingForm())
 }
 
 function searchUsers(query = '') {
@@ -633,6 +684,7 @@ async function copyAssetId() {
 
 async function submitWork() {
   if (!asset.value) return ElMessage.warning('请先扫码选择资产')
+  if (mode.value === 'bind' && !bindingForm.scan_raw.trim()) return ElMessage.warning('请先扫描或输入需要绑定的二维码/条码内容')
   submitting.value = true
   try {
     if (mode.value === 'stocktake') await submitStocktake()
@@ -640,6 +692,7 @@ async function submitWork() {
     if (mode.value === 'outbound') await submitOutbound()
     if (mode.value === 'repair') await submitRepair()
     if (mode.value === 'scrap') await submitScrap()
+    if (mode.value === 'bind') await submitScanBinding()
     resetAsset()
   } finally {
     submitting.value = false
@@ -729,6 +782,15 @@ async function submitScrap() {
   })
   addLog('扫码报废', form.scrap_reason)
   ElMessage.success('报废申请已提交审批')
+}
+
+async function submitScanBinding() {
+  await bindAssetScanCode(asset.value.asset_id, {
+    ...bindingForm,
+    remark: form.remark || '移动端扫码绑定'
+  })
+  addLog('扫码绑定', bindingForm.scan_type)
+  ElMessage.success('扫码内容已绑定')
 }
 
 function addLog(action, remark) {
@@ -1119,6 +1181,24 @@ function statusType(value) {
   min-height: 42px;
 }
 
+.binding-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: 8px;
+  margin: -4px 0 16px;
+}
+
+.binding-actions :deep(.el-button) {
+  min-height: 48px;
+  margin: 0;
+  font-weight: 800;
+}
+
+.form-card :deep(.el-switch__label) {
+  min-width: 0;
+  white-space: normal;
+}
+
 .sticky-submit {
   position: sticky;
   bottom: calc(88px + env(safe-area-inset-bottom));
@@ -1230,6 +1310,10 @@ function statusType(value) {
 
   .mode-card {
     flex-basis: 118px;
+  }
+
+  .binding-actions {
+    grid-template-columns: 1fr;
   }
 }
 </style>
