@@ -305,6 +305,27 @@ body {
   border-top: 1px solid #edf4ff;
 }
 
+.todo-action-dialog {
+  width: min(760px, calc(100vw - 24px)) !important;
+  max-width: calc(100vw - 24px);
+}
+
+.todo-action-dialog .el-dialog__body {
+  overflow-x: hidden;
+}
+
+.todo-asset-select-popper,
+.todo-location-select-popper {
+  max-width: min(560px, calc(100vw - 40px));
+}
+
+.todo-asset-select-popper .el-select-dropdown__item {
+  height: auto;
+  min-height: 58px;
+  padding: 4px 12px;
+  line-height: 1.2;
+}
+
 @media (max-width: 1024px) {
   .metric-grid,
   .chart-grid,

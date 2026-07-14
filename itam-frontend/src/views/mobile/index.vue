@@ -2,29 +2,14 @@
   <div class="mobile-page">
     <header class="mobile-header">
       <div>
-        <span class="eyebrow">ITAM Mobile</span>
-        <h1>移动扫码作业</h1>
+        <span class="eyebrow">{{ currentSectionTitle }}</span>
+        <h1>{{ activeSection === 'work' || activeSection === 'stocktake' ? currentMode.label : '移动端' }}</h1>
       </div>
       <div class="header-status">
-        <el-tag type="success">在线</el-tag>
-        <small>{{ logs.length }} 条记录</small>
+        <el-tag size="small" type="success">在线</el-tag>
+        <small>{{ todos.length }} 待办</small>
       </div>
     </header>
-
-    <section class="mobile-summary" aria-label="移动端概览">
-      <div class="summary-item">
-        <strong>{{ todos.length }}</strong>
-        <span>待办</span>
-      </div>
-      <div class="summary-item">
-        <strong>{{ currentSectionTitle }}</strong>
-        <span>当前页面</span>
-      </div>
-      <div class="summary-item">
-        <strong>{{ stocktakeTasks.length }}</strong>
-        <span>盘点任务</span>
-      </div>
-    </section>
 
     <nav class="mobile-top-menu" aria-label="移动端菜单">
       <button v-for="item in sectionMenus" :key="item.value" type="button" class="top-menu-item" :class="{ active: activeSection === item.value }" @click="selectSection(item.value)">
@@ -110,10 +95,27 @@
           <el-button type="primary" :icon="Camera" @click="scanCode">扫码</el-button>
           <el-button :icon="Refresh" @click="resetAsset">清空</el-button>
         </div>
+        <el-alert
+          v-if="showScanRuntimeHint"
+          class="scan-runtime-alert"
+          :title="scanRuntimeTitle"
+          :description="scanRuntimeDescription"
+          :type="scanRuntimeStatus.hasScanCode ? 'success' : scanRuntimeStatus.isFeishu ? 'warning' : 'info'"
+          show-icon
+          :closable="false"
+        />
+        <el-alert
+          v-if="scanRuntimeError"
+          class="scan-runtime-alert"
+          title="飞书扫码调用失败"
+          :description="scanRuntimeError"
+          type="error"
+          show-icon
+          :closable="false"
+        />
         <div class="quick-codes">
           <button v-for="item in recentCodes" :key="item" type="button" @click="quickLoad(item)">{{ item }}</button>
         </div>
-        <p class="tip">支持 ITAM-ASSET:ITAM-000001、资产编号、序列号或资产详情链接。</p>
       </div>
     </el-card>
 
@@ -125,20 +127,16 @@
         </div>
       </template>
       <div class="asset-main">
-        <strong>{{ asset.name }}</strong>
-        <span>{{ asset.asset_id }}</span>
+        <div>
+          <strong>{{ asset.name }}</strong>
+          <span>{{ asset.asset_id }}</span>
+        </div>
+        <el-button text type="primary" @click="copyAssetId">复制</el-button>
       </div>
       <div class="asset-meta">
-        <span>序列号：{{ asset.sn || '-' }}</span>
-        <span>类型：{{ asset.category || '-' }}</span>
-        <span>型号：{{ asset.brand || '-' }} {{ asset.model || '' }}</span>
         <span>责任人：{{ asset.owner_name || asset.owner || '未分配' }}</span>
-        <span>部门：{{ asset.dept_name || asset.dept || '未绑定' }}</span>
         <span>位置：{{ asset.location || asset.warehouse || '-' }}</span>
-      </div>
-      <div class="asset-actions">
-        <el-button plain @click="copyAssetId">复制编号</el-button>
-        <el-button plain @click="router.push(`/asset/detail/${asset.asset_id}`)">查看详情</el-button>
+        <span>SN：{{ asset.sn || '-' }}</span>
       </div>
     </el-card>
 
@@ -288,7 +286,7 @@ import { getTodoItems } from '../../api/todo'
 import { resolveScanBinding } from '../../api/scanBinding'
 import TodoAssetActions from '../../components/TodoAssetActions.vue'
 import { assetCodeCandidates, assetCodeMatches, parseAssetCode } from '../../utils/assetCode'
-import { isFeishuClient, scanByFeishuSdk } from '../../utils/feishuSdk'
+import { feishuRuntimeStatus, getLastFeishuScanError, isFeishuClient, scanByFeishuSdk } from '../../utils/feishuSdk'
 
 const router = useRouter()
 const modes = [
@@ -321,6 +319,8 @@ const todoLoading = ref(false)
 const todoAssetActionsRef = ref(null)
 const stocktakeTasks = ref([])
 const visibleStocktakeTasks = ref([])
+const scanRuntimeStatus = ref(feishuRuntimeStatus())
+const scanRuntimeError = ref('')
 const form = reactive(defaultForm())
 
 const currentMode = computed(() => modes.find(item => item.value === mode.value) || modes[0])
@@ -338,6 +338,19 @@ const currentSectionTitle = computed(() => {
   if (activeSection.value === 'work') return currentMode.value.label
   return ({ todo: '待办中心', stocktake: '扫码盘点', logs: '今日记录' })[activeSection.value] || '移动作业'
 })
+const scanRuntimeTitle = computed(() => {
+  if (scanRuntimeStatus.value.hasScanCode) return '飞书扫码能力已就绪'
+  if (scanRuntimeStatus.value.hasH5Sdk) return '飞书 H5 SDK 已加载，等待扫码能力'
+  if (scanRuntimeStatus.value.isFeishu) return '已在飞书内打开，正在加载 H5 SDK'
+  return '当前不是飞书客户端环境'
+})
+const scanRuntimeDescription = computed(() => {
+  if (scanRuntimeStatus.value.hasScanCode) return '已连接飞书原生扫码。'
+  if (scanRuntimeStatus.value.hasH5Sdk) return '请检查 HTTPS、安全域名和应用发布。'
+  if (scanRuntimeStatus.value.isFeishu) return '正在等待飞书扫码能力。'
+  return '可手动输入资产编号。'
+})
+const showScanRuntimeHint = computed(() => scanRuntimeError.value || !scanRuntimeStatus.value.hasScanCode)
 const sectionMenus = computed(() => [
   { value: 'todo', label: '待办', count: todos.value.length },
   { value: 'work', label: '扫码作业' },
@@ -445,18 +458,27 @@ function quickLoad(code) {
 }
 
 async function scanCode() {
+  refreshScanRuntime()
+  scanRuntimeError.value = ''
   const fromFeishu = await scanByFeishu()
+  refreshScanRuntime()
   if (fromFeishu) return handleScanResult(fromFeishu)
   const fromBrowser = await scanByBrowser()
   if (fromBrowser) return handleScanResult(fromBrowser)
   ElMessage.info(isFeishuClient() ? '飞书扫码未返回内容，请确认已在飞书客户端内打开' : '当前环境暂未开放摄像头扫码，请手动输入资产编号')
 }
 
+function refreshScanRuntime() {
+  scanRuntimeStatus.value = feishuRuntimeStatus()
+  scanRuntimeError.value = getLastFeishuScanError()
+}
+
 async function scanByFeishu() {
   try {
     return await scanByFeishuSdk()
-  } catch {
-    if (isFeishuClient()) ElMessage.warning('飞书 JS SDK 加载失败，已切换到浏览器扫码')
+  } catch (error) {
+    scanRuntimeError.value = error?.message || String(error || '')
+    if (isFeishuClient()) ElMessage.warning('飞书 JSAPI 鉴权失败，已切换到浏览器扫码')
     return ''
   }
 }
@@ -737,13 +759,11 @@ function statusType(value) {
 <style scoped>
 .mobile-page {
   min-height: 100vh;
-  padding: 14px 12px 92px;
+  padding: 10px 10px 88px;
   display: grid;
   align-content: start;
-  gap: 14px;
-  background:
-    radial-gradient(circle at 18% 0%, rgba(37, 99, 235, 0.15), transparent 28%),
-    linear-gradient(180deg, #eef6ff 0, #f8fafc 230px, #f3f6fb 100%);
+  gap: 10px;
+  background: #f4f7fb;
   color: #172033;
 }
 
@@ -752,16 +772,16 @@ function statusType(value) {
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
-  padding: 18px 16px;
-  border: 1px solid rgba(37, 99, 235, 0.14);
+  padding: 12px 12px;
+  border: 1px solid #e3ebf5;
   border-radius: 8px;
   background: #ffffff;
-  box-shadow: 0 14px 32px rgba(30, 41, 59, 0.08);
+  box-shadow: 0 8px 22px rgba(30, 41, 59, 0.06);
 }
 
 .mobile-header h1 {
-  margin: 4px 0 0;
-  font-size: 23px;
+  margin: 2px 0 0;
+  font-size: 20px;
   line-height: 1.2;
   letter-spacing: 0;
 }
@@ -769,8 +789,8 @@ function statusType(value) {
 .header-status {
   display: grid;
   justify-items: end;
-  gap: 5px;
-  padding-top: 4px;
+  gap: 3px;
+  padding-top: 2px;
 }
 
 .header-status small,
@@ -787,38 +807,6 @@ function statusType(value) {
   font-size: 12px;
   font-weight: 800;
   color: #2563eb;
-}
-
-.mobile-summary {
-  display: grid;
-  grid-template-columns: 0.72fr 1.28fr 0.9fr;
-  gap: 8px;
-}
-
-.summary-item {
-  min-width: 0;
-  padding: 13px 10px;
-  border: 1px solid #e1e8f0;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 8px 22px rgba(30, 41, 59, 0.05);
-  display: grid;
-  gap: 3px;
-}
-
-.summary-item strong {
-  min-width: 0;
-  color: #102a43;
-  font-size: 16px;
-  line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.summary-item span {
-  color: #64748b;
-  font-size: 12px;
 }
 
 .mobile-top-menu {
@@ -878,9 +866,9 @@ function statusType(value) {
 
 .mode-strip {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   overflow-x: auto;
-  padding: 1px 1px 6px;
+  padding: 0 1px 4px;
   scroll-snap-type: x proximity;
 }
 
@@ -891,17 +879,18 @@ function statusType(value) {
 }
 
 .mode-card {
-  flex: 0 0 136px;
-  min-height: 104px;
-  padding: 14px;
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 8px 12px;
   border: 1px solid #dfe8ee;
   border-radius: 8px;
   background: #ffffff;
   text-align: left;
-  display: grid;
+  display: flex;
+  align-items: center;
   gap: 6px;
   scroll-snap-align: start;
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.045);
+  box-shadow: none;
 }
 
 .mode-card.active {
@@ -911,12 +900,17 @@ function statusType(value) {
 }
 
 .mode-card .el-icon {
-  font-size: 24px;
+  font-size: 18px;
   color: #2563eb;
 }
 
 .mode-card span {
   font-weight: 700;
+  white-space: nowrap;
+}
+
+.mode-card small {
+  display: none;
 }
 
 .card-header,
@@ -940,7 +934,11 @@ function statusType(value) {
 }
 
 .scan-actions :deep(.el-button) {
-  min-height: 46px;
+  min-height: 44px;
+}
+
+.scan-runtime-alert {
+  margin-top: 10px;
 }
 
 .todo-actions {
@@ -1043,6 +1041,10 @@ function statusType(value) {
   gap: 10px;
 }
 
+.scan-box {
+  gap: 8px;
+}
+
 .quick-codes {
   display: flex;
   gap: 8px;
@@ -1066,13 +1068,27 @@ function statusType(value) {
 }
 
 .asset-main {
-  gap: 4px;
-  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
 }
 
 .asset-main strong {
-  font-size: 20px;
+  display: block;
+  font-size: 18px;
   line-height: 1.25;
+}
+
+.asset-main span {
+  display: block;
+  margin-top: 2px;
+}
+
+.asset-meta {
+  gap: 4px;
+  font-size: 13px;
 }
 
 .asset-meta {
