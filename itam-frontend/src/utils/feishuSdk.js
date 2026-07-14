@@ -172,7 +172,6 @@ async function configureJsapi() {
 }
 
 async function doConfigureJsapi(url) {
-  await waitForH5SdkReady()
   const config = await request.get('/scan-bindings/feishu-jsapi-signature', {
     params: { url },
     silentError: true
@@ -181,12 +180,15 @@ async function doConfigureJsapi(url) {
     const timer = window.setTimeout(() => reject(new Error('Feishu JSAPI config timeout')), 8000)
     const fail = error => {
       window.clearTimeout(timer)
-      reject(new Error(describeError(error) || 'Feishu JSAPI config failed'))
+      const message = describeError(error) || 'Feishu JSAPI config failed'
+      lastScanError = message
+      reject(new Error(message))
     }
     const success = () => {
       window.clearTimeout(timer)
       resolve()
     }
+    window.h5sdk.ready?.(success)
     window.h5sdk.error?.(fail)
     window.h5sdk.config({
       appId: config.appId,
