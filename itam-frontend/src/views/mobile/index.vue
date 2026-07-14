@@ -86,12 +86,9 @@
       </template>
 
       <div class="scan-box">
-        <el-input v-model="assetCode" clearable placeholder="扫码或输入资产编号 / 二维码内容" @keyup.enter="loadAsset">
-          <template #append>
-            <el-button @click="loadAsset">查询</el-button>
-          </template>
-        </el-input>
+        <el-input v-model="assetCode" clearable placeholder="扫码或输入资产编号 / 二维码内容" @keyup.enter="loadAsset" />
         <div class="scan-actions">
+          <el-button :icon="Search" @click="loadAsset">查询</el-button>
           <el-button type="primary" :icon="Camera" @click="scanCode">扫码</el-button>
           <el-button :icon="Refresh" @click="resetAsset">清空</el-button>
         </div>
@@ -759,11 +756,11 @@ function statusType(value) {
 <style scoped>
 .mobile-page {
   min-height: 100vh;
-  padding: 10px 10px 88px;
+  padding: 12px 12px calc(104px + env(safe-area-inset-bottom));
   display: grid;
   align-content: start;
-  gap: 10px;
-  background: #f4f7fb;
+  gap: 14px;
+  background: #f5f7fb;
   color: #172033;
 }
 
@@ -772,16 +769,16 @@ function statusType(value) {
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
-  padding: 12px 12px;
+  padding: 14px;
   border: 1px solid #e3ebf5;
   border-radius: 8px;
   background: #ffffff;
-  box-shadow: 0 8px 22px rgba(30, 41, 59, 0.06);
+  box-shadow: 0 8px 24px rgba(30, 41, 59, 0.06);
 }
 
 .mobile-header h1 {
   margin: 2px 0 0;
-  font-size: 20px;
+  font-size: 21px;
   line-height: 1.2;
   letter-spacing: 0;
 }
@@ -811,25 +808,25 @@ function statusType(value) {
 
 .mobile-top-menu {
   position: fixed;
-  left: 12px;
-  right: 12px;
+  left: 10px;
+  right: 10px;
   bottom: calc(10px + env(safe-area-inset-bottom));
   z-index: 20;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 5px;
-  padding: 6px;
+  gap: 6px;
+  padding: 7px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.16);
+  box-shadow: 0 -12px 30px rgba(15, 23, 42, 0.16);
   backdrop-filter: blur(12px);
 }
 
 .top-menu-item {
   min-width: 0;
-  min-height: 54px;
-  padding: 7px 4px;
+  min-height: 58px;
+  padding: 8px 4px;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
@@ -866,9 +863,9 @@ function statusType(value) {
 
 .mode-strip {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   overflow-x: auto;
-  padding: 0 1px 4px;
+  padding: 2px 2px 6px;
   scroll-snap-type: x proximity;
 }
 
@@ -879,16 +876,18 @@ function statusType(value) {
 }
 
 .mode-card {
-  flex: 0 0 auto;
-  min-height: 44px;
-  padding: 8px 12px;
+  flex: 0 0 126px;
+  min-height: 64px;
+  padding: 10px 12px;
   border: 1px solid #dfe8ee;
   border-radius: 8px;
   background: #ffffff;
   text-align: left;
-  display: flex;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
-  gap: 6px;
+  column-gap: 7px;
+  row-gap: 2px;
   scroll-snap-align: start;
   box-shadow: none;
 }
@@ -900,7 +899,8 @@ function statusType(value) {
 }
 
 .mode-card .el-icon {
-  font-size: 18px;
+  grid-row: span 2;
+  font-size: 20px;
   color: #2563eb;
 }
 
@@ -910,11 +910,16 @@ function statusType(value) {
 }
 
 .mode-card small {
-  display: none;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.card-header,
-.scan-actions {
+.card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -922,19 +927,30 @@ function statusType(value) {
 }
 
 .card-header {
+  min-width: 0;
   font-weight: 800;
   color: #172033;
 }
 
+.card-header > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .scan-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
   width: 100%;
   flex-shrink: 0;
 }
 
 .scan-actions :deep(.el-button) {
-  min-height: 44px;
+  min-height: 50px;
+  margin: 0;
+  font-weight: 800;
 }
 
 .scan-runtime-alert {
@@ -948,11 +964,12 @@ function statusType(value) {
 }
 
 .todo-card :deep(.el-card__body) {
-  padding-top: 10px;
+  padding-top: 12px;
 }
 
 .mobile-panel {
   overflow: hidden;
+  background: #ffffff;
 }
 
 .task-progress {
@@ -960,19 +977,19 @@ function statusType(value) {
   grid-template-columns: 54px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 14px;
   color: #475569;
   font-size: 13px;
   font-weight: 700;
 }
 
 .inline-alert {
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .mobile-todo-list {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .mobile-todo-row {
@@ -982,8 +999,8 @@ function statusType(value) {
   grid-template-columns: 36px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
-  min-height: 58px;
-  padding: 12px;
+  min-height: 64px;
+  padding: 13px;
   border: 1px solid #e0e9f2;
   border-radius: 8px;
   background: #ffffff;
@@ -1038,18 +1055,18 @@ function statusType(value) {
 .log-list,
 .log-item {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .scan-box {
-  gap: 8px;
+  gap: 10px;
 }
 
 .quick-codes {
   display: flex;
   gap: 8px;
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding: 2px 0 4px;
 }
 
 .quick-codes button,
@@ -1058,7 +1075,7 @@ function statusType(value) {
 }
 
 .quick-codes button {
-  min-height: 36px;
+  min-height: 38px;
   padding: 0 12px;
   border: 1px solid #dbe5ef;
   border-radius: 999px;
@@ -1071,13 +1088,13 @@ function statusType(value) {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 8px;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 
 .asset-main strong {
   display: block;
-  font-size: 18px;
+  font-size: 19px;
   line-height: 1.25;
 }
 
@@ -1087,12 +1104,7 @@ function statusType(value) {
 }
 
 .asset-meta {
-  gap: 4px;
-  font-size: 13px;
-}
-
-.asset-meta {
-  gap: 6px;
+  gap: 7px;
   font-size: 13px;
 }
 
@@ -1109,21 +1121,21 @@ function statusType(value) {
 
 .sticky-submit {
   position: sticky;
-  bottom: 78px;
+  bottom: calc(88px + env(safe-area-inset-bottom));
   z-index: 2;
-  padding-top: 10px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0), #fff 38%);
+  padding-top: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), #fff 34%);
 }
 
 .submit-btn {
   width: 100%;
-  min-height: 48px;
+  min-height: 52px;
   font-weight: 800;
 }
 
 .log-item {
-  gap: 3px;
-  padding: 10px;
+  gap: 4px;
+  padding: 12px;
   border: 1px solid #e0e9f2;
   border-radius: 8px;
   background: #fff;
@@ -1132,21 +1144,21 @@ function statusType(value) {
 :deep(.el-card) {
   border-radius: 8px;
   border-color: #e0e9f2;
-  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
 }
 
 :deep(.el-card__header) {
-  padding: 13px 14px;
+  padding: 14px 16px;
   border-bottom-color: #edf2f7;
 }
 
 :deep(.el-card__body) {
-  padding: 14px;
+  padding: 16px;
 }
 
 :deep(.el-button) {
   border-radius: 8px;
-  min-height: 40px;
+  min-height: 42px;
 }
 
 :deep(.el-input__wrapper),
@@ -1157,15 +1169,25 @@ function statusType(value) {
 
 :deep(.el-input__wrapper),
 :deep(.el-select__wrapper) {
-  min-height: 44px;
+  min-height: 48px;
 }
 
 :deep(.mobile-select .el-select__wrapper) {
-  min-height: 44px;
+  min-height: 48px;
 }
 
 :deep(.el-form-item) {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
+}
+
+:deep(.el-form-item__label) {
+  padding-bottom: 6px;
+  font-weight: 700;
+  color: #334155;
+}
+
+:deep(.el-textarea__inner) {
+  min-height: 92px;
 }
 
 :deep(.el-segmented) {
@@ -1191,6 +1213,10 @@ function statusType(value) {
 }
 
 @media (max-width: 380px) {
+  .mobile-page {
+    padding-inline: 10px;
+  }
+
   .mobile-top-menu {
     display: flex;
     overflow-x: auto;
@@ -1200,6 +1226,10 @@ function statusType(value) {
   .top-menu-item {
     flex: 0 0 82px;
     scroll-snap-align: start;
+  }
+
+  .mode-card {
+    flex-basis: 118px;
   }
 }
 </style>
