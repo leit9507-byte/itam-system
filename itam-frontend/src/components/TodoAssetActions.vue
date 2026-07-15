@@ -1,5 +1,5 @@
 <template>
-  <el-dialog v-model="assignDialog.visible" title="入职资产分配" width="620px" class="todo-action-dialog" append-to-body>
+  <el-dialog v-model="assignDialog.visible" title="入职资产分配" :width="dialogWidth" :class="dialogClass" append-to-body>
     <el-alert :title="`为 ${assignDialog.todo?.name || assignDialog.todo?.owner || '员工'} 分配在库或闲置资产`" type="info" show-icon :closable="false" />
     <el-form :model="assignDialog.form" label-width="100px" class="todo-asset-form">
       <el-form-item label="选择资产" required>
@@ -39,7 +39,7 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="reclaimDialog.visible" title="离职资产回收" width="760px" class="todo-action-dialog" append-to-body>
+  <el-dialog v-model="reclaimDialog.visible" title="离职资产回收" :width="reclaimDialogWidth" :class="dialogClass" append-to-body>
     <el-alert :title="`${reclaimDialog.userName || '该人员'} 名下可回收资产 ${reclaimDialog.assets.length} 个`" type="warning" show-icon :closable="false" />
     <el-table class="reclaim-table" :data="reclaimDialog.assets" border @selection-change="rows => (reclaimDialog.selected = rows)">
       <el-table-column type="selection" width="44" />
@@ -65,6 +65,9 @@ import { getLocations } from '../api/location'
 import { getUsers } from '../api/user'
 
 const emit = defineEmits(['completed'])
+const props = defineProps({
+  mobile: { type: Boolean, default: false }
+})
 const processing = ref(false)
 const users = ref([])
 const locations = ref([])
@@ -81,6 +84,10 @@ const reclaimDialog = reactive({
   assets: [],
   selected: []
 })
+
+const dialogWidth = computed(() => (props.mobile ? 'min(360px, calc(100vw - 28px))' : '620px'))
+const reclaimDialogWidth = computed(() => (props.mobile ? 'min(360px, calc(100vw - 28px))' : '760px'))
+const dialogClass = computed(() => ['todo-action-dialog', { 'todo-action-dialog--mobile': props.mobile }])
 
 const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
 
@@ -288,6 +295,52 @@ defineExpose({ handle })
   height: auto;
   min-height: 58px;
   padding: 4px 12px;
+}
+
+:global(.todo-action-dialog--mobile) {
+  width: min(360px, calc(100vw - 28px)) !important;
+  max-width: calc(100vw - 28px);
+  max-height: calc(100dvh - 28px);
+  margin: 14px auto !important;
+  display: flex;
+  flex-direction: column;
+}
+
+:global(.todo-action-dialog--mobile .el-dialog__header) {
+  flex: 0 0 auto;
+  padding: 14px 16px;
+}
+
+:global(.todo-action-dialog--mobile .el-dialog__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  padding: 14px 16px;
+}
+
+:global(.todo-action-dialog--mobile .el-dialog__footer) {
+  flex: 0 0 auto;
+  padding: 10px 16px 14px;
+}
+
+:global(.todo-action-dialog--mobile .el-dialog__footer .el-button) {
+  min-width: 0;
+  padding-inline: 14px;
+}
+
+:global(.todo-action-dialog--mobile .todo-asset-select-popper),
+:global(.todo-action-dialog--mobile .todo-location-select-popper) {
+  max-width: calc(100vw - 56px);
+}
+
+:global(.todo-action-dialog--mobile .el-select-dropdown__wrap) {
+  max-height: min(240px, 38dvh);
+}
+
+:global(.todo-action-dialog--mobile .reclaim-table) {
+  width: 100%;
+  overflow-x: auto;
 }
 
 @media (max-width: 720px) {

@@ -309,6 +309,8 @@
                 <el-form-item label="默认角色">
                   <el-select v-model="providerConfig.default_role" style="width: 100%">
                     <el-option label="普通用户" value="user" />
+                    <el-option label="资产管理员" value="asset_manager" />
+                    <el-option label="部门负责人" value="dept_manager" />
                     <el-option label="审计员" value="auditor" />
                   </el-select>
                 </el-form-item>

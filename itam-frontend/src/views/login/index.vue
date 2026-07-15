@@ -37,6 +37,14 @@
           <el-form-item label="登录方式">
             <el-segmented v-model="form.provider" :options="providerOptions" class="provider-segment" />
           </el-form-item>
+          <el-alert
+            v-if="form.provider === 'feishu' && feishuLoginTip"
+            class="login-tip"
+            type="warning"
+            show-icon
+            :closable="false"
+            :title="feishuLoginTip"
+          />
           <template v-if="form.provider !== 'feishu'">
           <el-form-item label="账号">
             <el-input v-model="form.username" size="large" autocomplete="username" placeholder="请输入账号">
@@ -75,6 +83,7 @@ const router = useRouter()
 const store = useAppStore()
 const loading = ref(false)
 const feishuLoginTried = ref(false)
+const feishuLoginTip = ref('')
 const form = reactive({ provider: 'local', username: '', password: '' })
 const providerOptions = [
   { label: '本地账号', value: 'local' },
@@ -117,6 +126,7 @@ async function submitLogin() {
 }
 
 async function startFeishuLogin(auto = false) {
+  feishuLoginTip.value = ''
   if (isFeishuClient()) {
     await startFeishuLoginFree(auto)
     return
@@ -128,8 +138,8 @@ async function startFeishuLogin(auto = false) {
       : '/dashboard'
     const result = await startSsoWithState('feishu', redirect, `${window.location.origin}/login`)
     window.location.href = result.redirect_url
-  } catch {
-    // 错误提示已由 request 拦截器统一展示
+  } catch (error) {
+    feishuLoginTip.value = error.userMessage || error.message || '飞书登录未配置，请先在权限和账号中保存飞书身份源'
     loading.value = false
   }
 }
@@ -139,6 +149,7 @@ async function startFeishuLoginFree(auto = false) {
   feishuLoginTried.value = true
   loading.value = true
   try {
+    feishuLoginTip.value = ''
     const config = await getFeishuLoginFreeConfig()
     if (!config?.enabled || !config.app_id) throw new Error(config?.message || '飞书免登未配置')
     const code = await requestFeishuLoginCode(config.app_id, config.scope_list || [])
@@ -147,6 +158,7 @@ async function startFeishuLoginFree(auto = false) {
     ElMessage.success('飞书免登成功')
     router.replace(resolveRedirect())
   } catch (error) {
+    feishuLoginTip.value = error.userMessage || error.message || '飞书免登失败，请检查飞书应用配置'
     if (!auto) ElMessage.error(error.userMessage || error.message || '飞书免登失败')
   } finally {
     loading.value = false
@@ -351,6 +363,10 @@ p {
 
 .login-button {
   width: 100%;
+}
+
+.login-tip {
+  margin-bottom: 8px;
 }
 
 .login-foot {

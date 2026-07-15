@@ -1,5 +1,5 @@
 <template>
-  <el-aside class="sidebar" :width="store.collapsed ? '72px' : '236px'">
+  <el-aside class="sidebar" :class="{ 'is-collapsed': store.collapsed }" :width="store.collapsed ? '72px' : '236px'">
     <div class="brand">
       <span class="brand-mark">◆</span>
       <strong v-if="!store.collapsed">资产管理系统</strong>
@@ -33,7 +33,7 @@
         <el-menu-item v-if="canRead('identity')" index="/personnel">人员管理</el-menu-item>
         <el-menu-item v-if="canRead('identity')" index="/notification">消息通知</el-menu-item>
         <el-menu-item v-if="canRead('ops')" index="/ops">运维面板</el-menu-item>
-        <el-menu-item v-if="canRead('ops')" index="/operation-log">操作日志</el-menu-item>
+        <el-menu-item v-if="canRead('ops')" index="/operation-log">日志中心</el-menu-item>
       </el-sub-menu>
       <el-sub-menu v-if="reportGroupVisible" index="/report-audit">
         <template #title><el-icon><View /></el-icon><span>报告审核</span></template>
@@ -155,5 +155,46 @@ function canAny(resources) {
 
 :deep(.el-icon) {
   font-size: 18px;
+}
+
+.sidebar.is-collapsed .brand {
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar.is-collapsed .menu {
+  width: 100%;
+  padding: 12px 0 20px;
+}
+
+.sidebar.is-collapsed :deep(.el-menu--collapse) {
+  width: 100%;
+}
+
+.sidebar.is-collapsed :deep(.el-menu-item),
+.sidebar.is-collapsed :deep(.el-sub-menu__title) {
+  display: flex;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin: 6px auto;
+  padding: 0 !important;
+  border-radius: 14px;
+}
+
+.sidebar.is-collapsed :deep(.el-menu-item .el-icon),
+.sidebar.is-collapsed :deep(.el-sub-menu__title .el-icon) {
+  margin: 0;
+}
+
+.sidebar.is-collapsed :deep(.el-menu-item span),
+.sidebar.is-collapsed :deep(.el-sub-menu__title span),
+.sidebar.is-collapsed :deep(.el-sub-menu__icon-arrow) {
+  display: none !important;
+}
+
+.sidebar.is-collapsed :deep(.el-sub-menu.is-active > .el-sub-menu__title) {
+  background: linear-gradient(135deg, #1975fc, #3b8bff);
+  color: #fff;
 }
 </style>

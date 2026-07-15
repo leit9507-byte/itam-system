@@ -8,6 +8,10 @@ export function getOperationLogs(params = {}) {
   return request.get('/ops/logs', { params })
 }
 
+export function getErrorLogs(params = {}) {
+  return request.get('/ops/error-logs', { params })
+}
+
 export async function exportOperationLogs(params = {}) {
   const blob = await request.get('/ops/logs/export', { params, responseType: 'blob' })
   const url = URL.createObjectURL(blob)

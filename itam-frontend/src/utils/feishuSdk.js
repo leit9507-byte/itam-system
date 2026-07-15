@@ -192,7 +192,7 @@ async function doConfigureJsapi(url) {
     window.h5sdk.error?.(fail)
     window.h5sdk.config({
       appId: config.appId,
-      timestamp: config.timestamp,
+      timestamp: Number(config.timestamp),
       nonceStr: config.nonceStr,
       signature: config.signature,
       jsApiList: config.jsApiList || ['scanCode'],
@@ -212,7 +212,9 @@ function callScanCode(bridge) {
       if (settled) return
       settled = true
       const text = extractScanText(value)
-      if (!text && error) lastScanError = describeError(error)
+      if (text) lastScanError = ''
+      else if (error) lastScanError = describeError(error)
+      else lastScanError = ''
       resolve(text)
     }
     const options = {

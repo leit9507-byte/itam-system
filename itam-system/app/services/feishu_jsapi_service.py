@@ -25,7 +25,7 @@ class FeishuJsapiService:
         clean_url = FeishuJsapiService.clean_url(url)
         app_id, app_secret = FeishuJsapiService.find_credentials(db)
         ticket = FeishuJsapiService.get_cached_jsapi_ticket(app_id, app_secret)
-        timestamp = str(int(time.time() * 1000))
+        timestamp = int(time.time() * 1000)
         nonce_str = secrets.token_hex(12)
         raw = f"jsapi_ticket={ticket}&noncestr={nonce_str}&timestamp={timestamp}&url={clean_url}"
         signature = hashlib.sha1(raw.encode("utf-8")).hexdigest()

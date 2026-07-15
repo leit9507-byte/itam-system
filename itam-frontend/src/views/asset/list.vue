@@ -127,6 +127,7 @@
       <el-form :model="editDialog.form" label-width="112px">
         <AssetEditFields
           :form="editDialog.form"
+          :products="products"
           :categories="categories"
           :companies="realCompanies"
           :suppliers="suppliers"
@@ -354,7 +355,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { assetStatuses, batchUpdateAssets, createScrapRequest, downloadAssetImportTemplate, editableAssetStatuses, getAssets, importAssets, inboundAsset, outboundAsset, previewAssetsFromExcel, previewAssetsFromText, statusMap, updateAsset } from '../../api/asset'
 import { getCompanies } from '../../api/company'
 import { getLocations } from '../../api/location'
-import { getDeviceTypes } from '../../api/product'
+import { getDeviceTypes, getProducts } from '../../api/product'
 import { createRepairRecords, getRepairFaultTypes } from '../../api/repair'
 import { getSuppliers } from '../../api/supplier'
 import { getUsers } from '../../api/user'
@@ -364,6 +365,7 @@ const route = useRoute()
 const assets = ref([])
 const selected = ref([])
 const categories = ref([])
+const products = ref([])
 const companies = ref([])
 const users = ref([])
 const filteredUsers = ref([])
@@ -390,7 +392,7 @@ const canConfirmImport = computed(() => importDialog.preview?.valid > 0 && !impo
 
 onMounted(async () => {
   applyWorkflowQuery()
-  await Promise.all([loadAssets(), loadUsers(), loadTypes(), loadSuppliers(), loadCompanies(), loadLocations(), loadFaultTypes()])
+  await Promise.all([loadAssets(), loadUsers(), loadTypes(), loadProducts(), loadSuppliers(), loadCompanies(), loadLocations(), loadFaultTypes()])
 })
 
 async function loadAssets() {
@@ -418,6 +420,10 @@ async function loadUsers() {
 async function loadTypes() {
   const types = await getDeviceTypes()
   categories.value = types.map(item => item.name)
+}
+
+async function loadProducts() {
+  products.value = await getProducts()
 }
 
 async function loadCompanies() {
@@ -959,6 +965,7 @@ function manualStatusOptions(currentStatus) {
 const AssetEditFields = defineComponent({
   props: {
     form: { type: Object, required: true },
+    products: { type: Array, required: true },
     categories: { type: Array, required: true },
     companies: { type: Array, required: true },
     suppliers: { type: Array, required: true },
@@ -967,8 +974,23 @@ const AssetEditFields = defineComponent({
   },
   emits: ['search-users', 'select-user'],
   setup(props, { emit }) {
+    function applyProduct(productId) {
+      const product = props.products.find(item => item.id === productId)
+      if (!product) return
+      props.form.product_id = product.id
+      props.form.name = product.product_name || props.form.name
+      props.form.category = product.device_type || props.form.category
+      props.form.brand = product.brand || ''
+      props.form.model = product.model || ''
+      props.form.spec = product.spec || ''
+      props.form.price = Number(product.unit_price || props.form.price || 0)
+      props.form.location = product.default_warehouse || props.form.location || ''
+      props.form.retirement_years = product.retirement_years ?? props.form.retirement_years
+    }
+
     return () =>
       h('div', { class: 'edit-grid' }, [
+        field('产品档案', h(resolveSelect(), { modelValue: props.form.product_id, 'onUpdate:modelValue': applyProduct, filterable: true, clearable: true, placeholder: '选择产品后自动带出规格', style: 'width:100%' }, () => props.products.map(item => h(resolveOption(), { key: item.id, label: `${item.product_name} / ${item.model || '-'} / ${item.spec || '-'}`, value: item.id })))),
         field('资产ID', h(resolveInput(), { modelValue: props.form.asset_id, 'onUpdate:modelValue': value => (props.form.asset_id = value), placeholder: '可改成外部系统编号，例如 1982' })),
         field('资产编号', h(resolveInput(), { modelValue: props.form.asset_no, 'onUpdate:modelValue': value => (props.form.asset_no = value), placeholder: '公司内部编号或标签编号' })),
         field('资产名称', h(resolveInput(), { modelValue: props.form.name, 'onUpdate:modelValue': value => (props.form.name = value) })),

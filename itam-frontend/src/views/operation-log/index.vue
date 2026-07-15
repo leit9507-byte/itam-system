@@ -1,85 +1,147 @@
 <template>
-  <div class="page operation-log-page">
+  <div class="page log-center-page">
     <div class="page-header">
       <div>
-        <h2 class="page-title">操作日志</h2>
-        <p class="page-subtitle">查看资产、审批、盘点、文件、权限和运维操作记录</p>
+        <h2 class="page-title">日志中心</h2>
+        <p class="page-subtitle">集中查看操作日志和错误日志</p>
       </div>
       <div class="toolbar">
-        <el-button :loading="loading" @click="load">刷新</el-button>
-        <el-button type="primary" :loading="exporting" @click="handleExport">导出 CSV</el-button>
+        <el-button :loading="activeTab === 'operation' ? loading : errorLoading" @click="activeTab === 'operation' ? load() : loadErrors()">刷新</el-button>
+        <el-button v-if="activeTab === 'operation'" type="primary" :loading="exporting" @click="handleExport">导出 CSV</el-button>
       </div>
     </div>
 
-    <el-card shadow="never" class="filter-card">
-      <el-form :model="filters" label-width="72px" class="filter-form">
-        <el-form-item label="模块">
-          <el-select v-model="filters.module" clearable filterable placeholder="全部模块" @change="refresh">
-            <el-option v-for="item in moduleOptions" :key="item.value" :label="item.label" :value="item.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="动作">
-          <el-input v-model="filters.action" clearable placeholder="例如 create / approve" @keyup.enter="refresh" />
-        </el-form-item>
-        <el-form-item label="操作人">
-          <el-input v-model="filters.operator" clearable placeholder="姓名/账号/角色" @keyup.enter="refresh" />
-        </el-form-item>
-        <el-form-item label="关键字">
-          <el-input v-model="filters.keyword" clearable placeholder="对象、摘要、详情" @keyup.enter="refresh" />
-        </el-form-item>
-        <el-form-item label="时间">
-          <el-date-picker
-            v-model="filters.dateRange"
-            type="daterange"
-            value-format="YYYY-MM-DD"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-            @change="refresh"
-          />
-        </el-form-item>
-        <el-form-item label=" ">
-          <div class="filter-actions">
-            <el-button type="primary" @click="refresh">查询</el-button>
-            <el-button @click="resetFilters">重置</el-button>
+    <el-tabs v-model="activeTab" class="log-tabs" @tab-change="handleTabChange">
+      <el-tab-pane label="操作日志" name="operation">
+        <el-card shadow="never" class="filter-card">
+          <el-form :model="filters" label-width="72px" class="filter-form">
+            <el-form-item label="模块">
+              <el-select v-model="filters.module" clearable filterable placeholder="全部模块" @change="refresh">
+                <el-option v-for="item in moduleOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="动作">
+              <el-input v-model="filters.action" clearable placeholder="例如 create / approve" @keyup.enter="refresh" />
+            </el-form-item>
+            <el-form-item label="操作人">
+              <el-input v-model="filters.operator" clearable placeholder="姓名/账号/角色" @keyup.enter="refresh" />
+            </el-form-item>
+            <el-form-item label="关键字">
+              <el-input v-model="filters.keyword" clearable placeholder="对象、摘要、详情" @keyup.enter="refresh" />
+            </el-form-item>
+            <el-form-item label="时间">
+              <el-date-picker
+                v-model="filters.dateRange"
+                type="daterange"
+                value-format="YYYY-MM-DD"
+                range-separator="至"
+                start-placeholder="开始日期"
+                end-placeholder="结束日期"
+                @change="refresh"
+              />
+            </el-form-item>
+            <el-form-item label=" ">
+              <div class="filter-actions">
+                <el-button type="primary" @click="refresh">查询</el-button>
+                <el-button @click="resetFilters">重置</el-button>
+              </div>
+            </el-form-item>
+          </el-form>
+        </el-card>
+
+        <el-card shadow="never">
+          <el-table :data="rows" border stripe v-loading="loading" empty-text="暂无操作日志">
+            <el-table-column prop="created_at" label="时间" width="170" />
+            <el-table-column prop="module" label="模块" width="110">
+              <template #default="{ row }">
+                <el-tag type="info">{{ moduleLabel(row.module) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="action" label="动作" width="150" show-overflow-tooltip />
+            <el-table-column prop="target_type" label="对象类型" width="130" show-overflow-tooltip />
+            <el-table-column prop="target_id" label="对象ID" width="150" show-overflow-tooltip />
+            <el-table-column prop="operator" label="操作人" width="170" show-overflow-tooltip />
+            <el-table-column prop="summary" label="摘要" min-width="260" show-overflow-tooltip />
+            <el-table-column label="详情" width="90" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openDetail(row, '操作日志详情')">查看</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="pagination-bar">
+            <el-pagination
+              v-model:current-page="pagination.page"
+              v-model:page-size="pagination.pageSize"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="pagination.total"
+              layout="total, sizes, prev, pager, next, jumper"
+              @size-change="handleSizeChange"
+              @current-change="load"
+            />
           </div>
-        </el-form-item>
-      </el-form>
-    </el-card>
+        </el-card>
+      </el-tab-pane>
 
-    <el-card shadow="never">
-      <el-table :data="rows" border stripe v-loading="loading" empty-text="暂无操作日志">
-        <el-table-column prop="created_at" label="时间" width="170" />
-        <el-table-column prop="module" label="模块" width="110">
-          <template #default="{ row }">
-            <el-tag type="info">{{ moduleLabel(row.module) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="action" label="动作" width="150" show-overflow-tooltip />
-        <el-table-column prop="target_type" label="对象类型" width="130" show-overflow-tooltip />
-        <el-table-column prop="target_id" label="对象ID" width="150" show-overflow-tooltip />
-        <el-table-column prop="operator" label="操作人" width="170" show-overflow-tooltip />
-        <el-table-column prop="summary" label="摘要" min-width="260" show-overflow-tooltip />
-        <el-table-column label="详情" width="90" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="openDetail(row)">查看</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <div class="pagination-bar">
-        <el-pagination
-          v-model:current-page="pagination.page"
-          v-model:page-size="pagination.pageSize"
-          :page-sizes="[10, 20, 50, 100]"
-          :total="pagination.total"
-          layout="total, sizes, prev, pager, next, jumper"
-          @size-change="handleSizeChange"
-          @current-change="load"
-        />
-      </div>
-    </el-card>
+      <el-tab-pane label="错误日志" name="error">
+        <el-card shadow="never" class="filter-card">
+          <el-form :model="errorFilters" label-width="72px" class="filter-form error-filter-form">
+            <el-form-item label="关键字">
+              <el-input v-model="errorFilters.keyword" clearable placeholder="错误信息、对象、详情" @keyup.enter="refreshErrors" />
+            </el-form-item>
+            <el-form-item label="时间">
+              <el-date-picker
+                v-model="errorFilters.dateRange"
+                type="daterange"
+                value-format="YYYY-MM-DD"
+                range-separator="至"
+                start-placeholder="开始日期"
+                end-placeholder="结束日期"
+                @change="refreshErrors"
+              />
+            </el-form-item>
+            <el-form-item label=" ">
+              <div class="filter-actions">
+                <el-button type="primary" @click="refreshErrors">查询</el-button>
+                <el-button @click="resetErrorFilters">重置</el-button>
+              </div>
+            </el-form-item>
+          </el-form>
+        </el-card>
 
-    <el-drawer v-model="detailDrawer.visible" title="操作日志详情" size="560px">
+        <el-card shadow="never">
+          <el-table :data="errorRows" border stripe v-loading="errorLoading" empty-text="暂无错误日志">
+            <el-table-column prop="created_at" label="时间" width="170" />
+            <el-table-column prop="module" label="模块" width="110">
+              <template #default="{ row }">
+                <el-tag type="danger">{{ moduleLabel(row.module) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="action" label="动作" width="150" show-overflow-tooltip />
+            <el-table-column prop="target_id" label="对象ID" width="150" show-overflow-tooltip />
+            <el-table-column prop="operator" label="操作人" width="170" show-overflow-tooltip />
+            <el-table-column prop="summary" label="错误摘要" min-width="300" show-overflow-tooltip />
+            <el-table-column label="详情" width="90" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openDetail(row, '错误日志详情')">查看</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="pagination-bar">
+            <el-pagination
+              v-model:current-page="errorPagination.page"
+              v-model:page-size="errorPagination.pageSize"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="errorPagination.total"
+              layout="total, sizes, prev, pager, next, jumper"
+              @size-change="handleErrorSizeChange"
+              @current-change="loadErrors"
+            />
+          </div>
+        </el-card>
+      </el-tab-pane>
+    </el-tabs>
+
+    <el-drawer v-model="detailDrawer.visible" :title="detailDrawer.title" size="560px">
       <el-descriptions v-if="detailDrawer.row" :column="1" border>
         <el-descriptions-item label="时间">{{ detailDrawer.row.created_at }}</el-descriptions-item>
         <el-descriptions-item label="模块">{{ moduleLabel(detailDrawer.row.module) }} / {{ detailDrawer.row.module }}</el-descriptions-item>
@@ -99,14 +161,22 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { exportOperationLogs, getOperationLogs } from '../../api/ops'
+import { exportOperationLogs, getErrorLogs, getOperationLogs } from '../../api/ops'
 
+const activeTab = ref('operation')
 const rows = ref([])
 const loading = ref(false)
 const exporting = ref(false)
 const filters = reactive({ module: '', action: '', operator: '', keyword: '', dateRange: [] })
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
-const detailDrawer = reactive({ visible: false, row: null })
+
+const errorRows = ref([])
+const errorLoading = ref(false)
+const errorLoaded = ref(false)
+const errorFilters = reactive({ keyword: '', dateRange: [] })
+const errorPagination = reactive({ page: 1, pageSize: 10, total: 0 })
+
+const detailDrawer = reactive({ visible: false, row: null, title: '日志详情' })
 const moduleOptions = [
   { label: '资产', value: 'asset' },
   { label: '采购', value: 'purchase' },
@@ -117,7 +187,8 @@ const moduleOptions = [
   { label: '审批', value: 'approval' },
   { label: '权限', value: 'rbac' },
   { label: '人员/身份源', value: 'identity' },
-  { label: '运维', value: 'ops' }
+  { label: '运维', value: 'ops' },
+  { label: '飞书', value: 'feishu' }
 ]
 
 const formattedDetail = computed(() => {
@@ -143,6 +214,18 @@ async function load() {
   }
 }
 
+async function loadErrors() {
+  errorLoading.value = true
+  try {
+    const result = await getErrorLogs(errorQueryParams())
+    errorRows.value = result.list || []
+    errorPagination.total = result.total || 0
+    errorLoaded.value = true
+  } finally {
+    errorLoading.value = false
+  }
+}
+
 function queryParams(extra = {}) {
   const [start, end] = filters.dateRange || []
   return {
@@ -158,9 +241,25 @@ function queryParams(extra = {}) {
   }
 }
 
+function errorQueryParams() {
+  const [start, end] = errorFilters.dateRange || []
+  return {
+    page: errorPagination.page,
+    page_size: errorPagination.pageSize,
+    keyword: errorFilters.keyword || undefined,
+    start: start || undefined,
+    end: end || undefined
+  }
+}
+
 function refresh() {
   pagination.page = 1
   load()
+}
+
+function refreshErrors() {
+  errorPagination.page = 1
+  loadErrors()
 }
 
 function resetFilters() {
@@ -168,9 +267,25 @@ function resetFilters() {
   refresh()
 }
 
+function resetErrorFilters() {
+  Object.assign(errorFilters, { keyword: '', dateRange: [] })
+  refreshErrors()
+}
+
 function handleSizeChange() {
   pagination.page = 1
   load()
+}
+
+function handleErrorSizeChange() {
+  errorPagination.page = 1
+  loadErrors()
+}
+
+function handleTabChange(name) {
+  if (name === 'error' && !errorLoaded.value) {
+    loadErrors()
+  }
 }
 
 async function handleExport() {
@@ -183,8 +298,9 @@ async function handleExport() {
   }
 }
 
-function openDetail(row) {
+function openDetail(row, title) {
   detailDrawer.row = row
+  detailDrawer.title = title
   detailDrawer.visible = true
 }
 
@@ -194,7 +310,7 @@ function moduleLabel(value) {
 </script>
 
 <style scoped>
-.operation-log-page {
+.log-center-page {
   min-width: 0;
 }
 
@@ -203,6 +319,10 @@ function moduleLabel(value) {
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.log-tabs {
+  margin-top: 4px;
 }
 
 .filter-card {
@@ -263,7 +383,8 @@ function moduleLabel(value) {
 }
 
 @media (max-width: 980px) {
-  .filter-form {
+  .filter-form,
+  .error-filter-form {
     grid-template-columns: 1fr;
   }
 }

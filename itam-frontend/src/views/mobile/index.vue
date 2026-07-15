@@ -1,22 +1,22 @@
 <template>
   <div class="mobile-page">
-    <header class="mobile-header">
-      <div>
-        <span class="eyebrow">{{ currentSectionTitle }}</span>
-        <h1>{{ activeSection === 'work' || activeSection === 'stocktake' ? currentMode.label : '移动端' }}</h1>
-      </div>
-      <div class="header-status">
-        <el-tag size="small" type="success">在线</el-tag>
-        <small>{{ todos.length }} 待办</small>
-      </div>
+    <header v-if="showMobileAppbar" class="mobile-appbar">
+      <button type="button" class="appbar-icon" @click="router.back()">&lt;</button>
+      <strong>ITAM Dashboard</strong>
+      <button type="button" class="appbar-icon appbar-dot" @click="selectSection('logs')">...</button>
     </header>
 
-    <nav class="mobile-top-menu" aria-label="移动端菜单">
-      <button v-for="item in sectionMenus" :key="item.value" type="button" class="top-menu-item" :class="{ active: activeSection === item.value }" @click="selectSection(item.value)">
-        <span>{{ item.label }}</span>
-        <small v-if="item.count !== undefined">{{ item.count }}</small>
-      </button>
-    </nav>
+    <section class="mobile-hero">
+      <div>
+        <span class="eyebrow">{{ currentSectionTitle }}</span>
+        <h1>{{ activeSection === 'work' || activeSection === 'stocktake' ? currentMode.label : '移动作业' }}</h1>
+        <p>{{ sectionSubtitle }}</p>
+      </div>
+      <div class="hero-stats">
+        <span><strong>{{ todos.length }}</strong>待办</span>
+        <span><strong>{{ logs.length }}</strong>记录</span>
+      </div>
+    </section>
 
     <el-card v-if="activeSection === 'todo'" shadow="never" class="todo-card mobile-panel">
       <template #header>
@@ -39,7 +39,7 @@
       </div>
       <el-empty v-else description="暂无待办事项" :image-size="64" />
     </el-card>
-    <TodoAssetActions ref="todoAssetActionsRef" @completed="loadTodos" />
+    <TodoAssetActions ref="todoAssetActionsRef" mobile @completed="loadTodos" />
 
     <section v-if="activeSection === 'work'" class="mode-strip">
       <button v-for="item in workModes" :key="item.value" type="button" class="mode-card" :class="{ active: mode === item.value }" @click="selectMode(item.value)">
@@ -63,7 +63,7 @@
         reserve-keyword
         :remote-method="searchTasks"
         placeholder="搜索并选择盘点任务"
-        class="mobile-select"
+        class="mobile-select" popper-class="mobile-select-popper"
         style="width: 100%"
         @visible-change="visible => visible && resetTaskOptions()"
         @change="selectTask"
@@ -74,7 +74,7 @@
         <span>{{ selectedTask.checked || 0 }}/{{ selectedTask.total || 0 }}</span>
         <el-progress :percentage="stocktakeProgress" />
       </div>
-      <p class="tip">盘点必须先在后台「资产盘点」创建任务，移动端只负责扫码执行任务明细。</p>
+      <p class="tip">盘点必须先在后台“资产盘点”创建并开启任务，移动端只负责扫码执行任务明细。</p>
     </el-card>
 
     <el-card v-if="activeSection === 'work' || activeSection === 'stocktake'" shadow="never" class="scan-card mobile-panel">
@@ -86,11 +86,18 @@
       </template>
 
       <div class="scan-box">
-        <el-input v-model="assetCode" clearable placeholder="扫码或输入资产编号 / 二维码内容" @keyup.enter="loadAsset" />
-        <div class="scan-actions">
-          <el-button :icon="Search" @click="loadAsset">查询</el-button>
-          <el-button type="primary" :icon="Camera" @click="scanCode">扫码</el-button>
-          <el-button :icon="Refresh" @click="resetAsset">清空</el-button>
+        <div class="scan-searchbar">
+          <button type="button" class="scan-trigger" aria-label="扫码" @click="scanCode">
+            <el-icon><Camera /></el-icon>
+          </button>
+          <el-input
+            v-model="assetCode"
+            class="scan-inline-input"
+            clearable
+            placeholder="扫码识别或输入资产编号"
+            @keyup.enter="loadAsset"
+          />
+          <el-button type="primary" class="scan-query-btn" @click="loadAsset">查询</el-button>
         </div>
         <el-alert
           v-if="showScanRuntimeHint"
@@ -158,7 +165,7 @@
               reserve-keyword
               :remote-method="searchLocations"
               placeholder="搜索入库地址"
-              class="mobile-select"
+              class="mobile-select" popper-class="mobile-select-popper"
               style="width: 100%"
               @visible-change="visible => visible && resetLocationOptions()"
             >
@@ -172,7 +179,7 @@
             <el-segmented v-model="form.outboundTarget" :options="outboundTargetOptions" @change="changeOutboundTarget" />
           </el-form-item>
           <el-form-item label="领用人">
-            <el-select v-model="form.owner_user_id" :disabled="form.outboundTarget === 'location'" filterable remote clearable reserve-keyword :remote-method="searchUsers" placeholder="搜索姓名/账号" class="mobile-select" @visible-change="visible => visible && searchUsers('')" @change="selectUser">
+            <el-select v-model="form.owner_user_id" :disabled="form.outboundTarget === 'location'" filterable remote clearable reserve-keyword :remote-method="searchUsers" placeholder="搜索姓名/账号" class="mobile-select" popper-class="mobile-select-popper" @visible-change="visible => visible && searchUsers('')" @change="selectUser">
               <el-option v-for="user in filteredUsers" :key="user.user_id" :label="`${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`" :value="user.user_id" />
             </el-select>
           </el-form-item>
@@ -185,7 +192,7 @@
               reserve-keyword
               :remote-method="searchLocations"
               placeholder="搜索位置"
-              class="mobile-select"
+              class="mobile-select" popper-class="mobile-select-popper"
               style="width: 100%"
               @visible-change="visible => visible && resetLocationOptions()"
             >
@@ -209,7 +216,7 @@
               reserve-keyword
               :remote-method="searchFaultTypes"
               placeholder="搜索或输入故障类型"
-              class="mobile-select"
+              class="mobile-select" popper-class="mobile-select-popper"
               style="width: 100%"
               @visible-change="visible => visible && resetFaultTypeOptions()"
             >
@@ -242,22 +249,18 @@
         </template>
 
         <template v-if="mode === 'bind'">
-          <el-alert class="inline-alert" title="请先确认上方资产信息，再扫描需要绑定到该资产的二维码或条码。" type="info" show-icon :closable="false" />
-          <el-form-item label="扫码内容">
-            <el-input v-model="bindingForm.scan_raw" type="textarea" :rows="3" placeholder="扫描二维码/条码，或输入旧标签编号" />
+          <el-alert class="inline-alert" title="先确认上方资产，再读取二维码内容。二维码内容可手动编辑，提交后后续扫码会按这段内容识别当前资产。" type="info" show-icon :closable="false" />
+          <el-form-item label="二维码内容">
+            <el-input v-model="bindingForm.scan_raw" type="textarea" :rows="3" placeholder="扫描二维码后自动填入，也可以手动输入或修改二维码生成内容" />
           </el-form-item>
           <div class="binding-actions">
-            <el-button type="primary" :icon="Camera" @click="scanBindingRaw">扫描绑定码</el-button>
+            <el-button type="primary" :icon="Camera" @click="scanBindingRaw">读取二维码</el-button>
             <el-button :icon="Refresh" @click="bindingForm.scan_raw = ''">清空内容</el-button>
           </div>
-          <el-form-item label="扫码类型">
-            <el-select v-model="bindingForm.scan_type" style="width: 100%">
-              <el-option label="通用" value="generic" />
-              <el-option label="二维码" value="qrcode" />
-              <el-option label="条码" value="barcode" />
-              <el-option label="旧标签" value="legacy" />
-            </el-select>
-          </el-form-item>
+          <div v-if="bindingForm.scan_raw" class="qr-confirm-box">
+            <span>将把以下二维码内容绑定到资产</span>
+            <strong>{{ asset.asset_id }} / {{ asset.name }}</strong>
+          </div>
           <el-form-item label="重新绑定">
             <el-switch v-model="bindingForm.force" active-text="允许覆盖已绑定资产" />
           </el-form-item>
@@ -288,6 +291,14 @@
         </div>
       </div>
     </el-card>
+
+    <nav class="mobile-bottom-menu" aria-label="移动端菜单">
+      <button v-for="item in sectionMenus" :key="item.value" type="button" class="bottom-menu-item" :class="{ active: activeSection === item.value }" @click="selectSection(item.value)">
+        <el-icon><component :is="item.icon" /></el-icon>
+        <span>{{ item.label }}</span>
+        <small v-if="item.count !== undefined">{{ item.count }}</small>
+      </button>
+    </nav>
   </div>
 </template>
 
@@ -295,12 +306,12 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Box, Camera, CircleCheck, Delete, Refresh, Search, Setting } from '@element-plus/icons-vue'
+import { Box, Camera, CircleCheck, Delete, FolderOpened, HomeFilled, Refresh, Search, Setting, UserFilled } from '@element-plus/icons-vue'
 import { createRepairRecord, getRepairFaultTypes } from '../../api/repair'
 import { createScrapRequest, getAssets, inboundAsset, outboundAsset } from '../../api/asset'
 import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
-import { getStocktakeTasks, startStocktakeTask, submitStocktakeItem } from '../../api/stocktake'
+import { getStocktakeTasks, submitStocktakeItem } from '../../api/stocktake'
 import { getTodoItems } from '../../api/todo'
 import { bindAssetScanCode, resolveScanBinding } from '../../api/scanBinding'
 import TodoAssetActions from '../../components/TodoAssetActions.vue'
@@ -308,13 +319,14 @@ import { assetCodeCandidates, assetCodeMatches, parseAssetCode } from '../../uti
 import { feishuRuntimeStatus, getLastFeishuScanError, isFeishuClient, scanByFeishuSdk } from '../../utils/feishuSdk'
 
 const router = useRouter()
+const SCAN_CANCELLED = Symbol('scan-cancelled')
 const modes = [
   { value: 'stocktake', label: '扫码盘点', hint: '执行后台任务', icon: Search, formTitle: '盘点确认', submitText: '提交盘点' },
   { value: 'inbound', label: '扫码入库', hint: '归还/验收入库', icon: Box, formTitle: '入库信息', submitText: '确认入库' },
   { value: 'outbound', label: '扫码出库', hint: '关联领用人', icon: CircleCheck, formTitle: '出库信息', submitText: '确认出库' },
   { value: 'repair', label: '扫码维修', hint: '创建今日维修', icon: Setting, formTitle: '维修信息', submitText: '创建维修' },
   { value: 'scrap', label: '扫码报废', hint: '提交审批申请', icon: Delete, formTitle: '报废申请', submitText: '提交报废' },
-  { value: 'bind', label: '扫码绑定', hint: '绑定外部标签', icon: Search, formTitle: '绑定扫码内容', submitText: '确认绑定' }
+  { value: 'bind', label: '二维码绑定', hint: '确认二维码内容', icon: Search, formTitle: '二维码绑定', submitText: '确认绑定' }
 ]
 const workModes = modes.filter(item => item.value !== 'stocktake')
 const outboundTargetOptions = [
@@ -341,9 +353,14 @@ const stocktakeTasks = ref([])
 const visibleStocktakeTasks = ref([])
 const scanRuntimeStatus = ref(feishuRuntimeStatus())
 const scanRuntimeError = ref('')
+const showMobileAppbar = computed(() => !scanRuntimeStatus.value.isFeishu)
 const form = reactive(defaultForm())
 const bindingForm = reactive(defaultBindingForm())
 
+const OPEN_STOCKTAKE_STATUSES = ['进行中']
+const INBOUND_ALLOWED_STATUSES = ['in_use', 'borrowed', 'out_stock', 'repair']
+const OUTBOUND_ALLOWED_STATUSES = ['in_stock', 'idle']
+const activeStocktakeTasks = computed(() => stocktakeTasks.value.filter(task => OPEN_STOCKTAKE_STATUSES.includes(task.status)))
 const currentMode = computed(() => modes.find(item => item.value === mode.value) || modes[0])
 const selectedTask = computed(() => stocktakeTasks.value.find(task => task.id === form.task_id))
 const currentStocktakeItem = computed(() => {
@@ -359,6 +376,12 @@ const currentSectionTitle = computed(() => {
   if (activeSection.value === 'work') return currentMode.value.label
   return ({ todo: '待办中心', stocktake: '扫码盘点', logs: '今日记录' })[activeSection.value] || '移动作业'
 })
+const sectionSubtitle = computed(() => {
+  if (activeSection.value === 'todo') return '处理入职分配、离职回收和审批待办。'
+  if (activeSection.value === 'stocktake') return '选择后台盘点任务后，现场扫码确认资产。'
+  if (activeSection.value === 'logs') return '查看本机今日扫码作业记录。'
+  return `${currentMode.value.hint}，扫码后按表单确认提交。`
+})
 const scanRuntimeTitle = computed(() => {
   if (scanRuntimeStatus.value.hasScanCode) return '飞书扫码能力已就绪'
   if (scanRuntimeStatus.value.hasH5Sdk) return '飞书 H5 SDK 已加载，等待扫码能力'
@@ -373,10 +396,10 @@ const scanRuntimeDescription = computed(() => {
 })
 const showScanRuntimeHint = computed(() => scanRuntimeError.value || !scanRuntimeStatus.value.hasScanCode)
 const sectionMenus = computed(() => [
-  { value: 'todo', label: '待办', count: todos.value.length },
-  { value: 'work', label: '扫码作业' },
-  { value: 'stocktake', label: '盘点' },
-  { value: 'logs', label: '记录', count: logs.value.length }
+  { value: 'todo', label: '首页', count: todos.value.length, icon: HomeFilled },
+  { value: 'work', label: '扫码', icon: Search },
+  { value: 'stocktake', label: '资产', icon: FolderOpened },
+  { value: 'logs', label: '我的', count: logs.value.length, icon: UserFilled }
 ])
 
 onMounted(async () => {
@@ -419,7 +442,7 @@ function defaultForm() {
 function defaultBindingForm() {
   return {
     scan_raw: '',
-    scan_type: 'generic',
+    scan_type: 'qrcode',
     force: false
   }
 }
@@ -427,9 +450,8 @@ function defaultBindingForm() {
 async function loadStocktakeTasks() {
   stocktakeTasks.value = await getStocktakeTasks()
   resetTaskOptions()
-  if (!form.task_id && stocktakeTasks.value.length) {
-    const activeTask = stocktakeTasks.value.find(task => ['进行中', '待开始', '待确认'].includes(task.status))
-    form.task_id = activeTask?.id || stocktakeTasks.value[0].id
+  if (!activeStocktakeTasks.value.some(task => task.id === form.task_id)) {
+    form.task_id = activeStocktakeTasks.value[0]?.id || ''
   }
 }
 
@@ -492,6 +514,10 @@ async function scanCode() {
   scanRuntimeError.value = ''
   const fromFeishu = await scanByFeishu()
   refreshScanRuntime()
+  if (fromFeishu === SCAN_CANCELLED) {
+    scanRuntimeError.value = ''
+    return
+  }
   if (fromFeishu) return handleScanResult(fromFeishu)
   const fromBrowser = await scanByBrowser()
   if (fromBrowser) return handleScanResult(fromBrowser)
@@ -503,16 +529,20 @@ async function scanBindingRaw() {
   scanRuntimeError.value = ''
   const fromFeishu = await scanByFeishu()
   refreshScanRuntime()
+  if (fromFeishu === SCAN_CANCELLED) {
+    scanRuntimeError.value = ''
+    return
+  }
   if (fromFeishu) {
     bindingForm.scan_raw = fromFeishu
-    return ElMessage.success('已读取绑定码')
+    return ElMessage.success('已读取二维码内容')
   }
   const fromBrowser = await scanByBrowser()
   if (fromBrowser) {
     bindingForm.scan_raw = fromBrowser
-    return ElMessage.success('已读取绑定码')
+    return ElMessage.success('已读取二维码内容')
   }
-  ElMessage.info(isFeishuClient() ? '飞书扫码未返回内容，请确认已在飞书客户端内打开' : '当前环境暂未开放摄像头扫码，请手动输入绑定内容')
+  ElMessage.info(isFeishuClient() ? '飞书扫码未返回内容，请确认已在飞书客户端内打开' : '当前环境暂未开放摄像头扫码，请手动输入二维码内容')
 }
 
 function refreshScanRuntime() {
@@ -522,12 +552,34 @@ function refreshScanRuntime() {
 
 async function scanByFeishu() {
   try {
-    return await scanByFeishuSdk()
+    const result = await scanByFeishuSdk()
+    const lastError = getLastFeishuScanError()
+    if (!result && isScanCancelError(lastError)) {
+      scanRuntimeError.value = ''
+      ElMessage.info('已取消扫码')
+      return SCAN_CANCELLED
+    }
+    return result
   } catch (error) {
+    if (isScanCancelError(error)) {
+      scanRuntimeError.value = ''
+      ElMessage.info('已取消扫码')
+      return SCAN_CANCELLED
+    }
     scanRuntimeError.value = error?.message || String(error || '')
     if (isFeishuClient()) ElMessage.warning('飞书 JSAPI 鉴权失败，已切换到浏览器扫码')
     return ''
   }
+}
+
+function isScanCancelError(error) {
+  if (!error) return false
+  const text = typeof error === 'string'
+    ? error
+    : [error.errString, error.errMsg, error.message, error.errno, error.errCode, error.errorCode].filter(Boolean).join(' ')
+  return /User canceled scanning|scanCode:fail cancel|cancelled|canceled|cancel/i.test(text) ||
+    text.includes('1505002') ||
+    text.includes('102')
 }
 
 async function scanByBrowser() {
@@ -582,7 +634,7 @@ async function loadAsset() {
   if (resolvedAsset) {
     asset.value = resolvedAsset
     form.location = resolvedAsset.location || resolvedAsset.warehouse || ''
-    ElMessage.success('已通过扫码绑定读取资产')
+    ElMessage.success('已通过二维码内容识别资产')
     return
   }
   let found = null
@@ -623,12 +675,12 @@ function searchUsers(query = '') {
 }
 
 function resetTaskOptions() {
-  visibleStocktakeTasks.value = stocktakeTasks.value.slice(0, 30)
+  visibleStocktakeTasks.value = activeStocktakeTasks.value.slice(0, 30)
 }
 
 function searchTasks(query = '') {
   const keyword = query.trim().toLowerCase()
-  visibleStocktakeTasks.value = stocktakeTasks.value
+  visibleStocktakeTasks.value = activeStocktakeTasks.value
     .filter(task => !keyword || [task.id, task.name, task.status].join(' ').toLowerCase().includes(keyword))
     .slice(0, 30)
 }
@@ -684,7 +736,7 @@ async function copyAssetId() {
 
 async function submitWork() {
   if (!asset.value) return ElMessage.warning('请先扫码选择资产')
-  if (mode.value === 'bind' && !bindingForm.scan_raw.trim()) return ElMessage.warning('请先扫描或输入需要绑定的二维码/条码内容')
+  if (mode.value === 'bind' && !bindingForm.scan_raw.trim()) return ElMessage.warning('请先扫描或输入需要绑定的二维码内容')
   submitting.value = true
   try {
     if (mode.value === 'stocktake') await submitStocktake()
@@ -700,9 +752,9 @@ async function submitWork() {
 }
 
 async function submitStocktake() {
+  if (selectedTask.value && !OPEN_STOCKTAKE_STATUSES.includes(selectedTask.value.status)) return ElMessage.warning('移动端只能执行已开启的盘点任务')
   if (!selectedTask.value) return ElMessage.warning('请先选择盘点任务')
   if (!currentStocktakeItem.value) return ElMessage.error('该资产不在当前盘点任务范围内')
-  if (selectedTask.value.status === '待开始') await startStocktakeTask(selectedTask.value.id)
   const saved = await submitStocktakeItem(selectedTask.value.id, asset.value.asset_id, {
     actual_location: currentStocktakeItem.value.book_location || '',
     result: '正常',
@@ -743,12 +795,18 @@ function applyStocktakeItem(saved) {
 }
 
 async function submitInbound() {
+  if (!INBOUND_ALLOWED_STATUSES.includes(asset.value?.status)) {
+    return ElMessage.warning(`当前状态为 ${statusLabel(asset.value?.status)}，不能重复入库`)
+  }
   const updated = await inboundAsset(asset.value.asset_id, { warehouse: form.location, location: form.location, remark: form.remark || '移动端扫码入库' })
   addLog('扫码入库', updated.location || form.location || '入库成功')
   ElMessage.success('入库成功')
 }
 
 async function submitOutbound() {
+  if (!OUTBOUND_ALLOWED_STATUSES.includes(asset.value?.status)) {
+    return ElMessage.warning(`当前状态为 ${statusLabel(asset.value?.status)}，不能重复出库；请先归还入库后再出库`)
+  }
   if (form.outboundTarget === 'user' && !form.owner_user_id) return ElMessage.warning('请选择领用人')
   if (form.outboundTarget === 'location' && !form.location) return ElMessage.warning('请选择公用位置')
   const updated = await outboundAsset(asset.value.asset_id, {
@@ -787,10 +845,11 @@ async function submitScrap() {
 async function submitScanBinding() {
   await bindAssetScanCode(asset.value.asset_id, {
     ...bindingForm,
-    remark: form.remark || '移动端扫码绑定'
+    scan_type: 'qrcode',
+    remark: form.remark || '移动端二维码绑定'
   })
-  addLog('扫码绑定', bindingForm.scan_type)
-  ElMessage.success('扫码内容已绑定')
+  addLog('二维码绑定', '已绑定二维码内容')
+  ElMessage.success('二维码内容已绑定')
 }
 
 function addLog(action, remark) {
@@ -818,41 +877,16 @@ function statusType(value) {
 <style scoped>
 .mobile-page {
   min-height: 100vh;
-  padding: 12px 12px calc(104px + env(safe-area-inset-bottom));
+  padding: 0 12px calc(104px + env(safe-area-inset-bottom));
   display: grid;
   align-content: start;
-  gap: 14px;
-  background: #f5f7fb;
-  color: #172033;
+  gap: 8px;
+  background:
+    radial-gradient(circle at 14% 0%, rgba(50, 125, 255, 0.18), transparent 28%),
+    linear-gradient(180deg, #eef6ff 0%, #f7fbff 36%, #f4f7fb 100%);
+  color: #162033;
 }
 
-.mobile-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid #e3ebf5;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 8px 24px rgba(30, 41, 59, 0.06);
-}
-
-.mobile-header h1 {
-  margin: 2px 0 0;
-  font-size: 21px;
-  line-height: 1.2;
-  letter-spacing: 0;
-}
-
-.header-status {
-  display: grid;
-  justify-items: end;
-  gap: 3px;
-  padding-top: 2px;
-}
-
-.header-status small,
 .eyebrow,
 .tip,
 .asset-main span,
@@ -862,87 +896,203 @@ function statusType(value) {
   color: #64748b;
 }
 
+.mobile-appbar {
+  position: sticky;
+  top: 0;
+  z-index: 18;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  min-height: 58px;
+  padding-top: env(safe-area-inset-top);
+  background: rgba(245, 250, 255, 0.86);
+  backdrop-filter: blur(14px);
+}
+
+.mobile-appbar strong {
+  overflow: hidden;
+  color: #101828;
+  font-size: 18px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appbar-icon {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: #152238;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.appbar-dot {
+  position: relative;
+  color: #0f172a;
+  font-size: 22px;
+  letter-spacing: 2px;
+}
+
+.appbar-dot::after {
+  position: absolute;
+  top: 5px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff7a2f;
+  content: "";
+}
+
+.mobile-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid rgba(211, 226, 245, 0.9);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 14px 34px rgba(40, 83, 130, 0.1);
+}
+
+.mobile-hero h1 {
+  margin: 2px 0 3px;
+  color: #101828;
+  font-size: 20px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.mobile-hero p {
+  margin: 0;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .eyebrow {
   font-size: 12px;
   font-weight: 800;
   color: #2563eb;
 }
 
-.mobile-top-menu {
+.hero-stats {
+  display: grid;
+  gap: 6px;
+}
+
+.hero-stats span {
+  display: grid;
+  place-items: center;
+  min-width: 48px;
+  padding: 5px 7px;
+  border-radius: 12px;
+  background: #f0f6ff;
+  color: #667085;
+  font-size: 11px;
+}
+
+.hero-stats strong {
+  color: #1764e8;
+  font-size: 16px;
+  line-height: 1.1;
+}
+
+.mobile-bottom-menu {
   position: fixed;
-  left: 10px;
-  right: 10px;
-  bottom: calc(10px + env(safe-area-inset-bottom));
+  left: 12px;
+  right: 12px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
   z-index: 20;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  padding: 7px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 8px;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid rgba(209, 224, 242, 0.9);
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 -12px 30px rgba(15, 23, 42, 0.16);
-  backdrop-filter: blur(12px);
+  box-shadow: 0 -10px 28px rgba(40, 83, 130, 0.16);
+  backdrop-filter: blur(14px);
 }
 
-.top-menu-item {
+.bottom-menu-item {
+  position: relative;
   min-width: 0;
-  min-height: 58px;
-  padding: 8px 4px;
-  border: 1px solid transparent;
-  border-radius: 8px;
+  min-height: 48px;
+  padding: 4px 4px;
+  border: 0;
+  border-radius: 16px;
   background: transparent;
-  color: #475569;
-  font-size: 12px;
-  font-weight: 700;
+  color: #8a96aa;
+  font-size: 11px;
+  font-weight: 800;
   display: grid;
   place-items: center;
-  gap: 2px;
+  gap: 3px;
 }
 
-.top-menu-item.active {
-  border-color: rgba(37, 99, 235, 0.24);
-  background: linear-gradient(135deg, #2563eb, #0891b2);
+.bottom-menu-item .el-icon {
+  font-size: 21px;
+}
+
+.bottom-menu-item.active {
+  color: #1764e8;
+}
+
+.bottom-menu-item.active .el-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 30px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, #2675ff, #00a3d8);
   color: #fff;
-  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.24);
+  box-shadow: 0 10px 18px rgba(23, 100, 232, 0.26);
 }
 
-.top-menu-item small {
-  min-width: 20px;
-  height: 16px;
+.bottom-menu-item small {
+  position: absolute;
+  top: 5px;
+  right: 14px;
+  min-width: 18px;
+  height: 18px;
   padding: 0 5px;
   border-radius: 999px;
-  background: #e2e8f0;
-  color: #475569;
-  font-size: 11px;
-  line-height: 16px;
+  background: #eef2f8;
+  color: #667085;
+  font-size: 10px;
+  line-height: 18px;
 }
 
-.top-menu-item.active small {
-  background: rgba(255, 255, 255, 0.22);
-  color: #fff;
+.bottom-menu-item.active small {
+  background: #e6f0ff;
+  color: #1764e8;
 }
 
 .mode-strip {
   display: flex;
   gap: 10px;
   overflow-x: auto;
-  padding: 2px 2px 6px;
+  padding: 2px 2px 8px;
   scroll-snap-type: x proximity;
 }
 
 .mode-strip::-webkit-scrollbar,
 .quick-codes::-webkit-scrollbar,
-.mobile-top-menu::-webkit-scrollbar {
+.mobile-bottom-menu::-webkit-scrollbar {
   display: none;
 }
 
 .mode-card {
-  flex: 0 0 126px;
-  min-height: 64px;
-  padding: 10px 12px;
-  border: 1px solid #dfe8ee;
-  border-radius: 8px;
+  flex: 0 0 132px;
+  min-height: 74px;
+  padding: 12px;
+  border: 1px solid #e3edf8;
+  border-radius: 16px;
   background: #ffffff;
   text-align: left;
   display: grid;
@@ -951,13 +1101,13 @@ function statusType(value) {
   column-gap: 7px;
   row-gap: 2px;
   scroll-snap-align: start;
-  box-shadow: none;
+  box-shadow: 0 10px 22px rgba(40, 83, 130, 0.07);
 }
 
 .mode-card.active {
-  border-color: rgba(37, 99, 235, 0.34);
-  background: #eff6ff;
-  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.14);
+  border-color: rgba(23, 100, 232, 0.28);
+  background: linear-gradient(180deg, #ffffff 0%, #edf5ff 100%);
+  box-shadow: 0 14px 28px rgba(23, 100, 232, 0.16);
 }
 
 .mode-card .el-icon {
@@ -1001,22 +1151,89 @@ function statusType(value) {
   white-space: nowrap;
 }
 
-.scan-actions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  width: 100%;
-  flex-shrink: 0;
+.scan-card :deep(.el-card__header) {
+  padding: 10px 14px;
 }
 
-.scan-actions :deep(.el-button) {
-  min-height: 50px;
+.scan-card :deep(.el-card__body) {
+  padding: 12px 14px 14px;
+}
+
+.scan-card .scan-box {
+  gap: 8px;
+}
+
+.scan-card :deep(.el-input__wrapper) {
+  min-height: 40px;
+}
+
+.scan-searchbar {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 64px;
+  align-items: center;
+  gap: 6px;
+  min-height: 42px;
+  padding: 4px;
+  border-radius: 999px;
+  background: #f7f9fc;
+}
+
+.scan-trigger {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: #ff6b6b;
+  color: #fff;
+  font-size: 18px;
+}
+
+.scan-inline-input {
+  min-width: 0;
+}
+
+.scan-searchbar :deep(.el-input__wrapper) {
+  min-height: 34px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.scan-searchbar :deep(.el-input__inner) {
+  color: #374151;
+  font-size: 14px;
+}
+
+.scan-query-btn {
+  min-height: 34px;
   margin: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #f6a4a4;
   font-weight: 800;
 }
 
+.scan-query-btn:hover,
+.scan-query-btn:focus {
+  background: #ef8f8f;
+}
+
 .scan-runtime-alert {
-  margin-top: 10px;
+  margin-top: 4px;
+  padding: 8px 10px;
+}
+
+.scan-runtime-alert :deep(.el-alert__title) {
+  font-size: 13px;
+}
+
+.scan-runtime-alert :deep(.el-alert__description) {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .todo-actions {
@@ -1026,7 +1243,7 @@ function statusType(value) {
 }
 
 .todo-card :deep(.el-card__body) {
-  padding-top: 12px;
+  padding-top: 10px;
 }
 
 .mobile-panel {
@@ -1051,7 +1268,7 @@ function statusType(value) {
 
 .mobile-todo-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .mobile-todo-row {
@@ -1060,22 +1277,22 @@ function statusType(value) {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  min-height: 64px;
-  padding: 13px;
-  border: 1px solid #e0e9f2;
-  border-radius: 8px;
+  gap: 8px;
+  min-height: 52px;
+  padding: 10px;
+  border: 1px solid #e6eef8;
+  border-radius: 14px;
   background: #ffffff;
   text-align: left;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.035);
+  box-shadow: 0 8px 18px rgba(40, 83, 130, 0.045);
 }
 
 .todo-priority {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
   background: #e0f2fe;
   color: #0369a1;
   font-size: 12px;
@@ -1121,7 +1338,7 @@ function statusType(value) {
 }
 
 .scan-box {
-  gap: 10px;
+  gap: 12px;
 }
 
 .quick-codes {
@@ -1139,7 +1356,7 @@ function statusType(value) {
 .quick-codes button {
   min-height: 38px;
   padding: 0 12px;
-  border: 1px solid #dbe5ef;
+  border: 1px solid #dbe8f6;
   border-radius: 999px;
   background: #fff;
   color: #334155;
@@ -1166,7 +1383,7 @@ function statusType(value) {
 }
 
 .asset-meta {
-  gap: 7px;
+  gap: 8px;
   font-size: 13px;
 }
 
@@ -1194,17 +1411,36 @@ function statusType(value) {
   font-weight: 800;
 }
 
+.qr-confirm-box {
+  display: grid;
+  gap: 4px;
+  margin: -4px 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.qr-confirm-box strong {
+  overflow-wrap: anywhere;
+  color: #172033;
+  font-size: 13px;
+}
+
 .form-card :deep(.el-switch__label) {
   min-width: 0;
   white-space: normal;
 }
 
 .sticky-submit {
-  position: sticky;
-  bottom: calc(88px + env(safe-area-inset-bottom));
-  z-index: 2;
-  padding-top: 12px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0), #fff 34%);
+  position: static;
+  z-index: 1;
+  margin-top: 18px;
+  padding-top: 0;
+  background: transparent;
 }
 
 .submit-btn {
@@ -1216,35 +1452,35 @@ function statusType(value) {
 .log-item {
   gap: 4px;
   padding: 12px;
-  border: 1px solid #e0e9f2;
-  border-radius: 8px;
+  border: 1px solid #e6eef8;
+  border-radius: 14px;
   background: #fff;
 }
 
 :deep(.el-card) {
-  border-radius: 8px;
-  border-color: #e0e9f2;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  border-radius: 14px;
+  border-color: #e3edf8;
+  box-shadow: 0 14px 32px rgba(40, 83, 130, 0.08);
 }
 
 :deep(.el-card__header) {
-  padding: 14px 16px;
+  padding: 11px 14px;
   border-bottom-color: #edf2f7;
 }
 
 :deep(.el-card__body) {
-  padding: 16px;
+  padding: 12px 14px;
 }
 
 :deep(.el-button) {
-  border-radius: 8px;
+  border-radius: 12px;
   min-height: 42px;
 }
 
 :deep(.el-input__wrapper),
 :deep(.el-select__wrapper),
 :deep(.el-textarea__inner) {
-  border-radius: 8px;
+  border-radius: 12px;
 }
 
 :deep(.el-input__wrapper),
@@ -1254,6 +1490,22 @@ function statusType(value) {
 
 :deep(.mobile-select .el-select__wrapper) {
   min-height: 48px;
+}
+
+:global(.mobile-select-popper) {
+  max-width: min(430px, calc(100vw - 28px));
+}
+
+:global(.mobile-select-popper .el-select-dropdown__wrap) {
+  max-height: min(240px, 38dvh);
+}
+
+:global(.mobile-select-popper .el-select-dropdown__item) {
+  height: auto;
+  min-height: 36px;
+  padding-block: 6px;
+  line-height: 1.35;
+  white-space: normal;
 }
 
 :deep(.el-form-item) {
@@ -1278,16 +1530,16 @@ function statusType(value) {
   flex: 1;
 }
 
-@media (min-width: 760px) {
+@media (min-width: 480px) {
   .mobile-page {
-    max-width: 560px;
+    max-width: 430px;
     margin: 0 auto;
   }
 
-  .mobile-top-menu {
+  .mobile-bottom-menu {
     left: 50%;
     right: auto;
-    width: 536px;
+    width: min(406px, calc(100vw - 24px));
     transform: translateX(-50%);
   }
 }
@@ -1297,13 +1549,13 @@ function statusType(value) {
     padding-inline: 10px;
   }
 
-  .mobile-top-menu {
+  .mobile-bottom-menu {
     display: flex;
     overflow-x: auto;
     scroll-snap-type: x proximity;
   }
 
-  .top-menu-item {
+  .bottom-menu-item {
     flex: 0 0 82px;
     scroll-snap-align: start;
   }
@@ -1317,3 +1569,5 @@ function statusType(value) {
   }
 }
 </style>
+
+

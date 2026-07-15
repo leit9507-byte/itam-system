@@ -136,6 +136,45 @@ def operation_logs(
     return {"list": items, "total": total, "page": clean_page, "page_size": clean_page_size}
 
 
+@router.get("/error-logs")
+def error_logs(
+    page: int = 1,
+    page_size: int = 100,
+    keyword: str | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    db: Session = Depends(get_db),
+):
+    clean_page = max(page, 1)
+    clean_page_size = min(max(page_size, 1), 500)
+    error_terms = ["%error%", "%fail%", "%exception%", "%错误%", "%失败%", "%异常%"]
+    error_filter = or_(
+        *[OperationAuditLog.action.like(term) for term in error_terms],
+        *[OperationAuditLog.summary.like(term) for term in error_terms],
+        *[OperationAuditLog.detail.like(term) for term in error_terms],
+    )
+    query = db.query(OperationAuditLog).filter(error_filter)
+    query = apply_log_filters(query, keyword=keyword, start=start, end=end)
+    query = query.order_by(OperationAuditLog.created_at.desc(), OperationAuditLog.id.desc())
+    total = query.count()
+    rows = query.offset((clean_page - 1) * clean_page_size).limit(clean_page_size).all()
+    items = [
+        {
+            "id": row.id,
+            "module": row.module,
+            "action": row.action,
+            "target_type": row.target_type,
+            "target_id": row.target_id,
+            "operator": row.operator,
+            "summary": row.summary,
+            "detail": row.detail,
+            "created_at": row.created_at,
+        }
+        for row in rows
+    ]
+    return {"list": items, "total": total, "page": clean_page, "page_size": clean_page_size}
+
+
 @router.get("/logs/export")
 def export_operation_logs(
     limit: int = 5000,

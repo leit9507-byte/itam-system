@@ -40,6 +40,8 @@ class AssetService:
     UNASSIGNED_STATUSES = {"pending_purchase", "pending_acceptance", "in_stock", "idle", "ready_scrap"}
     WORKFLOW_STATUSES = {"pending_purchase", "pending_acceptance", "pending_scrap", "scrapped", "disposed"}
     TERMINAL_STATUSES = {"scrapped", "disposed"}
+    CHECKOUT_ALLOWED_FROM = {"in_stock", "idle"}
+    CHECKIN_ALLOWED_FROM = {"in_use", "borrowed", "out_stock", "repair"}
     IMPORT_TEMPLATE_HEADERS = [
         "asset_id",
         "asset_no",
@@ -953,6 +955,8 @@ class AssetService:
         if not asset:
             raise ValueError("asset not found")
         AssetService.ensure_asset_operable(asset, "领用/出库")
+        if asset.status not in AssetService.CHECKOUT_ALLOWED_FROM:
+            raise AssetValidationError(f"当前状态为 {AssetService.status_label(asset.status)}，不能重复领用/出库；请先归还入库后再出库")
         checkout_type = payload.checkout_type or "in_use"
         if checkout_type not in {"in_use", "borrowed", "out_stock"}:
             raise AssetValidationError("领用类型只能是 in_use、borrowed 或 out_stock")
@@ -974,6 +978,8 @@ class AssetService:
         if not asset:
             raise ValueError("asset not found")
         AssetService.ensure_asset_operable(asset, "归还/入库")
+        if asset.status not in AssetService.CHECKIN_ALLOWED_FROM:
+            raise AssetValidationError(f"当前状态为 {AssetService.status_label(asset.status)}，不能重复入库；只有在用、借出、已出库或维修中的资产可以入库")
         return AssetService.change_status(
             db,
             asset_id,

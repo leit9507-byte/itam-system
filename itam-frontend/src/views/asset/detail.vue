@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="page asset-detail-page">
     <div class="page-header asset-detail-header">
       <div>
@@ -55,11 +55,6 @@
               <el-descriptions-item label="价值">¥{{ Number(detail.asset?.price || 0).toLocaleString() }}</el-descriptions-item>
               <el-descriptions-item label="备注" :span="2">{{ detail.asset?.remark || '-' }}</el-descriptions-item>
             </el-descriptions>
-
-            <div v-if="detail.asset" class="qr-box qr-box-inline">
-              <img :src="qrUrl" alt="资产二维码" />
-              <span>扫码识别资产编号、名称和序列号</span>
-            </div>
           </div>
         </el-card>
 
@@ -123,29 +118,24 @@
         <el-card shadow="never">
           <template #header>
             <div class="card-header">
-              <span>扫码绑定</span>
-              <el-tag type="info">通用扫码</el-tag>
+              <span>二维码绑定</span>
+              <el-tag type="info">二维码识别</el-tag>
             </div>
           </template>
           <div class="scan-binding-panel">
             <el-form :model="scanForm" label-width="92px" class="scan-binding-form">
-              <el-form-item label="扫码内容">
-                <el-input v-model="scanForm.scan_raw" type="textarea" :rows="2" placeholder="扫描二维码/条码后粘贴原始内容，或手动输入旧标签编号" />
+              <el-form-item label="二维码内容">
+                <el-input v-model="scanForm.scan_raw" type="textarea" :rows="2" placeholder="粘贴或输入二维码生成内容，后续扫码会按这段内容识别当前资产" />
               </el-form-item>
               <el-row :gutter="12">
                 <el-col :xs="24" :sm="8">
-                  <el-form-item label="扫码类型">
-                    <el-select v-model="scanForm.scan_type" style="width: 100%">
-                      <el-option label="通用" value="generic" />
-                      <el-option label="二维码" value="qrcode" />
-                      <el-option label="条码" value="barcode" />
-                      <el-option label="旧标签" value="legacy" />
-                    </el-select>
+                  <el-form-item label="识别类型">
+                    <el-input model-value="二维码" disabled />
                   </el-form-item>
                 </el-col>
                 <el-col :xs="24" :sm="10">
                   <el-form-item label="备注">
-                    <el-input v-model="scanForm.remark" clearable placeholder="例如旧系统标签、供应商标签" />
+                    <el-input v-model="scanForm.remark" clearable placeholder="例如二维码版本、标签批次、打印说明" />
                   </el-form-item>
                 </el-col>
                 <el-col :xs="24" :sm="6">
@@ -155,12 +145,12 @@
                 </el-col>
               </el-row>
               <div class="scan-binding-actions">
-                <el-button type="primary" :loading="scanBindingSaving" @click="submitScanBinding">绑定扫码内容</el-button>
+                <el-button type="primary" :loading="scanBindingSaving" @click="submitScanBinding">绑定二维码内容</el-button>
               </div>
             </el-form>
 
-            <el-table :data="scanBindings" border empty-text="暂无扫码绑定">
-              <el-table-column prop="scan_raw" label="扫码内容" min-width="220" show-overflow-tooltip />
+            <el-table :data="scanBindings" border empty-text="暂无二维码绑定">
+              <el-table-column prop="scan_raw" label="二维码内容" min-width="220" show-overflow-tooltip />
               <el-table-column prop="scan_type" label="类型" width="100">
                 <template #default="{ row }">{{ scanTypeLabel(row.scan_type) }}</template>
               </el-table-column>
@@ -208,6 +198,13 @@
         <el-row :gutter="14">
           <el-col :xs="24" :sm="12"><el-form-item label="资产ID"><el-input v-model="editDialog.form.asset_id" /></el-form-item></el-col>
           <el-col :xs="24" :sm="12"><el-form-item label="资产编号"><el-input v-model="editDialog.form.asset_no" /></el-form-item></el-col>
+          <el-col :xs="24" :sm="12">
+            <el-form-item label="产品档案">
+              <el-select v-model="editDialog.form.product_id" filterable clearable placeholder="选择产品后自动带出规格" style="width: 100%" @change="applyProductToEdit">
+                <el-option v-for="item in products" :key="item.id" :label="`${item.product_name} / ${item.model || '-'} / ${item.spec || '-'}`" :value="item.id" />
+              </el-select>
+            </el-form-item>
+          </el-col>
           <el-col :xs="24" :sm="12"><el-form-item label="产品名称"><el-input v-model="editDialog.form.name" /></el-form-item></el-col>
           <el-col :xs="24" :sm="12">
             <el-form-item label="设备类型">
@@ -280,10 +277,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import Timeline from '../../components/Timeline.vue'
 import { editableAssetStatuses, getAssetDetail, statusMap, updateAsset } from '../../api/asset'
-import { archiveAssetFile, deleteAssetFile, downloadAssetFile, listAssetFiles, loadAssetQrCode, restoreAssetFile, uploadAssetFile } from '../../api/file'
+import { archiveAssetFile, deleteAssetFile, downloadAssetFile, listAssetFiles, restoreAssetFile, uploadAssetFile } from '../../api/file'
 import { bindAssetScanCode, deleteAssetScanBinding, getAssetScanBindings } from '../../api/scanBinding'
 import { getCompanies } from '../../api/company'
-import { getDeviceTypes } from '../../api/product'
+import { getDeviceTypes, getProducts } from '../../api/product'
 import { getLocations } from '../../api/location'
 import { getSuppliers } from '../../api/supplier'
 import { getUsers } from '../../api/user'
@@ -292,8 +289,8 @@ const route = useRoute()
 const router = useRouter()
 const detail = reactive({ asset: null, lifecycles: [], changes: [], checkouts: [], timeline: [], usageRecords: [], inventoryRecords: [], risks: [] })
 const attachments = ref([])
-const qrUrl = ref('')
 const categories = ref([])
+const products = ref([])
 const companies = ref([])
 const suppliers = ref([])
 const locations = ref([])
@@ -302,7 +299,7 @@ const filteredUsers = ref([])
 const editDialog = reactive({ visible: false, saving: false, form: {} })
 const scanBindings = ref([])
 const scanBindingSaving = ref(false)
-const scanForm = reactive({ scan_raw: '', scan_type: 'generic', remark: '', force: false })
+const scanForm = reactive({ scan_raw: '', scan_type: 'qrcode', remark: '', force: false })
 const historyFilter = ref('all')
 const historyFilterOptions = [
   { label: '全部', value: 'all' },
@@ -327,7 +324,7 @@ const pagedTimeline = computed(() => {
 })
 const pagedAttachments = computed(() => attachments.value)
 const realCompanies = computed(() => companies.value.filter(item => !item.virtual))
-const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用' && item.status !== '鍋滅敤'))
+const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用' && item.status !== '禁用'))
 const riskSummary = computed(() => {
   if (detail.risks.some(item => item.level === 'high')) return { type: 'danger', text: '高风险' }
   if (detail.risks.some(item => item.level === 'medium')) return { type: 'warning', text: '需关注' }
@@ -350,18 +347,19 @@ onMounted(async () => {
 
 async function loadDetail(assetId = route.params.id) {
   Object.assign(detail, await getAssetDetail(assetId))
-  qrUrl.value = await loadAssetQrCode(assetId)
 }
 
 async function loadReferenceData() {
-  const [typeRows, companyRows, supplierRows, locationRows, userRows] = await Promise.all([
+  const [typeRows, productRows, companyRows, supplierRows, locationRows, userRows] = await Promise.all([
     getDeviceTypes().catch(() => []),
+    getProducts().catch(() => []),
     getCompanies().catch(() => []),
     getSuppliers().catch(() => []),
     getLocations().catch(() => []),
     getUsers().catch(() => [])
   ])
   categories.value = typeRows.map(item => item.name)
+  products.value = productRows
   companies.value = companyRows
   suppliers.value = supplierRows
   locations.value = locationRows
@@ -383,12 +381,12 @@ async function loadScanBindings(assetId = route.params.id) {
 
 async function submitScanBinding() {
   if (!detail.asset?.asset_id) return
-  if (!scanForm.scan_raw?.trim()) return ElMessage.warning('请先填写扫码内容')
+  if (!scanForm.scan_raw?.trim()) return ElMessage.warning('请先填写二维码内容')
   scanBindingSaving.value = true
   try {
-    await bindAssetScanCode(detail.asset.asset_id, scanForm)
-    Object.assign(scanForm, { scan_raw: '', scan_type: 'generic', remark: '', force: false })
-    ElMessage.success('扫码内容已绑定')
+    await bindAssetScanCode(detail.asset.asset_id, { ...scanForm, scan_type: 'qrcode' })
+    Object.assign(scanForm, { scan_raw: '', scan_type: 'qrcode', remark: '', force: false })
+    ElMessage.success('二维码内容已绑定')
     await loadScanBindings(detail.asset.asset_id)
   } finally {
     scanBindingSaving.value = false
@@ -396,9 +394,9 @@ async function submitScanBinding() {
 }
 
 async function removeScanBinding(row) {
-  await ElMessageBox.confirm(`确认解绑该扫码内容？解绑后现场扫码将不再直接关联 ${row.asset_id}。`, '解绑扫码', { type: 'warning' })
+  await ElMessageBox.confirm(`确认解绑该二维码内容？解绑后现场扫码将不再直接关联 ${row.asset_id}。`, '解绑二维码', { type: 'warning' })
   await deleteAssetScanBinding(row.id)
-  ElMessage.success('扫码绑定已解绑')
+  ElMessage.success('二维码绑定已解绑')
   await loadScanBindings(detail.asset?.asset_id)
 }
 
@@ -419,12 +417,39 @@ function openEdit() {
   if (!detail.asset) return
   editDialog.form = {
     ...detail.asset,
+    product_id: resolveProductId(detail.asset),
     original_asset_id: detail.asset.asset_id,
     owner_user_id: detail.asset.owner_user_id || detail.asset.owner || '',
     dept_id: detail.asset.dept_id || detail.asset.dept || ''
   }
   searchUsers('')
   editDialog.visible = true
+}
+
+function resolveProductId(asset) {
+  const product = products.value.find(item =>
+    item.product_name === asset.name &&
+    item.device_type === asset.category &&
+    (item.brand || '') === (asset.brand || '') &&
+    (item.model || '') === (asset.model || '')
+  )
+  return product?.id || null
+}
+
+function applyProductToEdit(productId) {
+  const product = products.value.find(item => item.id === productId)
+  if (!product) return
+  Object.assign(editDialog.form, {
+    product_id: product.id,
+    name: product.product_name || editDialog.form.name,
+    category: product.device_type || editDialog.form.category,
+    brand: product.brand || '',
+    model: product.model || '',
+    spec: product.spec || '',
+    price: Number(product.unit_price || editDialog.form.price || 0),
+    location: product.default_warehouse || editDialog.form.location || '',
+    retirement_years: product.retirement_years ?? editDialog.form.retirement_years
+  })
 }
 
 async function submitEdit() {
@@ -607,37 +632,11 @@ function formatSize(size = 0) {
 }
 
 .basic-info-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 196px;
-  align-items: start;
-  gap: 16px;
+  display: block;
 }
 
 .basic-info-table {
   min-width: 0;
-}
-
-.qr-box {
-  display: grid;
-  justify-items: center;
-  gap: 10px;
-  color: var(--muted);
-  font-size: 13px;
-  text-align: center;
-}
-
-.qr-box-inline {
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.qr-box img {
-  width: 168px;
-  height: 168px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
 }
 
 .scan-binding-panel {
@@ -678,14 +677,6 @@ function formatSize(size = 0) {
 @media (max-width: 760px) {
   .asset-detail-header {
     grid-template-columns: 1fr;
-  }
-
-  .basic-info-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .qr-box-inline {
-    justify-self: stretch;
   }
 
   .card-header,
