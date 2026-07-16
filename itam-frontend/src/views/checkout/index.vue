@@ -2,11 +2,11 @@
   <div class="page checkout-page">
     <div class="page-header">
       <div>
-        <h2 class="page-title">领用中心</h2>
-        <p class="page-subtitle">集中查看资产领用、借出、归还和逾期未归还情况</p>
+        <h2 class="page-title">借用中心</h2>
+        <p class="page-subtitle">登记设备借用、计划归还时间、实际归还和逾期未归还情况</p>
       </div>
       <div class="header-actions">
-        <el-button @click="openBatchCheckout">批量领用</el-button>
+        <el-button @click="openBatchCheckout">批量借用</el-button>
         <el-button type="primary" :disabled="!selectedOpenRows.length" @click="openBatchCheckin">批量归还</el-button>
       </div>
     </div>
@@ -22,24 +22,19 @@
       <div class="toolbar">
         <el-input v-model="filters.keyword" clearable placeholder="搜索资产编号/名称/人员/部门/序列号" style="width: 280px" @keyup.enter="refresh" @clear="refresh" />
         <el-select v-model="filters.status" clearable placeholder="记录状态" style="width: 150px" @change="refresh">
-          <el-option label="领用" value="current" />
+          <el-option label="借用中" value="current" />
           <el-option label="已归还" value="closed" />
           <el-option label="即将到期" value="due_soon" />
           <el-option label="逾期未归还" value="overdue" />
         </el-select>
-        <el-select v-model="filters.checkout_type" clearable placeholder="领用类型" style="width: 140px" @change="refresh">
-          <el-option label="在用" value="in_use" />
-          <el-option label="借出" value="borrowed" />
-          <el-option label="已出库" value="out_stock" />
-        </el-select>
-        <el-select v-model="filters.assignee_user_id" clearable filterable placeholder="人员" style="width: 190px" @change="refresh">
+        <el-select v-model="filters.assignee_user_id" clearable filterable placeholder="借用人" style="width: 190px" @change="refresh">
           <el-option v-for="user in users" :key="user.user_id" :label="userLabel(user)" :value="user.user_id" />
         </el-select>
         <el-select v-model="filters.dept_id" clearable filterable placeholder="部门" style="width: 170px" @change="refresh">
           <el-option v-for="dept in deptOptions" :key="dept" :label="dept" :value="dept" />
         </el-select>
-        <el-date-picker v-model="checkoutRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="领用开始" end-placeholder="领用结束" @change="refresh" />
-        <el-date-picker v-model="dueRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="到期开始" end-placeholder="到期结束" @change="refresh" />
+        <el-date-picker v-model="checkoutRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="借用开始" end-placeholder="借用结束" @change="refresh" />
+        <el-date-picker v-model="dueRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="计划归还开始" end-placeholder="计划归还结束" @change="refresh" />
         <el-button @click="resetFilters">重置</el-button>
         <el-button type="primary" @click="refresh">查询</el-button>
       </div>
@@ -63,7 +58,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="checkout_type_label" label="类型" width="90" />
-        <el-table-column label="持有人" min-width="180">
+        <el-table-column label="借用人" min-width="180">
           <template #default="{ row }">
             <div class="asset-cell">
               <strong>{{ row.assignee_name || row.assignee_user_id || '-' }}</strong>
@@ -72,8 +67,8 @@
           </template>
         </el-table-column>
         <el-table-column prop="location" label="位置" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="checked_out_at" label="领用时间" width="160" />
-        <el-table-column prop="due_date" label="到期时间" width="120">
+        <el-table-column prop="checked_out_at" label="借用时间" width="160" />
+        <el-table-column prop="due_date" label="计划归还" width="120">
           <template #default="{ row }">
             <el-tag v-if="row.is_overdue" type="danger" effect="light">逾期 {{ row.days_overdue }} 天</el-tag>
             <span v-else>{{ row.due_date || '-' }}</span>
@@ -108,33 +103,23 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="checkoutDialog.visible" title="批量领用" width="720px">
+    <el-dialog v-model="checkoutDialog.visible" title="批量借用" width="720px">
       <el-form :model="checkoutDialog.form" label-width="96px">
         <el-form-item label="选择资产" required>
           <el-select v-model="checkoutDialog.assetIds" multiple filterable collapse-tags collapse-tags-tooltip style="width: 100%" placeholder="选择在库或闲置资产">
             <el-option v-for="asset in availableAssets" :key="asset.asset_id" :label="assetOptionLabel(asset)" :value="asset.asset_id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="领用类型">
-          <el-select v-model="checkoutDialog.form.checkout_type" style="width: 100%" @change="handleCheckoutTypeChange">
-            <el-option label="在用" value="in_use" />
-            <el-option label="借出" value="borrowed" />
-            <el-option label="已出库" value="out_stock" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="checkoutDialog.form.checkout_type === 'out_stock'" label="出库对象">
-          <el-segmented v-model="checkoutDialog.form.outboundTarget" :options="outboundTargetOptions" @change="handleOutboundTargetChange" />
-        </el-form-item>
-        <el-form-item v-if="checkoutDialog.form.outboundTarget !== 'location'" label="领用人" required>
-          <el-select v-model="checkoutDialog.form.owner_user_id" filterable style="width: 100%" placeholder="选择领用人" @change="fillUser">
+        <el-form-item label="借用人" required>
+          <el-select v-model="checkoutDialog.form.owner_user_id" filterable style="width: 100%" placeholder="选择借用人" @change="fillUser">
             <el-option v-for="user in users" :key="user.user_id" :label="userLabel(user)" :value="user.user_id" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="checkoutDialog.form.outboundTarget !== 'location'" label="部门"><el-input v-model="checkoutDialog.form.dept_id" disabled /></el-form-item>
-        <el-form-item v-if="checkoutDialog.form.checkout_type === 'borrowed'" label="借用到期" required>
+        <el-form-item label="部门"><el-input v-model="checkoutDialog.form.dept_id" disabled /></el-form-item>
+        <el-form-item label="计划归还" required>
           <el-date-picker v-model="checkoutDialog.form.due_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
         </el-form-item>
-        <el-form-item :label="checkoutDialog.form.outboundTarget === 'location' ? '出库地址' : '位置'" :required="checkoutDialog.form.outboundTarget === 'location'">
+        <el-form-item label="借用位置">
           <el-select v-model="checkoutDialog.form.location" filterable clearable placeholder="选择位置" style="width: 100%">
             <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
           </el-select>
@@ -143,7 +128,7 @@
       </el-form>
       <template #footer>
         <el-button @click="checkoutDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitBatchCheckout">确认领用</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitBatchCheckout">确认借用</el-button>
       </template>
     </el-dialog>
 
@@ -185,12 +170,12 @@ const selectedRows = ref([])
 const checkoutRange = ref([])
 const dueRange = ref([])
 const summary = reactive({ open: 0, closed: 0, overdue: 0, due_soon: 0 })
-const filters = reactive({ keyword: '', status: 'current', checkout_type: '', assignee_user_id: '', dept_id: '', due_days: 7 })
+const filters = reactive({ keyword: '', status: 'current', checkout_type: 'borrowed', assignee_user_id: '', dept_id: '', due_days: 7 })
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const checkoutDialog = reactive({
   visible: false,
   assetIds: [],
-  form: { checkout_type: 'in_use', outboundTarget: 'user', owner_user_id: '', dept_id: '', location: '', due_date: '', remark: '' }
+  form: { checkout_type: 'borrowed', outboundTarget: 'user', owner_user_id: '', dept_id: '', location: '', due_date: '', remark: '' }
 })
 const checkinDialog = reactive({
   visible: false,
@@ -201,17 +186,13 @@ const checkinDialog = reactive({
 const selectedOpenRows = computed(() => selectedRows.value.filter(row => row.status === 'open'))
 const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
 const deptOptions = computed(() => [...new Set(users.value.map(user => user.dept_name || user.dept_id).filter(Boolean))])
-const outboundTargetOptions = [
-  { label: '人员', value: 'user' },
-  { label: '地址', value: 'location' }
-]
 const summaryCards = computed(() => [
-  { key: 'current', label: '领用', value: summary.open || 0, filter: 'current' },
+  { key: 'current', label: '借用中', value: summary.open || 0, filter: 'current' },
   { key: 'due_soon', label: '即将到期', value: summary.due_soon || 0, filter: 'due_soon' },
   { key: 'overdue', label: '逾期未归还', value: summary.overdue || 0, filter: 'overdue' },
   { key: 'closed', label: '已归还', value: summary.closed || 0, filter: 'closed' }
 ])
-const tableTitle = computed(() => summaryCards.value.find(item => item.filter === filters.status)?.label || '领用记录')
+const tableTitle = computed(() => summaryCards.value.find(item => item.filter === filters.status)?.label || '借用记录')
 
 onMounted(async () => {
   applyRouteQuery()
@@ -228,6 +209,7 @@ onMounted(async () => {
 function applyRouteQuery() {
   filters.keyword = typeof route.query.keyword === 'string' ? route.query.keyword : ''
   filters.status = typeof route.query.status === 'string' ? route.query.status : 'current'
+  filters.checkout_type = 'borrowed'
 }
 
 async function loadRecords() {
@@ -261,7 +243,7 @@ function refresh() {
 }
 
 function resetFilters() {
-  Object.assign(filters, { keyword: '', status: 'current', checkout_type: '', assignee_user_id: '', dept_id: '', due_days: 7 })
+  Object.assign(filters, { keyword: '', status: 'current', checkout_type: 'borrowed', assignee_user_id: '', dept_id: '', due_days: 7 })
   checkoutRange.value = []
   dueRange.value = []
   refresh()
@@ -274,7 +256,7 @@ function setStatusFilter(status) {
 
 function openBatchCheckout() {
   checkoutDialog.assetIds = []
-  Object.assign(checkoutDialog.form, { checkout_type: 'in_use', outboundTarget: 'user', owner_user_id: '', dept_id: '', location: '', due_date: '', remark: '' })
+  Object.assign(checkoutDialog.form, { checkout_type: 'borrowed', outboundTarget: 'user', owner_user_id: '', dept_id: '', location: '', due_date: '', remark: '设备借用登记' })
   checkoutDialog.visible = true
   loadAvailableAssets()
 }
@@ -294,20 +276,14 @@ function openSingleCheckin(row) {
 
 async function submitBatchCheckout() {
   if (!checkoutDialog.assetIds.length) return ElMessage.warning('请选择资产')
-  const isLocationOutbound = checkoutDialog.form.checkout_type === 'out_stock' && checkoutDialog.form.outboundTarget === 'location'
-  if (isLocationOutbound && !checkoutDialog.form.location) return ElMessage.warning('请选择出库地址')
-  if (!isLocationOutbound && !checkoutDialog.form.owner_user_id) return ElMessage.warning('请选择领用人')
-  if (checkoutDialog.form.checkout_type === 'borrowed' && !checkoutDialog.form.due_date) return ElMessage.warning('请选择借用到期时间')
-  if (isLocationOutbound) {
-    checkoutDialog.form.owner_user_id = ''
-    checkoutDialog.form.dept_id = ''
-  } else {
-    checkoutDialog.form.outboundTarget = 'user'
-  }
+  if (!checkoutDialog.form.owner_user_id) return ElMessage.warning('请选择借用人')
+  if (!checkoutDialog.form.due_date) return ElMessage.warning('请选择计划归还时间')
+  checkoutDialog.form.checkout_type = 'borrowed'
+  checkoutDialog.form.outboundTarget = 'user'
   submitting.value = true
   try {
     const result = await batchCheckoutAssets(checkoutDialog.assetIds, checkoutDialog.form)
-    showBatchResult(result, '批量领用完成')
+    showBatchResult(result, '批量借用完成')
     checkoutDialog.visible = false
     await loadAvailableAssets()
     await loadRecords()
@@ -344,18 +320,6 @@ function showBatchResult(result, message) {
 function fillUser(userId) {
   const user = users.value.find(item => item.user_id === userId)
   checkoutDialog.form.dept_id = user?.dept_id || user?.dept_name || ''
-}
-
-function handleCheckoutTypeChange(value) {
-  if (value !== 'out_stock') checkoutDialog.form.outboundTarget = 'user'
-  if (value !== 'borrowed') checkoutDialog.form.due_date = ''
-}
-
-function handleOutboundTargetChange(value) {
-  if (value === 'location') {
-    checkoutDialog.form.owner_user_id = ''
-    checkoutDialog.form.dept_id = ''
-  }
 }
 
 function goAsset(row) {

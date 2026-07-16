@@ -400,7 +400,7 @@ function buildRecentRecords(lifecycles, assets) {
     .slice(0, 6)
     .map(item => {
       const asset = assetMap[item.asset_id] || {}
-      const action = item.to_status === 'in_stock' ? '归还' : '领用'
+      const action = item.to_status === 'in_stock' ? '归还' : '借用'
       return {
         asset_id: item.asset_id || '',
         user: item.responsible_label && item.responsible_label !== '-' ? item.responsible_label : item.operator || asset.owner_name || '-',

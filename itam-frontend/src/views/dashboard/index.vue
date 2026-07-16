@@ -108,7 +108,7 @@
     <section class="dashboard-grid lower-grid">
       <article class="panel recent-panel">
         <header class="panel-head">
-          <h3>最近领用 / 归还记录</h3>
+          <h3>最近借用 / 归还记录</h3>
           <el-button link type="primary" @click="goCheckout()">查看全部</el-button>
         </header>
         <el-table :data="data.recentRecords" border stripe size="small" empty-text="暂无记录" class="clickable-table" @row-click="goCheckout">
@@ -328,7 +328,7 @@ const detailDialogTitle = computed(() => ({
   personnel: '入离职人员趋势详情',
   purchase: '采购和报废趋势详情',
   retirement: '待退役资产详情',
-  recent: '最近领用 / 归还记录',
+  recent: '最近借用 / 归还记录',
   warranty: '维保到期提醒详情'
 })[detailDialog.type] || '详情')
 
