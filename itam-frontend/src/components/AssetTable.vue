@@ -12,6 +12,9 @@
     </el-table-column>
     <el-table-column prop="sn" label="序列号" width="150" />
     <el-table-column prop="category" label="类别" width="110" />
+    <el-table-column prop="purchase_approval_no" label="采购审批单号" width="150" show-overflow-tooltip>
+      <template #default="{ row }">{{ row.purchase_approval_no || '-' }}</template>
+    </el-table-column>
     <el-table-column prop="owner" label="使用人" width="110">
       <template #default="{ row }">{{ row.owner || '未分配' }}</template>
     </el-table-column>

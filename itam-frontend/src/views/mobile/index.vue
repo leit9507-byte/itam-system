@@ -141,6 +141,7 @@
         <span>责任人：{{ asset.owner_name || asset.owner || '未分配' }}</span>
         <span>位置：{{ asset.location || asset.warehouse || '-' }}</span>
         <span>SN：{{ asset.sn || '-' }}</span>
+        <span>采购审批单号：{{ asset.purchase_approval_no || '-' }}</span>
       </div>
     </el-card>
 

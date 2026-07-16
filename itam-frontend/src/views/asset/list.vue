@@ -414,7 +414,7 @@ const columnDialog = reactive({ visible: false })
 const workflowHint = ref('')
 const assignedStatuses = ['in_use', 'borrowed']
 const unassignedStatuses = ['pending_purchase', 'pending_acceptance', 'in_stock', 'idle', 'ready_scrap']
-const ASSET_COLUMN_ORDER_KEY = 'itam_asset_list_column_order_v3'
+const ASSET_COLUMN_ORDER_KEY = 'itam_asset_list_column_order_v4'
 const assetColumnDefs = [
   { key: 'display_id', prop: 'display_id', label: 'ID', width: 90 },
   { key: 'company', prop: 'company', label: '公司', width: 140, tooltip: true },
@@ -429,6 +429,7 @@ const assetColumnDefs = [
   { key: 'owner', label: '使用人' },
   { key: 'remark', prop: 'remark', label: '备注', minWidth: 160, tooltip: true },
   { key: 'purchase_date', prop: 'purchase_date', label: '采购时间', width: 120 },
+  { key: 'purchase_approval_no', prop: 'purchase_approval_no', label: '采购审批单号', width: 150, tooltip: true },
   { key: 'retirement_years', label: '退役年限' },
   { key: 'retirement_date', label: '预计退役时间' }
 ]
@@ -446,6 +447,7 @@ const DEFAULT_ASSET_COLUMN_ORDER = [
   'owner',
   'remark',
   'purchase_date',
+  'purchase_approval_no',
   'retirement_years',
   'retirement_date'
 ]
