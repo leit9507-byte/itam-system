@@ -414,40 +414,40 @@ const columnDialog = reactive({ visible: false })
 const workflowHint = ref('')
 const assignedStatuses = ['in_use', 'borrowed']
 const unassignedStatuses = ['pending_purchase', 'pending_acceptance', 'in_stock', 'idle', 'ready_scrap']
-const ASSET_COLUMN_ORDER_KEY = 'itam_asset_list_column_order_v2'
+const ASSET_COLUMN_ORDER_KEY = 'itam_asset_list_column_order_v3'
 const assetColumnDefs = [
   { key: 'display_id', prop: 'display_id', label: 'ID', width: 90 },
   { key: 'company', prop: 'company', label: '公司', width: 140, tooltip: true },
+  { key: 'category', prop: 'category', label: '类型', width: 110 },
   { key: 'product', label: '产品信息' },
   { key: 'asset_id', prop: 'asset_id', label: '资产编码', width: 150 },
   { key: 'sn', prop: 'sn', label: '序列号', width: 150 },
-  { key: 'category', prop: 'category', label: '类型', width: 110 },
   { key: 'purchase_supplier_name', prop: 'purchase_supplier_name', label: '供应商', width: 150, tooltip: true },
+  { key: 'price', label: '价值' },
+  { key: 'status', label: '状态' },
+  { key: 'dept', label: '部门' },
+  { key: 'owner', label: '使用人' },
   { key: 'remark', prop: 'remark', label: '备注', minWidth: 160, tooltip: true },
   { key: 'purchase_date', prop: 'purchase_date', label: '采购时间', width: 120 },
   { key: 'retirement_years', label: '退役年限' },
-  { key: 'retirement_date', label: '预计退役时间' },
-  { key: 'owner', label: '使用人' },
-  { key: 'dept', label: '部门' },
-  { key: 'status', label: '状态' },
-  { key: 'price', label: '价值' }
+  { key: 'retirement_date', label: '预计退役时间' }
 ]
 const DEFAULT_ASSET_COLUMN_ORDER = [
   'display_id',
   'company',
+  'category',
   'product',
   'asset_id',
   'sn',
-  'category',
   'purchase_supplier_name',
+  'price',
+  'status',
+  'dept',
+  'owner',
   'remark',
   'purchase_date',
   'retirement_years',
-  'retirement_date',
-  'owner',
-  'dept',
-  'status',
-  'price'
+  'retirement_date'
 ]
 const columnOrder = ref(loadColumnOrder())
 const outboundTargetOptions = [
