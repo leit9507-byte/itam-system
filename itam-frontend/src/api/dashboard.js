@@ -402,6 +402,7 @@ function buildRecentRecords(lifecycles, assets) {
       const asset = assetMap[item.asset_id] || {}
       const action = item.to_status === 'in_stock' ? '归还' : '领用'
       return {
+        asset_id: item.asset_id || '',
         user: item.responsible_label && item.responsible_label !== '-' ? item.responsible_label : item.operator || asset.owner_name || '-',
         asset: asset.name || item.asset_name || item.asset_id || '-',
         type: asset.category || '-',

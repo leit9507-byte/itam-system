@@ -73,7 +73,7 @@
       <article class="panel people-panel">
         <header class="panel-head">
           <h3>入离职人员趋势</h3>
-          <el-button link type="primary" @click="openDashboardDialog('personnel')">人员管理</el-button>
+          <el-button link type="primary" @click="goPersonnel">人员管理</el-button>
         </header>
         <div class="people-layout">
           <div ref="peopleRef" class="people-chart" />
@@ -109,9 +109,9 @@
       <article class="panel recent-panel">
         <header class="panel-head">
           <h3>最近领用 / 归还记录</h3>
-          <el-button link type="primary" @click="openDashboardDialog('recent')">查看全部</el-button>
+          <el-button link type="primary" @click="goCheckout()">查看全部</el-button>
         </header>
-        <el-table :data="data.recentRecords" border stripe size="small" empty-text="暂无记录">
+        <el-table :data="data.recentRecords" border stripe size="small" empty-text="暂无记录" class="clickable-table" @row-click="goCheckout">
           <el-table-column prop="user" label="用户" width="86" />
           <el-table-column prop="asset" label="资产名称" min-width="150" show-overflow-tooltip />
           <el-table-column prop="type" label="类型" width="82" />
@@ -214,6 +214,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import echarts from '../../utils/echarts'
 import {
   Box,
@@ -225,6 +226,7 @@ import {
 } from '@element-plus/icons-vue'
 import { getEnterpriseDashboard } from '../../api/dashboard'
 
+const router = useRouter()
 const statusRef = ref(null)
 const categoryRef = ref(null)
 const peopleRef = ref(null)
@@ -355,6 +357,15 @@ function clearDateRange() {
 function openDashboardDialog(type) {
   detailDialog.type = type
   detailDialog.visible = true
+}
+
+function goPersonnel() {
+  router.push('/personnel')
+}
+
+function goCheckout(row = null) {
+  const keyword = row?.asset_id || row?.asset || ''
+  router.push({ path: '/checkout', query: keyword ? { keyword } : {} })
 }
 
 function recentRange(days) {
@@ -728,6 +739,10 @@ function percentValue(value) {
 .dashboard-detail-dialog :deep(.el-dialog__body) {
   max-height: 70vh;
   overflow: auto;
+}
+
+.clickable-table :deep(.el-table__row) {
+  cursor: pointer;
 }
 
 .people-layout {

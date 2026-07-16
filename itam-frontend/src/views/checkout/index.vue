@@ -167,13 +167,14 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { batchCheckinAssets, batchCheckoutAssets, getAssets, getCheckoutRecords } from '../../api/asset'
 import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const submitting = ref(false)
 const records = ref([])
@@ -213,6 +214,7 @@ const summaryCards = computed(() => [
 const tableTitle = computed(() => summaryCards.value.find(item => item.filter === filters.status)?.label || '领用记录')
 
 onMounted(async () => {
+  applyRouteQuery()
   const [userRows, locationRows] = await Promise.all([
     getUsers().catch(() => []),
     getLocations().catch(() => [])
@@ -222,6 +224,11 @@ onMounted(async () => {
   await loadAvailableAssets()
   await loadRecords()
 })
+
+function applyRouteQuery() {
+  filters.keyword = typeof route.query.keyword === 'string' ? route.query.keyword : ''
+  filters.status = typeof route.query.status === 'string' ? route.query.status : 'current'
+}
 
 async function loadRecords() {
   loading.value = true
