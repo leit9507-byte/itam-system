@@ -49,6 +49,8 @@
             <el-select v-model="filters.status" clearable placeholder="维修状态" style="width: 140px" @change="refresh">
               <el-option label="维修中" value="维修中" />
               <el-option label="已完成" value="已完成" />
+              <el-option label="未修好" value="未修好" />
+              <el-option label="在保送修" value="在保送修" />
             </el-select>
           </div>
         </div>
@@ -59,6 +61,7 @@
         <el-table-column prop="asset_name" label="资产名称" min-width="180" />
         <el-table-column prop="sn" label="序列号" width="150" />
         <el-table-column prop="repair_time" label="维修时间" width="120" />
+        <el-table-column prop="repair_type" label="维修类型" width="110" />
         <el-table-column prop="fault_reason" label="故障原因" min-width="220" />
         <el-table-column prop="repair_cost" label="维修费用" width="120">
           <template #default="{ row }">¥{{ Number(row.repair_cost || 0).toLocaleString() }}</template>
@@ -69,9 +72,12 @@
             <el-tag :type="row.status === '维修中' ? 'warning' : 'success'">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="repair_result" label="维修结果" width="110">
+          <template #default="{ row }">{{ row.repair_result || '-' }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="130" fixed="right">
           <template #default="{ row }">
-            <el-button type="success" link :disabled="row.status === '已完成'" @click="finish(row)">完成维修</el-button>
+            <el-button type="success" link :disabled="isRepairClosed(row)" @click="openFinishDialog(row)">处理结果</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -114,6 +120,35 @@
         </el-table-column>
       </el-table>
     </el-dialog>
+
+    <el-dialog v-model="finishDialog.visible" title="维修处理结果" width="520px">
+      <el-form :model="finishDialog.form" label-width="96px">
+        <el-form-item label="维修结果" required>
+          <el-select v-model="finishDialog.form.repair_result" style="width: 100%" @change="applyRepairResult">
+            <el-option label="已修好" value="已修好" />
+            <el-option label="未修好" value="未修好" />
+            <el-option label="在保送修" value="在保送修" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="资产后续状态" required>
+          <el-select v-model="finishDialog.form.next_status" style="width: 100%">
+            <el-option label="入库待分配" value="in_stock" />
+            <el-option label="继续维修中" value="repair" />
+            <el-option label="待报废" value="ready_scrap" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="完成时间">
+          <el-date-picker v-model="finishDialog.form.finish_time" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="finishDialog.form.remark" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="finishDialog.visible = false">取消</el-button>
+        <el-button type="primary" @click="submitFinish">确认处理</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -132,6 +167,7 @@ const filters = reactive({ keyword: '', status: '', dateRange: defaultDateRange(
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const dashboard = reactive({ total: 0, inProgress: 0, completed: 0, totalCost: 0, avgCost: 0, topFaults: [], costTrend: [] })
 const faultTypeDialog = reactive({ visible: false, form: defaultFaultTypeForm() })
+const finishDialog = reactive({ visible: false, row: null, form: defaultFinishForm() })
 
 onMounted(load)
 onUnmounted(() => charts.forEach(chart => chart.dispose()))
@@ -188,9 +224,34 @@ function renderCharts() {
   charts.push(trend, fault)
 }
 
-async function finish(row) {
-  await finishRepairRecord(row.id, { next_status: 'in_stock', remark: '维修完成，入库待分配' })
-  ElMessage.success('维修已完成，资产状态已恢复为在库')
+function isRepairClosed(row) {
+  return ['已完成', '未修好'].includes(row.status)
+}
+
+function openFinishDialog(row) {
+  finishDialog.row = row
+  finishDialog.form = defaultFinishForm()
+  finishDialog.visible = true
+}
+
+function applyRepairResult(value) {
+  if (value === '已修好') {
+    finishDialog.form.next_status = 'in_stock'
+    finishDialog.form.remark = '维修完成，入库待分配'
+  } else if (value === '未修好') {
+    finishDialog.form.next_status = 'ready_scrap'
+    finishDialog.form.remark = '维修后仍无法正常使用，建议进入报废评估'
+  } else if (value === '在保送修') {
+    finishDialog.form.next_status = 'repair'
+    finishDialog.form.remark = '在保维修，继续跟进供应商处理'
+  }
+}
+
+async function submitFinish() {
+  if (!finishDialog.row) return
+  await finishRepairRecord(finishDialog.row.id, finishDialog.form)
+  ElMessage.success(`维修结果已记录：${finishDialog.form.repair_result}`)
+  finishDialog.visible = false
   await load()
 }
 
@@ -224,6 +285,10 @@ async function removeFaultType(row) {
 
 function defaultFaultTypeForm() {
   return { id: null, name: '', description: '', enabled: '启用' }
+}
+
+function defaultFinishForm() {
+  return { repair_result: '已修好', next_status: 'in_stock', finish_time: '', remark: '维修完成，入库待分配' }
 }
 
 function defaultDateRange() {

@@ -2,8 +2,8 @@
   <div class="page checkout-page">
     <div class="page-header">
       <div>
-        <h2 class="page-title">领用历史</h2>
-        <p class="page-subtitle">集中查看资产领用、借出、归还、当前持有人和逾期未归还情况</p>
+        <h2 class="page-title">领用中心</h2>
+        <p class="page-subtitle">集中查看资产领用、借出、归还和逾期未归还情况</p>
       </div>
       <div class="header-actions">
         <el-button @click="openBatchCheckout">批量领用</el-button>
@@ -22,8 +22,7 @@
       <div class="toolbar">
         <el-input v-model="filters.keyword" clearable placeholder="搜索资产编号/名称/人员/部门/序列号" style="width: 280px" @keyup.enter="refresh" @clear="refresh" />
         <el-select v-model="filters.status" clearable placeholder="记录状态" style="width: 150px" @change="refresh">
-          <el-option label="当前持有" value="current" />
-          <el-option label="领用中" value="open" />
+          <el-option label="领用" value="current" />
           <el-option label="已归还" value="closed" />
           <el-option label="即将到期" value="due_soon" />
           <el-option label="逾期未归还" value="overdue" />
@@ -199,7 +198,7 @@ const selectedOpenRows = computed(() => selectedRows.value.filter(row => row.sta
 const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
 const deptOptions = computed(() => [...new Set(users.value.map(user => user.dept_name || user.dept_id).filter(Boolean))])
 const summaryCards = computed(() => [
-  { key: 'current', label: '当前持有', value: summary.open || 0, filter: 'current' },
+  { key: 'current', label: '领用', value: summary.open || 0, filter: 'current' },
   { key: 'due_soon', label: '即将到期', value: summary.due_soon || 0, filter: 'due_soon' },
   { key: 'overdue', label: '逾期未归还', value: summary.overdue || 0, filter: 'overdue' },
   { key: 'closed', label: '已归还', value: summary.closed || 0, filter: 'closed' }
@@ -281,7 +280,7 @@ function openSingleCheckin(row) {
 
 async function submitBatchCheckout() {
   if (!checkoutDialog.assetIds.length) return ElMessage.warning('请选择资产')
-  if (!checkoutDialog.form.owner_user_id && checkoutDialog.form.checkout_type !== 'out_stock') return ElMessage.warning('请选择领用人')
+  if (!checkoutDialog.form.owner_user_id) return ElMessage.warning('请选择领用人')
   if (checkoutDialog.form.checkout_type === 'borrowed' && !checkoutDialog.form.due_date) return ElMessage.warning('请选择借用到期时间')
   submitting.value = true
   try {

@@ -56,6 +56,10 @@ export function getAssetSummary() {
   return request.get('/asset/summary')
 }
 
+export async function getAssetById(assetId) {
+  return mapBackendAsset(await request.get(`/asset/${assetId}`))
+}
+
 export async function importAssetsFromText(content, operator = 'asset-import') {
   const result = await request.post('/asset/import/text', { content, operator })
   return normalizeImportResult(result)
@@ -153,11 +157,12 @@ export async function batchUpdateAssets(rows, payload) {
 }
 
 export async function getAssetDetail(assetId) {
-  const { list } = await getAssets({})
-  const asset = list.find(item => item.asset_id === assetId) || list[0]
-  const lifecycleResult = await getLifecycleList({ asset_id: assetId, page: 1, page_size: DETAIL_CONTEXT_LIMIT }).catch(() => ({ list: [] }))
-  const changes = await getAssetChanges(assetId).catch(() => [])
-  const checkouts = await getAssetCheckouts(assetId).catch(() => [])
+  const [asset, lifecycleResult, changes, checkouts] = await Promise.all([
+    getAssetById(assetId),
+    getLifecycleList({ asset_id: assetId, page: 1, page_size: DETAIL_CONTEXT_LIMIT }).catch(() => ({ list: [] })),
+    getAssetChanges(assetId).catch(() => []),
+    getAssetCheckouts(assetId).catch(() => [])
+  ])
   const lifecycles = lifecycleResult.list
   const inventoryRecords = lifecycles.filter(item => item.category === 'daily_inventory').map(mapInventoryLifecycle)
   return {
@@ -285,14 +290,14 @@ export async function submitReclaimApproval(assetId, payload = {}) {
 
 export async function outboundAsset(assetId, payload = {}) {
   const status = payload.toStatus || 'in_use'
-  const isPublicLocation = payload.outboundTarget === 'location'
   const borrowDueDateText = status === 'borrowed' && payload.borrow_due_date ? `借用到期时间：${payload.borrow_due_date}` : ''
-  const remark = [payload.remark || (isPublicLocation ? `公用设备：${payload.location || ''}` : '资产出库'), borrowDueDateText].filter(Boolean).join('；')
+  const remark = [payload.remark || '资产出库', borrowDueDateText].filter(Boolean).join('；')
   const asset = await checkoutAsset(assetId, {
     ...payload,
     toStatus: status,
-    owner_user_id: isPublicLocation ? '' : payload.owner_user_id,
-    dept_id: isPublicLocation ? '' : payload.dept_id,
+    outboundTarget: 'user',
+    owner_user_id: payload.owner_user_id,
+    dept_id: payload.dept_id,
     location: payload.location,
     action: '出库',
     remark
@@ -388,6 +393,7 @@ function mapBackendAsset(row) {
   const purchaseDate = formatDate(row.purchase_date)
   const retirementYears = config.retirement_years || ''
   return {
+    display_id: row.display_id ?? '',
     asset_id: row.asset_id,
     asset_no: row.asset_no || '',
     config,
@@ -567,7 +573,7 @@ function mapAssetCheckout(row) {
     location: row.location || '',
     due_date: formatDate(row.due_date),
     status: row.status,
-    status_label: row.status === 'open' ? '领用中' : '已归还',
+    status_label: row.status === 'open' ? '领用' : '已归还',
     is_overdue: Boolean(row.is_overdue),
     days_overdue: Number(row.days_overdue || 0),
     checked_out_at: formatDateTime(row.checked_out_at),

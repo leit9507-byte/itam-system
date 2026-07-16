@@ -85,6 +85,14 @@ def list_asset_checkouts(
     )
 
 
+@router.get("/{asset_id}", response_model=AssetOut)
+def get_asset(asset_id: str, request: Request, db: Session = Depends(get_db)):
+    try:
+        return AssetService.get_asset(db, asset_id, user_context_from_request(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.post("/checkouts/batch-checkout")
 def batch_checkout_assets(payload: AssetBatchCheckoutCreate, request: Request, db: Session = Depends(get_db)):
     return AssetService.batch_checkout_assets(db, payload, operator_from_request(request))

@@ -10,7 +10,7 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils.exceptions import InvalidFileException
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import func, or_, text
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 
 from app.models.asset import Asset
@@ -64,8 +64,8 @@ class AssetService:
         "remark",
     ]
     CHANGE_FIELD_LABELS = {
-        "asset_id": "资产ID",
-        "asset_no": "资产编号",
+        "asset_id": "资产编号",
+        "asset_no": "标签编号",
         "company": "所属公司",
         "name": "资产名称",
         "category": "设备类型",
@@ -99,9 +99,9 @@ class AssetService:
     def normalize_asset_no(value: str | None, fallback: str | None = None) -> str:
         clean = AssetService.normalize_blank(value) or AssetService.normalize_blank(fallback)
         if not clean:
-            raise AssetValidationError("资产编号不能为空")
+            raise AssetValidationError("标签编号不能为空")
         if clean == "0" or (clean.isdigit() and int(clean) == 0):
-            raise AssetValidationError("资产编号不能为 0")
+            raise AssetValidationError("标签编号不能为 0")
         return clean
 
     @staticmethod
@@ -111,7 +111,7 @@ class AssetService:
             if current_asset_id:
                 query = query.filter(Asset.asset_id != current_asset_id)
             if query.first():
-                raise AssetValidationError(f"资产编号已存在：{asset_no}")
+                raise AssetValidationError(f"标签编号已存在：{asset_no}")
         if sn:
             query = db.query(Asset).filter(Asset.sn == sn)
             if current_asset_id:
@@ -130,8 +130,8 @@ class AssetService:
             raise AssetValidationError("待采购、待验收、在库、闲置、待报废状态不能填写使用人/责任人；请清空使用人，或把状态改为 in_use、borrowed、out_stock")
         if status in AssetService.ASSIGNED_STATUSES and not has_owner:
             raise AssetValidationError("在用、借出状态必须填写使用人/责任人")
-        if status == "out_stock" and not has_owner and not has_location:
-            raise AssetValidationError("已出库状态必须填写使用人/责任人或位置；公用设备请填写位置")
+        if status == "out_stock" and not has_owner:
+            raise AssetValidationError("已出库状态必须填写领用人，不能直接出库到地址或机房")
 
     @staticmethod
     def ensure_asset_operable(asset: Asset, action: str = "操作") -> None:
@@ -277,7 +277,7 @@ class AssetService:
         if "Duplicate entry" in detail and "assets.sn" in detail:
             return "资产序列号已存在，请检查 SN 是否重复"
         if "Duplicate entry" in detail and "PRIMARY" in detail:
-            return "资产ID已存在，请检查 asset_id 是否重复"
+            return "资产编号已存在，请检查 asset_id 是否重复"
         if "Data too long" in detail:
             return "字段内容过长，请检查该行文本长度"
         return detail or "请检查导入数据是否符合要求"
@@ -445,8 +445,8 @@ class AssetService:
         instruction = workbook.create_sheet("字段说明")
         instruction.append(["字段", "是否必填", "说明"])
         rows = [
-            ("asset_id", "否", "资产ID/外部ID；留空时系统自动生成"),
-            ("asset_no", "否", "资产编号/标签编号，可填写公司内部编码"),
+            ("asset_id", "否", "资产编号；留空时系统自动生成"),
+            ("asset_no", "否", "标签编号，可填写公司内部贴纸编码"),
             ("name", "是", "资产名称"),
             ("category", "是", "设备类型，如 笔记本电脑、显示器"),
             ("brand", "否", "品牌"),
@@ -553,8 +553,8 @@ class AssetService:
             "source": "batch_import",
         }
         return AssetImportRow(
-            asset_id=pick("asset_id", "资产ID", "外部ID"),
-            asset_no=pick("asset_no", "资产编号", "资产编码", "标签编号"),
+            asset_id=pick("asset_id", "资产编号", "外部ID"),
+            asset_no=pick("asset_no", "标签编号", "资产编码"),
             name=pick("name", "product_name", "产品名称", "资产名称", default="Unnamed Asset"),
             category=pick("category", "device_type", "设备类型", "类别", default="Other"),
             brand=pick("brand", "品牌"),
@@ -647,9 +647,11 @@ class AssetService:
             query = query.offset((max(page, 1) - 1) * page_size).limit(page_size)
         assets = query.all()
         rows = []
-        for asset in assets:
+        offset_base = (max(page, 1) - 1) * page_size if page_size and page_size > 0 else 0
+        for index, asset in enumerate(assets):
             user = users.get(asset.owner_user_id or "")
             row = AssetService.to_out(asset, user)
+            row["display_id"] = max(total - offset_base - index, 1)
             # 展示层归一化：负责人/部门与用户目录保持一致，持久化同步由写路径的 sync_owner_department 负责
             if user:
                 row["owner_user_id"] = user.user_id
@@ -658,6 +660,39 @@ class AssetService:
                     row["dept_id"] = target_dept
             rows.append(row)
         return {"list": rows, "total": total, "page": max(page, 1), "page_size": page_size or total}
+
+    @staticmethod
+    def get_asset(db: Session, asset_id: str, user_context: dict | None = None) -> dict:
+        query = db.query(Asset).filter(Asset.asset_id == asset_id)
+        query = AssetService.apply_data_scope(query, user_context)
+        asset = query.first()
+        if not asset:
+            raise ValueError("asset not found")
+        user = AssetService.users_by_identity(db).get(asset.owner_user_id or "")
+        row = AssetService.to_out(asset, user)
+        row["display_id"] = AssetService.asset_display_id(db, asset)
+        if user:
+            row["owner_user_id"] = user.user_id
+            target_dept = user.dept_id or user.dept_name or asset.dept_id
+            if target_dept:
+                row["dept_id"] = target_dept
+        return row
+
+    @staticmethod
+    def asset_display_id(db: Session, asset: Asset) -> int:
+        if not asset.created_at:
+            return 1
+        return (
+            db.query(func.count(Asset.asset_id))
+            .filter(
+                or_(
+                    Asset.created_at < asset.created_at,
+                    and_(Asset.created_at == asset.created_at, Asset.asset_id <= asset.asset_id),
+                )
+            )
+            .scalar()
+            or 1
+        )
 
     @staticmethod
     def apply_asset_risk_filter(query, risk_filter: str | None):
@@ -852,11 +887,11 @@ class AssetService:
     @staticmethod
     def rename_asset_id(db: Session, asset: Asset, old_asset_id: str, new_asset_id: str, operator: str) -> None:
         if not new_asset_id:
-            raise AssetValidationError("资产ID不能为空")
+            raise AssetValidationError("资产编号不能为空")
         if len(new_asset_id) > 64:
-            raise AssetValidationError("资产ID不能超过 64 个字符")
+            raise AssetValidationError("资产编号不能超过 64 个字符")
         if db.get(Asset, new_asset_id):
-            raise AssetValidationError(f"资产ID {new_asset_id} 已存在，请换一个编号")
+            raise AssetValidationError(f"资产编号 {new_asset_id} 已存在，请换一个编号")
 
         mysql_fk_disabled = db.bind and db.bind.dialect.name in {"mysql", "mariadb"}
         if mysql_fk_disabled:
@@ -960,6 +995,8 @@ class AssetService:
         checkout_type = payload.checkout_type or "in_use"
         if checkout_type not in {"in_use", "borrowed", "out_stock"}:
             raise AssetValidationError("领用类型只能是 in_use、borrowed 或 out_stock")
+        if not AssetService.normalize_blank(payload.owner_user_id):
+            raise AssetValidationError("出库/领用必须选择领用人，不能直接出库到地址或机房")
         return AssetService.change_status(
             db,
             asset_id,

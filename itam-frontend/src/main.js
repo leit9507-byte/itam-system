@@ -1,19 +1,124 @@
 import { createApp } from 'vue'
-import ElementPlus from 'element-plus'
+import {
+  ElAlert,
+  ElAside,
+  ElAvatar,
+  ElButton,
+  ElCard,
+  ElCheckbox,
+  ElCol,
+  ElContainer,
+  ElDatePicker,
+  ElDescriptions,
+  ElDescriptionsItem,
+  ElDialog,
+  ElDivider,
+  ElDrawer,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
+  ElEmpty,
+  ElForm,
+  ElFormItem,
+  ElHeader,
+  ElIcon,
+  ElInput,
+  ElInputNumber,
+  ElLink,
+  ElLoading,
+  ElMain,
+  ElMenu,
+  ElMenuItem,
+  ElOption,
+  ElPagination,
+  ElPopover,
+  ElProgress,
+  ElRadioButton,
+  ElRadioGroup,
+  ElResult,
+  ElRow,
+  ElSegmented,
+  ElSelect,
+  ElSpace,
+  ElStatistic,
+  ElStep,
+  ElSteps,
+  ElSubMenu,
+  ElSwitch,
+  ElTable,
+  ElTableColumn,
+  ElTabPane,
+  ElTabs,
+  ElTag,
+  ElTimeline,
+  ElTimelineItem,
+  ElUpload
+} from 'element-plus'
 import 'element-plus/dist/index.css'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import './styles.css'
 
 const app = createApp(App)
+const elementComponents = [
+  ElAlert,
+  ElAside,
+  ElAvatar,
+  ElButton,
+  ElCard,
+  ElCheckbox,
+  ElCol,
+  ElContainer,
+  ElDatePicker,
+  ElDescriptions,
+  ElDescriptionsItem,
+  ElDialog,
+  ElDivider,
+  ElDrawer,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
+  ElEmpty,
+  ElForm,
+  ElFormItem,
+  ElHeader,
+  ElIcon,
+  ElInput,
+  ElInputNumber,
+  ElLink,
+  ElMain,
+  ElMenu,
+  ElMenuItem,
+  ElOption,
+  ElPagination,
+  ElPopover,
+  ElProgress,
+  ElRadioButton,
+  ElRadioGroup,
+  ElResult,
+  ElRow,
+  ElSegmented,
+  ElSelect,
+  ElSpace,
+  ElStatistic,
+  ElStep,
+  ElSteps,
+  ElSubMenu,
+  ElSwitch,
+  ElTable,
+  ElTableColumn,
+  ElTabPane,
+  ElTabs,
+  ElTag,
+  ElTimeline,
+  ElTimelineItem,
+  ElUpload
+]
 
-for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
-  app.component(key, component)
-}
+elementComponents.forEach(component => app.use(component))
 
 app.use(createPinia())
 app.use(router)
-app.use(ElementPlus)
+app.use(ElLoading)
 app.mount('#app')

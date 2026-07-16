@@ -7,6 +7,7 @@ export async function createRepairRecord(asset, payload) {
     await request.post('/repair/create', {
       asset_id: asset.asset_id,
       repair_time: `${payload.repair_time}T00:00:00`,
+      repair_type: payload.repair_type || '普通维修',
       fault_reason: payload.fault_reason,
       repair_cost: Number(payload.repair_cost || 0),
       vendor: payload.vendor || '',
@@ -57,6 +58,7 @@ export async function finishRepairRecord(recordId, payload = {}) {
     await request.post(`/repair/${recordId}/finish`, {
       finish_time: payload.finish_time ? `${payload.finish_time}T00:00:00` : null,
       next_status: payload.next_status || 'in_stock',
+      repair_result: payload.repair_result || '已修好',
       operator: payload.operator || '资产管理员',
       remark: payload.remark || ''
     })
@@ -66,7 +68,7 @@ export async function finishRepairRecord(recordId, payload = {}) {
 export async function getRepairDashboard(filters = {}) {
   const { list: rows } = await getRepairRecords({ ...filters, page: 1, page_size: REPAIR_DASHBOARD_LIMIT })
   const inProgress = rows.filter(item => item.status === '维修中')
-  const completed = rows.filter(item => item.status === '已完成')
+  const completed = rows.filter(item => ['已完成', '未修好'].includes(item.status))
   const totalCost = rows.reduce((sum, item) => sum + Number(item.repair_cost || 0), 0)
   return {
     total: rows.length,
@@ -91,12 +93,14 @@ function mapRepair(row) {
     owner: row.owner || '',
     dept: row.dept || '',
     repair_time: formatDate(row.repair_time),
+    repair_type: row.repair_type || '普通维修',
     fault_reason: row.fault_reason,
     repair_cost: Number(row.repair_cost || 0),
     vendor: row.vendor || '',
     operator: row.operator || '',
     status: row.status,
     status_label: statusLabelMap[row.status] || row.status,
+    repair_result: row.repair_result || '',
     finish_time: row.finish_time ? formatDate(row.finish_time) : '',
     created_at: formatDate(row.created_at),
     remark: row.remark || '',

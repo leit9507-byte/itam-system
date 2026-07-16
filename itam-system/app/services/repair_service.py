@@ -120,6 +120,7 @@ class RepairService:
             repair_no=RepairService.generate_repair_no(db),
             asset_id=payload.asset_id,
             repair_time=payload.repair_time,
+            repair_type=payload.repair_type or "普通维修",
             fault_reason=payload.fault_reason,
             repair_cost=payload.repair_cost,
             vendor=payload.vendor,
@@ -146,6 +147,7 @@ class RepairService:
                 f"维修单号：{record.repair_no}",
                 f"资产编号：{record.asset_id}",
                 f"资产名称：{asset.name or '-'}",
+                f"维修类型：{record.repair_type or '-'}",
                 f"故障类型：{record.fault_reason or '-'}",
                 f"维修供应商：{record.vendor or '-'}",
                 f"操作人：{payload.operator}",
@@ -216,6 +218,11 @@ class RepairService:
             raise ValueError("repair record not found")
         asset = db.get(Asset, record.asset_id)
         record.status = "已完成"
+        record.repair_result = payload.repair_result or "已修好"
+        if record.repair_result == "未修好":
+            record.status = "未修好"
+        elif record.repair_result == "在保送修":
+            record.status = "在保送修"
         record.finish_time = payload.finish_time or datetime.utcnow()
         if payload.remark:
             record.remark = payload.remark
@@ -225,7 +232,7 @@ class RepairService:
             from_status = asset.status
             asset.status = payload.next_status
             LifecycleService.record(db, asset.asset_id, "REPAIR_FINISH", from_status, payload.next_status, payload.operator)
-        AuditLogService.record_operation(db, "repair", "finish", payload.operator, "repair", record.repair_no, f"维修完成 {record.asset_id}", payload.model_dump())
+        AuditLogService.record_operation(db, "repair", "finish", payload.operator, "repair", record.repair_no, f"维修处理 {record.asset_id}：{record.repair_result}", payload.model_dump())
         db.commit()
         db.refresh(record)
         if asset:
@@ -233,11 +240,13 @@ class RepairService:
         NotificationService.send_event(
             db,
             "repair",
-            "维修任务已完成",
+            f"维修任务已处理：{record.repair_result}",
             [
                 f"维修单号：{record.repair_no}",
                 f"资产编号：{record.asset_id}",
                 f"资产名称：{asset.name if asset else '-'}",
+                f"维修类型：{record.repair_type or '-'}",
+                f"维修结果：{record.repair_result or '-'}",
                 f"后续状态：{payload.next_status}",
                 f"操作人：{payload.operator}",
             ],
@@ -257,11 +266,13 @@ class RepairService:
             "repair_no": record.repair_no,
             "asset_id": record.asset_id,
             "repair_time": record.repair_time,
+            "repair_type": record.repair_type,
             "fault_reason": record.fault_reason,
             "repair_cost": record.repair_cost,
             "vendor": record.vendor,
             "operator": record.operator,
             "status": record.status,
+            "repair_result": record.repair_result,
             "finish_time": record.finish_time,
             "remark": record.remark,
             "created_at": record.created_at,

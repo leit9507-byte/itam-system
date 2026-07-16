@@ -305,6 +305,18 @@ class PurchaseService:
                             asset.location,
                         ),
                     )
+                    AssetService.sync_checkout_record(
+                        db,
+                        asset,
+                        "in_stock",
+                        asset.status,
+                        payload.operator,
+                        None,
+                        None,
+                        owner_user,
+                        None,
+                        "采购验收后直接分配",
+                    )
                 created_assets.append(asset)
 
         purchase.status = "received"

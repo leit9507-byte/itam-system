@@ -1,9 +1,11 @@
 import request from '../utils/request'
+import { cachedRequest, clearCache } from './cache'
 
 const SUPPLIER_LOOKUP_LIMIT = 500
 
 export async function getSuppliers(filters = {}) {
-  const result = await getSuppliersPaged({ ...filters, page: 1, page_size: SUPPLIER_LOOKUP_LIMIT })
+  const cacheKey = `supplier:lookup:${filters.keyword || ''}`
+  const result = await cachedRequest(cacheKey, () => getSuppliersPaged({ ...filters, page: 1, page_size: SUPPLIER_LOOKUP_LIMIT }))
   return result.list
 }
 
@@ -47,6 +49,7 @@ export async function getSupplierPurchaseDevices(supplierName, filters = {}) {
 }
 
 export async function saveSupplier(payload) {
+  clearCache('supplier:')
   const body = {
     name: payload.name,
     contact: payload.contact || '',

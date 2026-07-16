@@ -13,7 +13,7 @@
 
     <el-card shadow="never">
       <div class="toolbar">
-        <el-input v-model="filters.keyword" clearable placeholder="搜索资产ID/资产编号/名称/部门/序列号/使用人/供应商/备注" style="width: 400px" @input="refreshAssets" />
+        <el-input v-model="filters.keyword" clearable placeholder="搜索资产编号/标签编号/名称/部门/序列号/使用人/供应商/备注" style="width: 400px" @input="refreshAssets" />
         <el-select v-model="filters.status" clearable placeholder="状态" style="width: 140px" @change="refreshAssets">
           <el-option v-for="item in assetStatuses" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
@@ -54,8 +54,9 @@
       <el-alert v-if="selected.length" :title="`已选择 ${selected.length} 个资产`" type="info" show-icon :closable="false" class="selection-alert" />
       <el-table :data="assets" border stripe @selection-change="selected = $event">
         <el-table-column type="selection" width="48" />
-        <el-table-column prop="asset_id" label="资产ID" width="132" />
-        <el-table-column prop="asset_no" label="资产编号" width="132" />
+        <el-table-column prop="display_id" label="资产ID" width="90" />
+        <el-table-column prop="asset_id" label="资产编号" width="132" />
+        <el-table-column prop="asset_no" label="标签编号" width="132" />
         <el-table-column prop="company" label="公司" width="140" show-overflow-tooltip />
         <el-table-column label="产品信息" min-width="240">
           <template #default="{ row }">
@@ -279,7 +280,8 @@
     <el-dialog v-model="repairDialog.visible" :title="repairDialog.assets.length > 1 ? '批量新增维修记录' : '新增维修记录'" width="620px">
       <el-alert v-if="repairDialog.assets.length > 1" :title="`本次将为 ${repairDialog.assets.length} 个资产创建维修记录，并更新为维修中。`" type="warning" show-icon :closable="false" class="dialog-alert" />
       <el-descriptions v-else-if="repairDialog.asset" :column="2" border class="repair-asset">
-        <el-descriptions-item label="资产ID">{{ repairDialog.asset.asset_id }}</el-descriptions-item>
+        <el-descriptions-item label="资产ID">{{ repairDialog.asset.display_id || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="资产编号">{{ repairDialog.asset.asset_id }}</el-descriptions-item>
         <el-descriptions-item label="资产名称">{{ repairDialog.asset.name }}</el-descriptions-item>
         <el-descriptions-item label="序列号">{{ repairDialog.asset.sn || '-' }}</el-descriptions-item>
         <el-descriptions-item label="当前状态">{{ statusMap[repairDialog.asset.status]?.label || repairDialog.asset.status }}</el-descriptions-item>
@@ -287,6 +289,15 @@
       <el-form :model="repairDialog.form" label-width="100px" class="repair-form">
         <el-form-item label="维修时间" required>
           <el-date-picker v-model="repairDialog.form.repair_time" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="维修类型" required>
+          <el-select v-model="repairDialog.form.repair_type" style="width: 100%">
+            <el-option label="普通维修" value="普通维修" />
+            <el-option label="在保维修" value="在保维修" />
+            <el-option label="内部维修" value="内部维修" />
+            <el-option label="外部付费维修" value="外部付费维修" />
+            <el-option label="返厂维修" value="返厂维修" />
+          </el-select>
         </el-form-item>
         <el-form-item label="故障原因" required>
           <el-select v-model="repairDialog.form.fault_reason" filterable clearable allow-create default-first-option placeholder="选择或输入故障类型" style="width: 100%">
@@ -536,6 +547,7 @@ function defaultBatchEditFields() {
 function defaultRepairForm() {
   return {
     repair_time: new Date().toISOString().slice(0, 10),
+    repair_type: '普通维修',
     fault_reason: '',
     repair_cost: 0,
     vendor: '',
@@ -654,9 +666,9 @@ function openEdit(row) {
 async function submitEdit() {
   const oldAssetId = editDialog.form.original_asset_id || editDialog.form.asset_id
   const newAssetId = String(editDialog.form.asset_id || '').trim()
-  if (!newAssetId) return ElMessage.warning('资产ID不能为空')
+  if (!newAssetId) return ElMessage.warning('资产编号不能为空')
   if (newAssetId !== oldAssetId) {
-    const confirmed = await ElMessageBox.confirm(`确认将资产ID从 ${oldAssetId} 修改为 ${newAssetId}？相关生命周期、附件、维修、报废、盘点和审计记录会同步更新。`, '修改资产ID', { type: 'warning' }).then(() => true).catch(() => false)
+    const confirmed = await ElMessageBox.confirm(`确认将资产编号从 ${oldAssetId} 修改为 ${newAssetId}？相关生命周期、附件、维修、报废、盘点和审计记录会同步更新。`, '修改资产编号', { type: 'warning' }).then(() => true).catch(() => false)
     if (!confirmed) return
   }
   if (!validateStatusOwner(editDialog.form)) return
@@ -814,7 +826,7 @@ function locationLabel(item) {
 
 function fillImportExample() {
   importDialog.content = [
-    '资产ID,资产编号,资产名称,设备类型,品牌,型号,序列号,价格,采购日期,采购审批单号,采购供应商,维保年限,使用人,部门,位置,状态,备注',
+    '资产编号,标签编号,资产名称,设备类型,品牌,型号,序列号,价格,采购日期,采购审批单号,采购供应商,维保年限,使用人,部门,位置,状态,备注',
     '1982,NB-001,ThinkPad X1 Carbon,笔记本电脑,Lenovo,X1 Carbon Gen 12,SN-IMPORT-001,15000,2026-06-24,OA-20260624-001,联想授权供应商,3,U-ADMIN,IT,上海IT仓,in_stock,关键岗位备用机',
     '1983,DP-001,Dell U2723QE,显示器,Dell,U2723QE,SN-IMPORT-002,3999,2026-06-24,OA-20260624-001,Dell渠道商,3,U-AUDITOR,AUDIT,上海办公区,in_stock,设计部高色准显示器'
   ].join('\n')
@@ -991,8 +1003,8 @@ const AssetEditFields = defineComponent({
     return () =>
       h('div', { class: 'edit-grid' }, [
         field('产品档案', h(resolveSelect(), { modelValue: props.form.product_id, 'onUpdate:modelValue': applyProduct, filterable: true, clearable: true, placeholder: '选择产品后自动带出规格', style: 'width:100%' }, () => props.products.map(item => h(resolveOption(), { key: item.id, label: `${item.product_name} / ${item.model || '-'} / ${item.spec || '-'}`, value: item.id })))),
-        field('资产ID', h(resolveInput(), { modelValue: props.form.asset_id, 'onUpdate:modelValue': value => (props.form.asset_id = value), placeholder: '可改成外部系统编号，例如 1982' })),
-        field('资产编号', h(resolveInput(), { modelValue: props.form.asset_no, 'onUpdate:modelValue': value => (props.form.asset_no = value), placeholder: '公司内部编号或标签编号' })),
+        field('资产编号', h(resolveInput(), { modelValue: props.form.asset_id, 'onUpdate:modelValue': value => (props.form.asset_id = value), placeholder: '业务编号，例如 ITAM-000001' })),
+        field('标签编号', h(resolveInput(), { modelValue: props.form.asset_no, 'onUpdate:modelValue': value => (props.form.asset_no = value), placeholder: '公司内部标签或贴纸编号' })),
         field('资产名称', h(resolveInput(), { modelValue: props.form.name, 'onUpdate:modelValue': value => (props.form.name = value) })),
         field('所属公司', h(resolveSelect(), { modelValue: props.form.company, 'onUpdate:modelValue': value => (props.form.company = value), filterable: true, clearable: true, style: 'width:100%' }, () => props.companies.map(item => h(resolveOption(), { key: item.id || item.name, label: item.name, value: item.name })))),
         field('序列号', h(resolveInput(), { modelValue: props.form.sn, 'onUpdate:modelValue': value => (props.form.sn = value) })),

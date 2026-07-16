@@ -37,8 +37,9 @@
           <template #header>基本信息</template>
           <div class="basic-info-layout">
             <el-descriptions class="basic-info-table" :column="2" border>
-              <el-descriptions-item label="资产ID">{{ detail.asset?.asset_id }}</el-descriptions-item>
-              <el-descriptions-item label="资产编号">{{ detail.asset?.asset_no || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="资产ID">{{ detail.asset?.display_id || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="资产编号">{{ detail.asset?.asset_id || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="标签编号">{{ detail.asset?.asset_no || '-' }}</el-descriptions-item>
               <el-descriptions-item label="所属公司">{{ detail.asset?.company || '-' }}</el-descriptions-item>
               <el-descriptions-item label="状态">
                 <el-tag :type="statusMap[detail.asset?.status]?.type">{{ statusMap[detail.asset?.status]?.label || detail.asset?.status }}</el-tag>
@@ -196,8 +197,8 @@
     <el-dialog v-model="editDialog.visible" title="编辑资产信息" width="980px">
       <el-form :model="editDialog.form" label-width="112px" class="asset-edit-form">
         <el-row :gutter="14">
-          <el-col :xs="24" :sm="12"><el-form-item label="资产ID"><el-input v-model="editDialog.form.asset_id" /></el-form-item></el-col>
-          <el-col :xs="24" :sm="12"><el-form-item label="资产编号"><el-input v-model="editDialog.form.asset_no" /></el-form-item></el-col>
+          <el-col :xs="24" :sm="12"><el-form-item label="资产编号"><el-input v-model="editDialog.form.asset_id" /></el-form-item></el-col>
+          <el-col :xs="24" :sm="12"><el-form-item label="标签编号"><el-input v-model="editDialog.form.asset_no" /></el-form-item></el-col>
           <el-col :xs="24" :sm="12">
             <el-form-item label="产品档案">
               <el-select v-model="editDialog.form.product_id" filterable clearable placeholder="选择产品后自动带出规格" style="width: 100%" @change="applyProductToEdit">
@@ -455,8 +456,8 @@ function applyProductToEdit(productId) {
 async function submitEdit() {
   const oldAssetId = editDialog.form.original_asset_id || detail.asset?.asset_id
   const newAssetId = String(editDialog.form.asset_id || '').trim()
-  if (!newAssetId) return ElMessage.warning('资产ID不能为空')
-  if (!editDialog.form.asset_no) return ElMessage.warning('资产编号不能为空')
+  if (!newAssetId) return ElMessage.warning('资产编号不能为空')
+  if (!editDialog.form.asset_no) return ElMessage.warning('标签编号不能为空')
   if (['in_use', 'borrowed'].includes(editDialog.form.status) && !editDialog.form.owner_user_id) return ElMessage.warning('在用或借出资产必须选择责任人')
   if (['in_stock', 'idle', 'ready_scrap'].includes(editDialog.form.status) && editDialog.form.owner_user_id) return ElMessage.warning('在库、闲置、待报废资产不能绑定责任人')
   editDialog.saving = true

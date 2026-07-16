@@ -7,6 +7,7 @@ from app.core.config import get_settings
 from app.models.asset import Asset
 from app.models.audit_rule import AuditRule
 from app.models.lifecycle import Lifecycle
+from app.models.repair import RepairRecord
 from app.models.user import UserDirectory
 
 
@@ -30,6 +31,7 @@ class RuleEngine:
         violations.extend(self._single_owner_value_limit(assets, rules["SINGLE_OWNER_VALUE_LIMIT"]))
         violations.extend(self._high_value_purchase(assets, rules["HIGH_VALUE_PURCHASE"]))
         violations.extend(self._idle_assets_over_threshold(assets, rules["ASSET_IDLE_OVER_90_DAYS"]))
+        violations.extend(self._device_fault_audit(assets, rules["DEVICE_FAULT_AUDIT"]))
         return violations
 
     def _rules_by_code(self) -> dict[str, dict]:
@@ -86,6 +88,15 @@ class RuleEngine:
                 "scope_category": "",
                 "threshold_value": None,
                 "threshold_days": self.settings.idle_days_threshold,
+                "audit_scope": "asset",
+            },
+            "DEVICE_FAULT_AUDIT": {
+                "name": "设备故障审计",
+                "severity": "medium",
+                "enabled": True,
+                "scope_category": "",
+                "threshold_value": 2,
+                "threshold_days": 180,
                 "audit_scope": "asset",
             },
         }
@@ -161,6 +172,41 @@ class RuleEngine:
                         "person",
                     )
                 )
+        return violations
+
+    def _device_fault_audit(self, assets: list[Asset], rule: dict) -> list[dict]:
+        if not rule.get("enabled"):
+            return []
+        threshold = int(rule.get("threshold_value") or 2)
+        threshold_days = int(rule.get("threshold_days") or 180)
+        cutoff = datetime.utcnow() - timedelta(days=threshold_days)
+        asset_map = {asset.asset_id: asset for asset in self._category_assets(assets, rule.get("scope_category"))}
+        if not asset_map:
+            return []
+        records = (
+            self.db.query(RepairRecord)
+            .filter(RepairRecord.asset_id.in_(asset_map.keys()), RepairRecord.created_at >= cutoff)
+            .order_by(RepairRecord.asset_id.asc(), RepairRecord.created_at.desc())
+            .all()
+        )
+        grouped: dict[str, list[RepairRecord]] = {}
+        for record in records:
+            grouped.setdefault(record.asset_id, []).append(record)
+        violations = []
+        risky_results = {"未修好", "在保送修"}
+        for asset_id, rows in grouped.items():
+            risky_rows = [row for row in rows if row.repair_result in risky_results or row.status in risky_results]
+            if len(rows) < threshold and not risky_rows:
+                continue
+            asset = asset_map.get(asset_id)
+            if not asset:
+                continue
+            latest = rows[0]
+            reason = latest.fault_reason or "未填写故障原因"
+            message = f"近 {threshold_days} 天维修 {len(rows)} 次，最近故障：{reason}"
+            if risky_rows:
+                message = f"{message}；存在未修好或在保送修记录，建议复核是否报废、换新或供应商质保处理"
+            violations.append(self._violation(asset, "DEVICE_FAULT_AUDIT", rule, message))
         return violations
 
     def _offboarding_assets_not_returned(self, assets: list[Asset], rule: dict) -> list[dict]:

@@ -124,6 +124,17 @@ def default_rules() -> list[dict]:
             "audit_scope": "asset",
             "description": "库存中或闲置资产超过指定天数后命中。",
         },
+        {
+            "rule_code": "DEVICE_FAULT_AUDIT",
+            "name": "设备故障审计",
+            "severity": "medium",
+            "enabled": True,
+            "scope_category": "",
+            "threshold_value": 2,
+            "threshold_days": 180,
+            "audit_scope": "asset",
+            "description": "按设备统计指定时间内维修次数，并识别未修好、在保送修等故障风险。",
+        },
     ]
 
 

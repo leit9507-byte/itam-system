@@ -1,18 +1,23 @@
 import request from '../utils/request'
+import { cachedRequest, clearCache } from './cache'
 
 export function getLocations(keyword = '') {
-  return request.get('/location/list', { params: { keyword: keyword || undefined } })
+  const cleanKeyword = keyword || ''
+  return cachedRequest(`location:list:${cleanKeyword}`, () => request.get('/location/list', { params: { keyword: cleanKeyword || undefined } }))
 }
 
 export function createLocation(payload) {
+  clearCache('location:')
   return request.post('/location/save', normalizeLocation(payload))
 }
 
 export function updateLocation(id, payload) {
+  clearCache('location:')
   return request.put(`/location/${id}`, normalizeLocation(payload))
 }
 
 export function deleteLocation(id) {
+  clearCache('location:')
   return request.delete(`/location/${id}`)
 }
 

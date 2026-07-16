@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class RepairCreate(BaseModel):
     asset_id: str
     repair_time: datetime
+    repair_type: str = "普通维修"
     fault_reason: str
     repair_cost: float = Field(default=0, ge=0)
     vendor: Optional[str] = None
@@ -17,6 +18,7 @@ class RepairCreate(BaseModel):
 class RepairFinish(BaseModel):
     finish_time: Optional[datetime] = None
     next_status: str = "in_stock"
+    repair_result: str = "已修好"
     operator: str = "资产管理员"
     remark: Optional[str] = None
 
@@ -44,11 +46,13 @@ class RepairOut(BaseModel):
     repair_no: str
     asset_id: str
     repair_time: datetime
+    repair_type: str = "普通维修"
     fault_reason: str
     repair_cost: float
     vendor: Optional[str]
     operator: str
     status: str
+    repair_result: Optional[str] = None
     finish_time: Optional[datetime]
     remark: Optional[str]
     created_at: datetime

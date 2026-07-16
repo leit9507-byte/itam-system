@@ -57,6 +57,11 @@ def ensure_compatible_schema(engine) -> None:
         columns = {column["name"] for column in inspector.get_columns("notification_settings")}
         add_column(engine, columns, "notification_settings", "event_types", "JSON NULL")
 
+    if "repair_records" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("repair_records")}
+        add_column(engine, columns, "repair_records", "repair_type", "VARCHAR(64) DEFAULT '普通维修' NOT NULL")
+        add_column(engine, columns, "repair_records", "repair_result", "VARCHAR(64) NULL")
+
     if "stocktake_items" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("stocktake_items")}
         add_column(engine, columns, "stocktake_items", "review_status", "VARCHAR(32) DEFAULT '无需复核' NOT NULL")

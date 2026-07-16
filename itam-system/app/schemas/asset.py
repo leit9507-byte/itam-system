@@ -105,6 +105,7 @@ class AssetUpdate(BaseModel):
 class AssetOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    display_id: Optional[int] = None
     asset_id: str
     asset_no: Optional[str] = None
     company: Optional[str] = None

@@ -175,15 +175,12 @@
         </template>
 
         <template v-if="mode === 'outbound'">
-          <el-form-item label="出库对象">
-            <el-segmented v-model="form.outboundTarget" :options="outboundTargetOptions" @change="changeOutboundTarget" />
-          </el-form-item>
           <el-form-item label="领用人">
-            <el-select v-model="form.owner_user_id" :disabled="form.outboundTarget === 'location'" filterable remote clearable reserve-keyword :remote-method="searchUsers" placeholder="搜索姓名/账号" class="mobile-select" popper-class="mobile-select-popper" @visible-change="visible => visible && searchUsers('')" @change="selectUser">
+            <el-select v-model="form.owner_user_id" filterable remote clearable reserve-keyword :remote-method="searchUsers" placeholder="搜索姓名/账号" class="mobile-select" popper-class="mobile-select-popper" @visible-change="visible => visible && searchUsers('')" @change="selectUser">
               <el-option v-for="user in filteredUsers" :key="user.user_id" :label="`${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`" :value="user.user_id" />
             </el-select>
           </el-form-item>
-          <el-form-item :label="form.outboundTarget === 'location' ? '公用位置' : '使用位置'">
+          <el-form-item label="使用位置">
             <el-select
               v-model="form.location"
               filterable
@@ -204,6 +201,15 @@
         <template v-if="mode === 'repair'">
           <el-form-item label="维修日期">
             <el-date-picker v-model="form.repair_time" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="维修类型">
+            <el-select v-model="form.repair_type" style="width: 100%">
+              <el-option label="普通维修" value="普通维修" />
+              <el-option label="在保维修" value="在保维修" />
+              <el-option label="内部维修" value="内部维修" />
+              <el-option label="外部付费维修" value="外部付费维修" />
+              <el-option label="返厂维修" value="返厂维修" />
+            </el-select>
           </el-form-item>
           <el-form-item label="故障类型">
             <el-select
@@ -329,11 +335,6 @@ const modes = [
   { value: 'bind', label: '二维码绑定', hint: '确认二维码内容', icon: Search, formTitle: '二维码绑定', submitText: '确认绑定' }
 ]
 const workModes = modes.filter(item => item.value !== 'stocktake')
-const outboundTargetOptions = [
-  { label: '人员', value: 'user' },
-  { label: '位置', value: 'location' }
-]
-
 const activeSection = ref('todo')
 const mode = ref('stocktake')
 const assetCode = ref('')
@@ -429,6 +430,7 @@ function defaultForm() {
     dept_name: '',
     outboundTarget: 'user',
     repair_time: new Date().toISOString().slice(0, 10),
+    repair_type: '普通维修',
     fault_reason: '',
     repair_cost: 0,
     vendor: '',
@@ -714,15 +716,6 @@ function selectUser(userId) {
   form.dept_name = user?.dept_name || ''
 }
 
-function changeOutboundTarget(value) {
-  if (value === 'location') {
-    form.owner_user_id = ''
-    form.owner_name = ''
-    form.dept_id = ''
-    form.dept_name = ''
-  }
-}
-
 function locationLabel(item) {
   const meta = [item.code, item.type].filter(Boolean).join(' / ')
   return meta ? `${item.name} (${meta})` : item.name
@@ -807,10 +800,9 @@ async function submitOutbound() {
   if (!OUTBOUND_ALLOWED_STATUSES.includes(asset.value?.status)) {
     return ElMessage.warning(`当前状态为 ${statusLabel(asset.value?.status)}，不能重复出库；请先归还入库后再出库`)
   }
-  if (form.outboundTarget === 'user' && !form.owner_user_id) return ElMessage.warning('请选择领用人')
-  if (form.outboundTarget === 'location' && !form.location) return ElMessage.warning('请选择公用位置')
+  if (!form.owner_user_id) return ElMessage.warning('请选择领用人')
   const updated = await outboundAsset(asset.value.asset_id, {
-    outboundTarget: form.outboundTarget,
+    outboundTarget: 'user',
     owner_user_id: form.owner_user_id,
     owner_name: form.owner_name,
     dept_id: form.dept_id,
@@ -824,7 +816,7 @@ async function submitOutbound() {
 
 async function submitRepair() {
   if (!form.fault_reason) return ElMessage.warning('请选择故障类型')
-  await createRepairRecord(asset.value, { repair_time: form.repair_time, fault_reason: form.fault_reason, repair_cost: form.repair_cost, vendor: form.vendor, remark: form.remark || '移动端扫码报修' })
+  await createRepairRecord(asset.value, { repair_time: form.repair_time, repair_type: form.repair_type, fault_reason: form.fault_reason, repair_cost: form.repair_cost, vendor: form.vendor, remark: form.remark || '移动端扫码报修' })
   addLog('扫码维修', form.fault_reason)
   ElMessage.success('维修单已创建')
 }
