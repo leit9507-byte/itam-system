@@ -53,7 +53,6 @@
               <el-descriptions-item label="部门">{{ deptName }}</el-descriptions-item>
               <el-descriptions-item label="位置">{{ detail.asset?.location || '-' }}</el-descriptions-item>
               <el-descriptions-item label="价值">¥{{ Number(detail.asset?.price || 0).toLocaleString() }}</el-descriptions-item>
-              <el-descriptions-item label="采购审批单号">{{ detail.asset?.purchase_approval_no || '-' }}</el-descriptions-item>
               <el-descriptions-item label="备注" :span="2">{{ detail.asset?.remark || '-' }}</el-descriptions-item>
             </el-descriptions>
           </div>
@@ -64,6 +63,7 @@
           <el-descriptions :column="2" border>
             <el-descriptions-item label="采购时间">{{ detail.asset?.purchase_date || '-' }}</el-descriptions-item>
             <el-descriptions-item label="采购审批单号">{{ detail.asset?.purchase_approval_no || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="采购单号">{{ detail.asset?.config?.purchase_no || '-' }}</el-descriptions-item>
             <el-descriptions-item label="采购供应商">{{ detail.asset?.purchase_supplier_name || '-' }}</el-descriptions-item>
             <el-descriptions-item label="质保到期">{{ detail.asset?.warranty_expire_date || '-' }}</el-descriptions-item>
             <el-descriptions-item label="质保月数">{{ detail.asset?.warranty_months || '-' }}</el-descriptions-item>
