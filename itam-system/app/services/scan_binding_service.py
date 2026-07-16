@@ -45,13 +45,26 @@ class ScanBindingService:
 
     @staticmethod
     def normalize_scan_key(value: str) -> str:
-        extracted = ScanBindingService.extract_scan_value(value)
-        clean = " ".join(extracted.strip().lower().split())
+        clean = ScanBindingService.normalize_text(value)
         if not clean:
             raise ValueError("scan content is empty")
         if len(clean) <= 240:
             return clean
         return "sha256:" + hashlib.sha256(clean.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def normalize_legacy_scan_key(value: str) -> str:
+        extracted = ScanBindingService.extract_scan_value(value)
+        clean = ScanBindingService.normalize_text(extracted)
+        if not clean:
+            raise ValueError("scan content is empty")
+        if len(clean) <= 240:
+            return clean
+        return "sha256:" + hashlib.sha256(clean.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def normalize_text(value: str) -> str:
+        return " ".join((value or "").strip().lower().split())
 
     @staticmethod
     def to_out(row: AssetScanBinding) -> dict:
@@ -150,6 +163,13 @@ class ScanBindingService:
         except ValueError:
             return {"bound": False, "scan_key": ""}
         row = db.query(AssetScanBinding).filter(AssetScanBinding.scan_key == scan_key, AssetScanBinding.status == "active").first()
+        if not row:
+            try:
+                legacy_scan_key = ScanBindingService.normalize_legacy_scan_key(scan_raw)
+            except ValueError:
+                legacy_scan_key = ""
+            if legacy_scan_key and legacy_scan_key != scan_key:
+                row = db.query(AssetScanBinding).filter(AssetScanBinding.scan_key == legacy_scan_key, AssetScanBinding.status == "active").first()
         if not row:
             return {"bound": False, "scan_key": scan_key}
         asset = ScanBindingService.can_access_asset(db, row.asset_id, user_context)

@@ -124,9 +124,10 @@
             </div>
           </template>
           <div class="scan-binding-panel">
+            <el-alert class="scan-binding-tip" title="填写扫码实际返回的文字，一行一个；后续扫码返回内容与这里任一内容一致时，都会识别为当前资产。" type="info" show-icon :closable="false" />
             <el-form :model="scanForm" label-width="92px" class="scan-binding-form">
               <el-form-item label="二维码内容">
-                <el-input v-model="scanForm.scan_raw" type="textarea" :rows="2" placeholder="粘贴或输入二维码生成内容，后续扫码会按这段内容识别当前资产" />
+                <el-input v-model="scanForm.scan_raw" type="textarea" :rows="4" placeholder="粘贴或输入扫码出来的原始文字；支持多行，每行绑定一个二维码内容" />
               </el-form-item>
               <el-row :gutter="12">
                 <el-col :xs="24" :sm="8">
@@ -381,16 +382,23 @@ async function loadScanBindings(assetId = route.params.id) {
 
 async function submitScanBinding() {
   if (!detail.asset?.asset_id) return
-  if (!scanForm.scan_raw?.trim()) return ElMessage.warning('请先填写二维码内容')
+  const scanRaws = parseScanRawLines(scanForm.scan_raw)
+  if (!scanRaws.length) return ElMessage.warning('请先填写二维码内容')
   scanBindingSaving.value = true
   try {
-    await bindAssetScanCode(detail.asset.asset_id, { ...scanForm, scan_type: 'qrcode' })
+    for (const scanRaw of scanRaws) {
+      await bindAssetScanCode(detail.asset.asset_id, { ...scanForm, scan_raw: scanRaw, scan_type: 'qrcode' })
+    }
     Object.assign(scanForm, { scan_raw: '', scan_type: 'qrcode', remark: '', force: false })
-    ElMessage.success('二维码内容已绑定')
+    ElMessage.success(scanRaws.length > 1 ? `已绑定 ${scanRaws.length} 个二维码内容` : '二维码内容已绑定')
     await loadScanBindings(detail.asset.asset_id)
   } finally {
     scanBindingSaving.value = false
   }
+}
+
+function parseScanRawLines(value) {
+  return [...new Set((value || '').split(/\r?\n/).map(item => item.trim()).filter(Boolean))]
 }
 
 async function removeScanBinding(row) {
@@ -642,6 +650,10 @@ function formatSize(size = 0) {
 .scan-binding-panel {
   display: grid;
   gap: 14px;
+}
+
+.scan-binding-tip {
+  margin-bottom: 2px;
 }
 
 .scan-binding-form {

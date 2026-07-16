@@ -259,9 +259,9 @@
         </template>
 
         <template v-if="mode === 'bind'">
-          <el-alert class="inline-alert" title="先确认上方资产，再读取二维码内容。二维码内容可手动编辑，提交后后续扫码会按这段内容识别当前资产。" type="info" show-icon :closable="false" />
+          <el-alert class="inline-alert" title="先确认上方资产，再填写扫码实际返回的文字；支持多行，一行一个二维码内容。" type="info" show-icon :closable="false" />
           <el-form-item label="二维码内容">
-            <el-input v-model="bindingForm.scan_raw" type="textarea" :rows="3" placeholder="扫描二维码后自动填入，也可以手动输入或修改二维码生成内容" />
+            <el-input v-model="bindingForm.scan_raw" type="textarea" :rows="4" placeholder="扫描二维码后自动填入，也可以手动输入；多个内容请每行填写一个" />
           </el-form-item>
           <div class="binding-actions">
             <el-button type="primary" :icon="Camera" @click="scanBindingRaw">读取二维码</el-button>
@@ -544,12 +544,12 @@ async function scanBindingRaw() {
     return
   }
   if (fromFeishu) {
-    bindingForm.scan_raw = fromFeishu
+    appendBindingRaw(fromFeishu)
     return ElMessage.success('已读取二维码内容')
   }
   const fromBrowser = await scanByBrowser()
   if (fromBrowser) {
-    bindingForm.scan_raw = fromBrowser
+    appendBindingRaw(fromBrowser)
     return ElMessage.success('已读取二维码内容')
   }
   ElMessage.info(isFeishuClient() ? '飞书扫码未返回内容，请确认已在飞书客户端内打开' : '当前环境暂未开放摄像头扫码，请手动输入二维码内容')
@@ -746,7 +746,7 @@ async function copyAssetId() {
 
 async function submitWork() {
   if (!asset.value) return ElMessage.warning('请先扫码选择资产')
-  if (mode.value === 'bind' && !bindingForm.scan_raw.trim()) return ElMessage.warning('请先扫描或输入需要绑定的二维码内容')
+  if (mode.value === 'bind' && !parseScanRawLines(bindingForm.scan_raw).length) return ElMessage.warning('请先扫描或输入需要绑定的二维码内容')
   submitting.value = true
   try {
     if (mode.value === 'stocktake') await submitStocktake()
@@ -853,13 +853,26 @@ async function submitScrap() {
 }
 
 async function submitScanBinding() {
-  await bindAssetScanCode(asset.value.asset_id, {
-    ...bindingForm,
-    scan_type: 'qrcode',
-    remark: form.remark || '移动端二维码绑定'
-  })
-  addLog('二维码绑定', '已绑定二维码内容')
-  ElMessage.success('二维码内容已绑定')
+  const scanRaws = parseScanRawLines(bindingForm.scan_raw)
+  for (const scanRaw of scanRaws) {
+    await bindAssetScanCode(asset.value.asset_id, {
+      ...bindingForm,
+      scan_raw: scanRaw,
+      scan_type: 'qrcode',
+      remark: form.remark || '移动端二维码绑定'
+    })
+  }
+  addLog('二维码绑定', scanRaws.length > 1 ? `已绑定 ${scanRaws.length} 个二维码内容` : '已绑定二维码内容')
+  ElMessage.success(scanRaws.length > 1 ? `已绑定 ${scanRaws.length} 个二维码内容` : '二维码内容已绑定')
+}
+
+function appendBindingRaw(value) {
+  const scanRaws = parseScanRawLines(`${bindingForm.scan_raw}\n${value}`)
+  bindingForm.scan_raw = scanRaws.join('\n')
+}
+
+function parseScanRawLines(value) {
+  return [...new Set((value || '').split(/\r?\n/).map(item => item.trim()).filter(Boolean))]
 }
 
 function addLog(action, remark) {
