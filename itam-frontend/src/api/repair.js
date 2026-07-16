@@ -79,6 +79,7 @@ export async function getRepairDashboard(filters = {}) {
     totalCost,
     avgCost: rows.length ? Math.round(totalCost / rows.length) : 0,
     topFaults: groupCount(rows, 'fault_reason').slice(0, 10),
+    topModels: groupCount(rows, 'asset_model').slice(0, 10),
     costTrend: buildCostTrend(rows)
   }
 }
@@ -92,6 +93,7 @@ function mapRepair(row) {
     asset_name: row.asset_name || '',
     sn: row.sn || '',
     category: row.category || '',
+    asset_model: row.asset_model || '',
     owner: row.owner || '',
     dept: row.dept || '',
     repair_time: formatDate(row.repair_time),
@@ -114,7 +116,7 @@ function mapRepair(row) {
 function filterRecord(item, filters) {
   const keyword = (filters.keyword || '').toLowerCase()
   const status = filters.status || ''
-  const hitKeyword = !keyword || [item.repair_no, item.asset_id, item.asset_name, item.sn, item.fault_reason, item.vendor].join(' ').toLowerCase().includes(keyword)
+  const hitKeyword = !keyword || [item.repair_no, item.asset_id, item.asset_name, item.asset_model, item.sn, item.fault_reason, item.vendor].join(' ').toLowerCase().includes(keyword)
   const hitStatus = !status || item.status === status
   const hitDate = !filters.dateRange?.length || inDateRange(item.repair_time || item.created_at, filters.dateRange)
   return hitKeyword && hitStatus && hitDate

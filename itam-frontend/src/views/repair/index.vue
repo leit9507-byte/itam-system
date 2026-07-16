@@ -38,6 +38,10 @@
         <template #header>故障原因 TOP10</template>
         <div ref="faultRef" class="chart" />
       </el-card>
+      <el-card shadow="never">
+        <template #header>维修型号 TOP10</template>
+        <div ref="modelRef" class="chart" />
+      </el-card>
     </section>
 
     <el-card shadow="never">
@@ -64,6 +68,7 @@
         <el-table-column prop="id" label="维修单号" width="140" />
         <el-table-column prop="asset_id" label="资产ID" width="120" />
         <el-table-column prop="asset_name" label="资产名称" min-width="180" />
+        <el-table-column prop="asset_model" label="型号" width="130" show-overflow-tooltip />
         <el-table-column prop="sn" label="序列号" width="150" />
         <el-table-column prop="repair_time" label="维修时间" width="120" />
         <el-table-column prop="repair_type" label="维修类型" width="110" />
@@ -171,11 +176,12 @@ import { deleteRepairFaultType, finishRepairRecord, getRepairDashboard, getRepai
 const records = ref([])
 const trendRef = ref(null)
 const faultRef = ref(null)
+const modelRef = ref(null)
 const charts = []
 const faultTypes = ref([])
 const filters = reactive({ keyword: '', status: '', dateRange: defaultDateRange(), sortMode: 'latest' })
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
-const dashboard = reactive({ total: 0, inProgress: 0, completed: 0, totalCost: 0, avgCost: 0, topFaults: [], costTrend: [] })
+const dashboard = reactive({ total: 0, inProgress: 0, completed: 0, totalCost: 0, avgCost: 0, topFaults: [], topModels: [], costTrend: [] })
 const faultTypeDialog = reactive({ visible: false, form: defaultFaultTypeForm() })
 const finishDialog = reactive({ visible: false, row: null, form: defaultFinishForm() })
 
@@ -237,7 +243,16 @@ function renderCharts() {
     series: [{ name: '次数', type: 'bar', data: dashboard.topFaults.map(item => item.value), itemStyle: { color: '#f59e0b', borderRadius: [0, 4, 4, 0] } }]
   })
 
-  charts.push(trend, fault)
+  const model = echarts.init(modelRef.value)
+  model.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 120, right: 20, top: 20, bottom: 20 },
+    xAxis: { type: 'value' },
+    yAxis: { type: 'category', data: dashboard.topModels.map(item => item.name), axisLabel: { width: 108, overflow: 'truncate' } },
+    series: [{ name: '维修次数', type: 'bar', data: dashboard.topModels.map(item => item.value), itemStyle: { color: '#2563eb', borderRadius: [0, 4, 4, 0] } }]
+  })
+
+  charts.push(trend, fault, model)
 }
 
 function isRepairClosed(row) {

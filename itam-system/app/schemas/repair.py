@@ -59,6 +59,7 @@ class RepairOut(BaseModel):
     asset_name: Optional[str] = None
     sn: Optional[str] = None
     category: Optional[str] = None
+    asset_model: Optional[str] = None
     owner: Optional[str] = None
     dept: Optional[str] = None
     current_status: Optional[str] = None
