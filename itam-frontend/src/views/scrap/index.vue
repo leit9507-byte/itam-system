@@ -74,6 +74,9 @@
         </el-table-column>
         <el-table-column prop="reason" label="报废原因" min-width="220" show-overflow-tooltip />
         <el-table-column prop="disposal_method" label="处置方式" width="120" />
+        <el-table-column label="报废领走人" width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.dispose_recipient_name || row.dispose_recipient_user_id || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="estimated_residual_value" label="预计残值" width="120">
           <template #default="{ row }">¥{{ row.estimated_residual_value.toLocaleString() }}</template>
         </el-table-column>
@@ -112,11 +115,35 @@
         :closable="false"
       />
       <el-form :model="disposeDialog.form" label-width="110px" class="dispose-form">
+        <el-form-item label="处置方式">
+          <el-radio-group v-model="disposeDialog.form.disposal_method">
+            <el-radio-button label="报废" />
+            <el-radio-button label="变卖" />
+            <el-radio-button label="员工领用" />
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="disposeDialog.form.disposal_method === '员工领用'" label="领用员工" required>
+          <el-select
+            v-model="disposeDialog.form.dispose_recipient_user_id"
+            filterable
+            clearable
+            placeholder="选择报废领走员工"
+            style="width: 100%"
+            @change="handleDisposeRecipientChange"
+          >
+            <el-option
+              v-for="user in users"
+              :key="user.user_id || user.username"
+              :label="userLabel(user)"
+              :value="user.user_id || user.username"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="实际残值">
           <el-input-number v-model="disposeDialog.form.final_residual_value" :min="0" :precision="2" style="width: 100%" />
         </el-form-item>
         <el-form-item label="处置说明">
-          <el-input v-model="disposeDialog.form.disposal_remark" type="textarea" :rows="4" placeholder="例如：环保回收，回收单号 XXX；或已销毁并上传证明附件" />
+          <el-input v-model="disposeDialog.form.disposal_remark" type="textarea" :rows="4" :placeholder="disposeRemarkPlaceholder" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -131,9 +158,11 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { approveScrapRequest, disposeScrapRequest, getScrapRequests, rejectScrapRequest } from '../../api/asset'
+import { getUsers } from '../../api/user'
 
 const requests = ref([])
 const allRequests = ref([])
+const users = ref([])
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const filters = reactive({ createdRange: [], status: '' })
 const disposeDialog = reactive({
@@ -141,14 +170,28 @@ const disposeDialog = reactive({
   row: null,
   form: {
     final_residual_value: 0,
+    disposal_method: '报废',
+    dispose_recipient_user_id: '',
+    dispose_recipient_name: '',
     disposal_remark: ''
   }
 })
 const SCRAP_SUMMARY_LIMIT = 500
 
 const totalResidual = computed(() => allRequests.value.reduce((sum, item) => sum + Number(item.estimated_residual_value || 0), 0))
+const disposeRemarkPlaceholder = computed(() => {
+  if (disposeDialog.form.disposal_method === '员工领用') return '例如：报废资产由员工领走，已签收确认'
+  if (disposeDialog.form.disposal_method === '变卖') return '例如：变卖给回收商，交易单号 XXX'
+  return '例如：报废销毁、环保回收，回收单号 XXX'
+})
 
-onMounted(load)
+onMounted(async () => {
+  await Promise.all([load(), loadUsers()])
+})
+
+async function loadUsers() {
+  users.value = await getUsers().catch(() => [])
+}
 
 async function load() {
   const params = {
@@ -203,17 +246,40 @@ async function reject(row) {
 function openDispose(row) {
   disposeDialog.row = row
   disposeDialog.form.final_residual_value = row.estimated_residual_value || 0
-  disposeDialog.form.disposal_remark = row.disposal_method ? `处置方式：${row.disposal_method}` : ''
+  disposeDialog.form.disposal_method = normalizeDisposeMethod(row.disposal_method)
+  disposeDialog.form.dispose_recipient_user_id = row.dispose_recipient_user_id || ''
+  disposeDialog.form.dispose_recipient_name = row.dispose_recipient_name || ''
+  disposeDialog.form.disposal_remark = row.disposal_remark || ''
   disposeDialog.visible = true
 }
 
 async function dispose() {
   if (!disposeDialog.row) return
-  await ElMessageBox.confirm(`确认 ${disposeDialog.row.asset_id} 已完成实物处置？处置后资产不可再领用、维修或盘点为普通资产。`, '确认处置', { type: 'warning' })
+  if (disposeDialog.form.disposal_method === '员工领用' && !disposeDialog.form.dispose_recipient_user_id) {
+    ElMessage.warning('请选择报废领走员工')
+    return
+  }
+  const recipientText = disposeDialog.form.disposal_method === '员工领用' ? `，报废领走人：${disposeDialog.form.dispose_recipient_name || disposeDialog.form.dispose_recipient_user_id}` : ''
+  await ElMessageBox.confirm(`确认 ${disposeDialog.row.asset_id} 已完成实物处置？处置方式：${disposeDialog.form.disposal_method}${recipientText}。处置后资产不可再领用、维修或盘点为普通资产。`, '确认处置', { type: 'warning' })
   await disposeScrapRequest(disposeDialog.row.id, disposeDialog.form)
   disposeDialog.visible = false
   ElMessage.success('报废资产已处置归档')
   await load()
+}
+
+function handleDisposeRecipientChange(userId) {
+  const user = users.value.find(item => (item.user_id || item.username) === userId)
+  disposeDialog.form.dispose_recipient_name = user ? (user.display_name || user.username || user.user_id || '') : ''
+}
+
+function normalizeDisposeMethod(method) {
+  if (['报废', '变卖', '员工领用'].includes(method)) return method
+  if (['出售', '转卖'].includes(method)) return '变卖'
+  return '报废'
+}
+
+function userLabel(user) {
+  return [user.display_name || user.username || user.user_id, user.dept_name || user.dept_id].filter(Boolean).join(' / ')
 }
 
 function statusType(status) {

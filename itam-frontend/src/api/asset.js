@@ -335,6 +335,9 @@ export async function rejectScrapRequest(requestId, approver = '资产负责人'
 export async function disposeScrapRequest(requestId, payload = {}) {
   return mapScrapRequest(await request.post(`/scrap/${requestId}/dispose`, {
     final_residual_value: Number(payload.final_residual_value || 0),
+    disposal_method: payload.disposal_method || '',
+    dispose_recipient_user_id: payload.dispose_recipient_user_id || '',
+    dispose_recipient_name: payload.dispose_recipient_name || '',
     disposal_remark: payload.disposal_remark || ''
   }))
 }
@@ -454,6 +457,8 @@ function mapScrapRequest(row) {
     estimated_residual_value: Number(row.estimated_residual_value || 0),
     final_residual_value: Number(row.final_residual_value || 0),
     disposal_remark: row.disposal_remark || '',
+    dispose_recipient_user_id: row.dispose_recipient_user_id || '',
+    dispose_recipient_name: row.dispose_recipient_name || '',
     disposed_by: row.disposed_by || '',
     disposed_at: formatDate(row.disposed_at),
     status: row.status,

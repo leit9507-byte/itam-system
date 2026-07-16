@@ -1,16 +1,35 @@
 from datetime import datetime
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.security import can_view_all_data, is_department_manager, scoped_dept_id, scoped_user_identities
 from app.models.asset import Asset
 from app.models.scrap import ScrapRequest
+from app.models.user import UserDirectory
 from app.services.audit_log_service import AuditLogService
 from app.services.lifecycle_service import LifecycleService
 from app.services.notification_service import NotificationService
 
 
 class ScrapService:
+    DISPOSAL_METHODS = {"报废", "变卖", "员工领用"}
+
+    @staticmethod
+    def normalize_disposal_method(value: str | None) -> str:
+        method = (value or "").strip()
+        aliases = {
+            "环保回收": "报废",
+            "供应商回收": "报废",
+            "内部拆件": "报废",
+            "销毁处理": "报废",
+            "Recycle": "报废",
+            "出售": "变卖",
+            "转卖": "变卖",
+        }
+        method = aliases.get(method, method)
+        return method if method in ScrapService.DISPOSAL_METHODS else "报废"
+
     @staticmethod
     def list_requests(
         db: Session,
@@ -222,14 +241,41 @@ class ScrapService:
         if asset and asset.status != "scrapped":
             raise ValueError("资产不是已报废状态，不能确认处置")
 
+        disposal_method = ScrapService.normalize_disposal_method(payload.get("disposal_method") or request.disposal_method)
+        recipient_user_id = (payload.get("dispose_recipient_user_id") or "").strip()
+        recipient_name = (payload.get("dispose_recipient_name") or "").strip()
+        if disposal_method == "员工领用":
+            user = None
+            if recipient_user_id:
+                user = (
+                    db.query(UserDirectory)
+                    .filter(or_(UserDirectory.user_id == recipient_user_id, UserDirectory.username == recipient_user_id))
+                    .first()
+                )
+            if user:
+                recipient_user_id = user.user_id
+                recipient_name = user.display_name or user.username or recipient_name
+            if not recipient_user_id and not recipient_name:
+                raise ValueError("员工领用处置必须选择领用员工")
+        else:
+            recipient_user_id = ""
+            recipient_name = ""
+
         request.status = "已处置"
+        request.disposal_method = disposal_method
         request.final_residual_value = float(payload.get("final_residual_value") or request.estimated_residual_value or 0)
         request.disposal_remark = payload.get("disposal_remark") or ""
+        request.dispose_recipient_user_id = recipient_user_id or None
+        request.dispose_recipient_name = recipient_name or None
         request.disposed_by = operator
         request.disposed_at = datetime.utcnow()
         if asset:
             from_status = asset.status
             asset.status = "disposed"
+            recipient_label = request.dispose_recipient_name or request.dispose_recipient_user_id or "-"
+            dispose_reason = request.disposal_remark or request.disposal_method or "报废资产已完成处置归档"
+            if request.disposal_method == "员工领用":
+                dispose_reason = request.disposal_remark or f"报废领走：{recipient_label}"
             LifecycleService.record(
                 db,
                 asset.asset_id,
@@ -238,13 +284,15 @@ class ScrapService:
                 "disposed",
                 operator,
                 LifecycleService.structured_remark(
-                    reason=request.disposal_remark or request.disposal_method or "报废资产已完成处置归档",
+                    reason=dispose_reason,
                     object=f"报废单 {request.request_no}",
                     previous_owner=asset.owner_user_id or "-",
-                    new_owner=operator,
+                    new_owner=recipient_label if request.disposal_method == "员工领用" else operator,
                     location=asset.location,
                     extra={
                         "disposal_method": request.disposal_method or "",
+                        "dispose_recipient_user_id": request.dispose_recipient_user_id or "",
+                        "dispose_recipient_name": request.dispose_recipient_name or "",
                         "final_residual_value": request.final_residual_value or 0,
                         "disposed_at": request.disposed_at.isoformat() if request.disposed_at else "",
                     },
@@ -270,6 +318,7 @@ class ScrapService:
                 f"报废单号：{request.request_no}",
                 f"资产编号：{request.asset_id}",
                 f"处置方式：{request.disposal_method or '-'}",
+                f"报废领走人：{request.dispose_recipient_name or request.dispose_recipient_user_id or '-'}",
                 f"实际残值：¥{request.final_residual_value or 0:,.0f}",
                 f"处置人：{operator}",
             ],

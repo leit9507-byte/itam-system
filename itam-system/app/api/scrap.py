@@ -27,6 +27,9 @@ class ScrapApprovePayload(BaseModel):
 
 class ScrapDisposePayload(BaseModel):
     final_residual_value: float = 0
+    disposal_method: str | None = None
+    dispose_recipient_user_id: str | None = None
+    dispose_recipient_name: str | None = None
     disposal_remark: str | None = None
 
 

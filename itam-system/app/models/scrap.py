@@ -30,6 +30,8 @@ class ScrapRequest(Base):
     estimated_residual_value = Column(Numeric(12, 2, asdecimal=False), default=0)
     final_residual_value = Column(Numeric(12, 2, asdecimal=False), default=0)
     disposal_remark = Column(Text, nullable=True)
+    dispose_recipient_user_id = Column(String(128), nullable=True)
+    dispose_recipient_name = Column(String(128), nullable=True)
     disposed_by = Column(String(128), nullable=True)
     disposed_at = Column(DateTime, nullable=True)
     status = Column(String(32), default="审批中", nullable=False, index=True)

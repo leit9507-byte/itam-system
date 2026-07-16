@@ -267,6 +267,7 @@ def export_scrap_disposal_ledger_csv(request: Request, db: Session = Depends(get
             row.applicant or "",
             row.reason or "",
             row.disposal_method or "",
+            row.dispose_recipient_name or row.dispose_recipient_user_id or "",
             money(row.estimated_residual_value),
             money(row.final_residual_value),
             row.disposed_by or "",
@@ -279,7 +280,7 @@ def export_scrap_disposal_ledger_csv(request: Request, db: Session = Depends(get
         .order_by(ScrapRequest.created_at.desc(), ScrapRequest.id.desc())
         .all()
     ]
-    return csv_response("scrap-disposal-ledger.csv", ["报废单号", "资产ID", "资产名称", "SN", "类型", "品牌", "型号", "责任人", "部门", "位置", "采购价值", "状态", "申请人", "报废原因", "处置方式", "预计残值", "最终残值", "处置人", "处置时间", "处置备注", "申请时间"], rows)
+    return csv_response("scrap-disposal-ledger.csv", ["报废单号", "资产ID", "资产名称", "SN", "类型", "品牌", "型号", "责任人", "部门", "位置", "采购价值", "状态", "申请人", "报废原因", "处置方式", "报废领走人", "预计残值", "最终残值", "处置人", "处置时间", "处置备注", "申请时间"], rows)
 
 
 @router.get("/audit-report.xlsx")

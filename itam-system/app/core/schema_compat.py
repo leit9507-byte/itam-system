@@ -72,6 +72,8 @@ def ensure_compatible_schema(engine) -> None:
         columns = {column["name"] for column in inspector.get_columns("scrap_requests")}
         add_column(engine, columns, "scrap_requests", "final_residual_value", "DECIMAL(12,2) DEFAULT 0")
         add_column(engine, columns, "scrap_requests", "disposal_remark", "TEXT NULL")
+        add_column(engine, columns, "scrap_requests", "dispose_recipient_user_id", "VARCHAR(128) NULL")
+        add_column(engine, columns, "scrap_requests", "dispose_recipient_name", "VARCHAR(128) NULL")
         add_column(engine, columns, "scrap_requests", "disposed_by", "VARCHAR(128) NULL")
         add_column(engine, columns, "scrap_requests", "disposed_at", "DATETIME NULL")
     if "asset_attachments" in inspector.get_table_names():
