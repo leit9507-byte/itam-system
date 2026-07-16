@@ -14,7 +14,7 @@ const lifecycleNames = {
   repair: '维修中',
   idle: '闲置',
   ready_scrap: '待报废',
-  pending_scrap: '已提交报废审批',
+  pending_scrap: '待处置登记',
   scrapped: '已报废',
   disposed: '已处置'
 }

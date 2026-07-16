@@ -71,7 +71,7 @@ class ScrapService:
         asset = db.get(Asset, asset_id)
         if not asset:
             raise ValueError("asset not found")
-        existed = db.query(ScrapRequest).filter(ScrapRequest.asset_id == asset_id, ScrapRequest.status == "审批中").first()
+        existed = db.query(ScrapRequest).filter(ScrapRequest.asset_id == asset_id, ScrapRequest.status.in_(["待处置", "审批中", "已通过"])).first()
         if existed:
             return existed
         request = ScrapRequest(
@@ -93,8 +93,10 @@ class ScrapService:
             applicant=payload.get("applicant") or asset.dept_id or operator,
             reason=payload.get("reason") or "",
             disposal_method=payload.get("disposal_method") or "环保回收",
+            retirement_date=payload.get("retirement_date"),
+            retirement_approval_no=payload.get("retirement_approval_no") or "",
             estimated_residual_value=float(payload.get("estimated_residual_value") or 0),
-            status="审批中",
+            status="待处置",
         )
         from_status = asset.status
         asset.status = "pending_scrap"
@@ -107,29 +109,32 @@ class ScrapService:
             "pending_scrap",
             operator,
             LifecycleService.structured_remark(
-                reason=request.reason or "提交报废申请",
+                reason=request.reason or "提交报废处置登记",
                 object=f"报废单 {request.request_no}",
                 previous_owner=asset.owner_user_id or "-",
                 new_owner=request.applicant or "-",
                 location=asset.location,
                 extra={
                     "disposal_method": request.disposal_method or "",
+                    "retirement_date": request.retirement_date.isoformat() if request.retirement_date else "",
+                    "retirement_approval_no": request.retirement_approval_no or "",
                     "estimated_residual_value": request.estimated_residual_value or 0,
                 },
             ),
         )
-        AuditLogService.record_operation(db, "scrap", "create", operator, "scrap_request", request.request_no, f"提交报废申请 {asset.asset_id}", payload)
+        AuditLogService.record_operation(db, "scrap", "create", operator, "scrap_request", request.request_no, f"登记报废处置 {asset.asset_id}", payload)
         db.commit()
         db.refresh(request)
         NotificationService.send_event(
             db,
             "scrap",
-            "报废申请已提交",
+            "报废处置待登记",
             [
                 f"报废单号：{request.request_no}",
                 f"资产编号：{request.asset_id}",
                 f"资产名称：{request.asset_name or '-'}",
                 f"报废原因：{request.reason or '-'}",
+                f"退役审批单号：{request.retirement_approval_no or '-'}",
                 f"预计残值：￥{request.estimated_residual_value or 0:,.0f}",
             ],
         )
@@ -155,7 +160,7 @@ class ScrapService:
                 "scrapped",
                 approver,
                 LifecycleService.structured_remark(
-                    reason=request.reason or "报废审批通过",
+                    reason=request.reason or "报废登记确认",
                     object=f"报废单 {request.request_no}",
                     previous_owner=asset.owner_user_id or "-",
                     new_owner=approver,
@@ -163,13 +168,13 @@ class ScrapService:
                     extra={"approved_at": request.approved_at.isoformat() if request.approved_at else ""},
                 ),
             )
-        AuditLogService.record_operation(db, "scrap", "approve", approver, "scrap_request", request.request_no, f"报废审批通过 {request.asset_id}")
+        AuditLogService.record_operation(db, "scrap", "approve", approver, "scrap_request", request.request_no, f"报废登记确认 {request.asset_id}")
         db.commit()
         db.refresh(request)
         NotificationService.send_event(
             db,
             "scrap",
-            "报废审批已通过",
+            "报废登记已确认",
             [
                 f"报废单号：{request.request_no}",
                 f"资产编号：{request.asset_id}",
@@ -200,7 +205,7 @@ class ScrapService:
                 "idle",
                 approver,
                 LifecycleService.structured_remark(
-                    reason=request.reason or "报废审批驳回",
+                    reason=request.reason or "报废登记取消",
                     object=f"报废单 {request.request_no}",
                     previous_owner=asset.owner_user_id or "-",
                     new_owner=approver,
@@ -208,13 +213,13 @@ class ScrapService:
                     extra={"approved_at": request.approved_at.isoformat() if request.approved_at else ""},
                 ),
             )
-        AuditLogService.record_operation(db, "scrap", "reject", approver, "scrap_request", request.request_no, f"报废审批驳回 {request.asset_id}")
+        AuditLogService.record_operation(db, "scrap", "reject", approver, "scrap_request", request.request_no, f"报废登记取消 {request.asset_id}")
         db.commit()
         db.refresh(request)
         NotificationService.send_event(
             db,
             "scrap",
-            "报废审批已驳回",
+            "报废登记已取消",
             [
                 f"报废单号：{request.request_no}",
                 f"资产编号：{request.asset_id}",
@@ -230,16 +235,16 @@ class ScrapService:
         request = db.get(ScrapRequest, request_id)
         if not request:
             raise ValueError("scrap request not found")
-        if request.status not in {"已通过", "已处置"}:
-            raise ValueError("只有审批通过的报废单可以确认处置")
+        if request.status not in {"待处置", "审批中", "已通过", "已处置"}:
+            raise ValueError("只有待处置的报废单可以登记处置")
         asset = db.get(Asset, request.asset_id)
         if asset and asset.status == "disposed":
             request.status = "已处置"
             db.commit()
             db.refresh(request)
             return request
-        if asset and asset.status != "scrapped":
-            raise ValueError("资产不是已报废状态，不能确认处置")
+        if asset and asset.status not in {"pending_scrap", "scrapped", "ready_scrap"}:
+            raise ValueError("资产不是待报废或已报废状态，不能登记处置")
 
         disposal_method = ScrapService.normalize_disposal_method(payload.get("disposal_method") or request.disposal_method)
         recipient_user_id = (payload.get("dispose_recipient_user_id") or "").strip()
@@ -263,6 +268,8 @@ class ScrapService:
 
         request.status = "已处置"
         request.disposal_method = disposal_method
+        request.retirement_date = payload.get("retirement_date") or request.retirement_date or datetime.utcnow()
+        request.retirement_approval_no = payload.get("retirement_approval_no") or request.retirement_approval_no or ""
         request.final_residual_value = float(payload.get("final_residual_value") or request.estimated_residual_value or 0)
         request.disposal_remark = payload.get("disposal_remark") or ""
         request.dispose_recipient_user_id = recipient_user_id or None
@@ -291,6 +298,8 @@ class ScrapService:
                     location=asset.location,
                     extra={
                         "disposal_method": request.disposal_method or "",
+                        "retirement_date": request.retirement_date.isoformat() if request.retirement_date else "",
+                        "retirement_approval_no": request.retirement_approval_no or "",
                         "dispose_recipient_user_id": request.dispose_recipient_user_id or "",
                         "dispose_recipient_name": request.dispose_recipient_name or "",
                         "final_residual_value": request.final_residual_value or 0,
@@ -317,6 +326,8 @@ class ScrapService:
             [
                 f"报废单号：{request.request_no}",
                 f"资产编号：{request.asset_id}",
+                f"退役时间：{request.retirement_date.date().isoformat() if request.retirement_date else '-'}",
+                f"退役审批单号：{request.retirement_approval_no or '-'}",
                 f"处置方式：{request.disposal_method or '-'}",
                 f"报废领走人：{request.dispose_recipient_name or request.dispose_recipient_user_id or '-'}",
                 f"实际残值：¥{request.final_residual_value or 0:,.0f}",

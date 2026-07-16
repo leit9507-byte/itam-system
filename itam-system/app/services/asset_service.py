@@ -125,7 +125,7 @@ class AssetService:
         has_owner = bool(AssetService.normalize_blank(asset.owner_user_id))
         has_location = bool(AssetService.normalize_blank(asset.location))
         if status_changed and status in AssetService.WORKFLOW_STATUSES:
-            raise AssetValidationError("待采购、待验收、已提交报废审批、已报废状态由流程控制，不能通过导入或手工状态变更直接设置")
+            raise AssetValidationError("待采购、待验收、待处置登记、已报废状态由流程控制，不能通过导入或手工状态变更直接设置")
         if status in AssetService.UNASSIGNED_STATUSES and has_owner:
             raise AssetValidationError("待采购、待验收、在库、闲置、待报废状态不能填写使用人/责任人；请清空使用人，或把状态改为 in_use、borrowed、out_stock")
         if status in AssetService.ASSIGNED_STATUSES and not has_owner:
@@ -1379,7 +1379,7 @@ class AssetService:
             "repair": "维修中",
             "out_stock": "已出库",
             "ready_scrap": "待报废",
-            "pending_scrap": "已提交报废审批",
+            "pending_scrap": "待处置登记",
             "scrapped": "已报废",
             "disposed": "已处置",
         }.get(value or "", value or "-")

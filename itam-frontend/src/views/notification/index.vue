@@ -162,7 +162,7 @@ const eventOptions = [
   { key: 'outbound', label: '出库通知', description: '资产领用、借出、公用设备出库后发送' },
   { key: 'purchase', label: '采购通知', description: '采购审批、采购流程待处理时发送' },
   { key: 'acceptance', label: '验收通知', description: '采购验收待完善资产编号、SN、使用人时发送' },
-  { key: 'scrap', label: '报废通知', description: '报废申请、审批和处置进度提醒' },
+  { key: 'scrap', label: '报废通知', description: '报废处置登记和处置进度提醒' },
   { key: 'repair', label: '维修通知', description: '维修创建、跟进和完成提醒' },
   { key: 'stocktake', label: '盘点通知', description: '盘点任务开始后发送任务范围和数量' },
   { key: 'borrow_due', label: '借用到期', description: '借用即将到期或已超期时提醒回收入库' },

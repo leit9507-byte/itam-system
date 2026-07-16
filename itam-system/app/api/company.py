@@ -42,7 +42,7 @@ ASSET_STATUS_LABELS = {
     "repair": "维修中",
     "out_stock": "已出库",
     "ready_scrap": "待报废",
-    "pending_scrap": "已提交报废审批",
+    "pending_scrap": "待处置登记",
     "scrapped": "已报废",
     "disposed": "已处置",
 }

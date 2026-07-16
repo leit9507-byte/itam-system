@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">资产管理</h2>
-        <p class="page-subtitle">支持批量导入、批量编辑、批量维修、出入库、责任人绑定、供应商关联和报废审批</p>
+        <p class="page-subtitle">支持批量导入、批量编辑、批量维修、出入库、责任人绑定、供应商关联和报废处置登记</p>
       </div>
       <div class="header-actions">
         <el-button @click="downloadTemplate">下载导入模板</el-button>
@@ -837,7 +837,7 @@ function openRepair(row) {
 
 function openBatchRepair() {
   if (selected.value.some(row => !canRepair(row))) {
-    ElMessage.warning('已报废、已提交报废审批或维修中的资产不能重复创建维修单')
+    ElMessage.warning('已报废、待处置登记或维修中的资产不能重复创建维修单')
     return
   }
   repairDialog.asset = selected.value[0] || null
@@ -926,11 +926,11 @@ function validateBatchAssets(type, rows) {
     return false
   }
   if (type === 'inbound' && rows.some(row => !canInbound(row))) {
-    ElMessage.warning('在库、已提交报废审批或已报废资产不能执行入库。')
+    ElMessage.warning('在库、待处置登记或已报废资产不能执行入库。')
     return false
   }
   if (type === 'scrap' && rows.some(row => !canScrap(row))) {
-    ElMessage.warning('已提交报废审批或已报废资产不能重复发起报废。')
+    ElMessage.warning('待处置登记或已报废资产不能重复发起报废。')
     return false
   }
   return true

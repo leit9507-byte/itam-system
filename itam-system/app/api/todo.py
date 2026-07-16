@@ -27,7 +27,7 @@ BORROW_DUE_SOON_DAYS = 7
 def list_todos(request: Request, db: Session = Depends(get_db)):
     user_context = user_context_from_request(request)
     purchase_result = PurchaseService.list_purchases(db, page=1, page_size=TODO_SOURCE_LIMIT, user_context=user_context)
-    scrap_result = ScrapService.list_requests(db, page=1, page_size=TODO_SOURCE_LIMIT, status="审批中", user_context=user_context)
+    scrap_result = ScrapService.list_requests(db, page=1, page_size=TODO_SOURCE_LIMIT, status="待处置", user_context=user_context)
     repair_result = RepairService.list_records(db, page=1, page_size=TODO_SOURCE_LIMIT, status="维修中", user_context=user_context)
     asset_query = AssetService.apply_data_scope(db.query(Asset), user_context)
 
@@ -105,20 +105,20 @@ def build_purchase_todos(purchases: list[Purchase]) -> list[dict]:
 
 def build_scrap_todos(scraps: list[ScrapRequest]) -> list[dict]:
     return [{
-        "id": f"scrap-approve-{item.id or item.request_no}",
-        "type": "scrap_approval",
-        "type_label": "报废审批",
-        "title": f"{item.asset_id} 报废申请待审批",
+        "id": f"scrap-disposal-{item.id or item.request_no}",
+        "type": "scrap_disposal",
+        "type_label": "报废处置",
+        "title": f"{item.asset_id} 待登记报废处置",
         "description": f"{item.asset_name or '资产'} / {item.reason or '未填写原因'} / 预计残值 ¥{item.estimated_residual_value or 0:,.0f}",
         "owner": "资产负责人",
         "priority": "high",
-        "status": item.status or "审批中",
+        "status": item.status or "待处置",
         "created_at": item.created_at,
         "request_id": item.id,
         "request_no": item.request_no,
         "asset_id": item.asset_id,
         "target_path": "/scrap",
-        "target_query": {"todo": "scrap_approval", "request_no": item.request_no},
+        "target_query": {"todo": "scrap_disposal", "request_no": item.request_no},
     } for item in scraps]
 
 
@@ -126,8 +126,8 @@ def build_ready_scrap_todos(assets: list[Asset]) -> list[dict]:
     return [{
         "id": f"ready-scrap-{item.asset_id}",
         "type": "scrap_request",
-        "type_label": "报废申请",
-        "title": f"{item.asset_id} 待提交报废审批",
+        "type_label": "报废处置",
+        "title": f"{item.asset_id} 待提交报废处置登记",
         "description": f"{item.name or '资产'} / {item.category or '-'} / 当前状态：{status_label(item.status)}",
         "owner": item.owner_user_id or "资产管理员",
         "priority": "medium",

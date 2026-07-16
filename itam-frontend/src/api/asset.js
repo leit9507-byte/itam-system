@@ -10,7 +10,7 @@ export const assetStatuses = [
   { label: '维修中', value: 'repair', type: 'danger' },
   { label: '已出库', value: 'out_stock', type: 'info' },
   { label: '待报废', value: 'ready_scrap', type: 'warning' },
-  { label: '已提交报废审批', value: 'pending_scrap', type: 'danger' },
+  { label: '待处置登记', value: 'pending_scrap', type: 'danger' },
   { label: '已报废', value: 'scrapped', type: 'info' },
   { label: '已处置', value: 'disposed', type: 'info' }
 ]
@@ -28,9 +28,9 @@ export const lifecycleActionMap = {
   PURCHASE_ACCEPTANCE: '采购验收入库',
   REPAIR_CREATE: '创建维修单',
   REPAIR_FINISH: '维修完成',
-  SCRAP_REQUEST: '提交报废审批',
-  SCRAP_APPROVE: '报废审批通过',
-  SCRAP_REJECT: '报废审批驳回',
+  SCRAP_REQUEST: '提交报废处置登记',
+  SCRAP_APPROVE: '报废登记确认',
+  SCRAP_REJECT: '报废登记取消',
   SCRAP_DISPOSE: '报废处置归档'
 }
 
@@ -336,6 +336,8 @@ export async function disposeScrapRequest(requestId, payload = {}) {
   return mapScrapRequest(await request.post(`/scrap/${requestId}/dispose`, {
     final_residual_value: Number(payload.final_residual_value || 0),
     disposal_method: payload.disposal_method || '',
+    retirement_date: dateToApi(payload.retirement_date),
+    retirement_approval_no: payload.retirement_approval_no || '',
     dispose_recipient_user_id: payload.dispose_recipient_user_id || '',
     dispose_recipient_name: payload.dispose_recipient_name || '',
     disposal_remark: payload.disposal_remark || ''
@@ -454,6 +456,8 @@ function mapScrapRequest(row) {
     applicant: row.applicant || '',
     reason: row.reason || '',
     disposal_method: row.disposal_method || '',
+    retirement_date: formatDate(row.retirement_date),
+    retirement_approval_no: row.retirement_approval_no || '',
     estimated_residual_value: Number(row.estimated_residual_value || 0),
     final_residual_value: Number(row.final_residual_value || 0),
     disposal_remark: row.disposal_remark || '',
@@ -532,9 +536,9 @@ function lifecycleDescription(row, fromStatus, toStatus) {
     PURCHASE_ACCEPTANCE: `采购验收完成并入库，状态为 ${toStatus || '-'}`,
     REPAIR_CREATE: `创建维修单，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
     REPAIR_FINISH: `维修完成，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
-    SCRAP_REQUEST: `提交报废审批，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
-    SCRAP_APPROVE: `报废审批通过，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
-    SCRAP_REJECT: `报废审批驳回，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
+    SCRAP_REQUEST: `提交报废处置登记，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
+    SCRAP_APPROVE: `报废登记确认，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
+    SCRAP_REJECT: `报废登记取消，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`,
     SCRAP_DISPOSE: `报废资产完成处置归档，状态从 ${fromStatus || '-'} 调整为 ${toStatus || '-'}`
   }[row.type] || `${action}，${statusText}`
   return remark ? `${base}；备注：${remark}` : base
@@ -740,8 +744,8 @@ function buildAssetRisksV2(asset) {
 
   if (asset.status === 'idle') risks.push({ level: 'medium', message: '资产处于闲置状态', detail: '建议优先调拨复用，长期无法复用时进入报废或处置评估。' })
   if (asset.status === 'repair') risks.push({ level: 'medium', message: '资产维修中', detail: '请关注维修周期、费用和供应商反馈，避免长期占用资产。' })
-  if (asset.status === 'ready_scrap') risks.push({ level: 'medium', message: '资产待报废', detail: '资产已标记待报废，可提交报废审批并补充处置依据。' })
-  if (asset.status === 'pending_scrap') risks.push({ level: 'medium', message: '报废审批中', detail: '资产已提交报废审批，请关注审批结果，审批通过前不建议继续领用。' })
+  if (asset.status === 'ready_scrap') risks.push({ level: 'medium', message: '资产待报废', detail: '资产已标记待报废，可提交报废处置登记并补充处置依据。' })
+  if (asset.status === 'pending_scrap') risks.push({ level: 'medium', message: '待处置登记', detail: '资产已进入报废处置登记流程，请补充退役时间、审批单号和处理手段。' })
   if (asset.status === 'scrapped') risks.push({ level: 'low', message: '资产已报废', detail: '资产已报废，等待处置归档，后续盘点应作为非在用资产处理。' })
   if (asset.status === 'disposed') risks.push({ level: 'low', message: '资产已处置归档', detail: '资产已完成处置，保留审计记录和附件归档即可。' })
   return risks.length ? risks : [{ level: 'low', message: '暂无显著风险', detail: '责任人、状态、质保和预计退役时间未发现明显异常。' }]
@@ -770,8 +774,8 @@ function buildAssetRisks(asset) {
   if (!asset.dept && asset.price >= 50000) risks.push({ level: 'high', message: '高价值资产未绑定部门' })
   if (asset.status === 'idle') risks.push({ level: 'medium', message: '资产处于闲置状态，建议调拨复用' })
   if (asset.status === 'repair') risks.push({ level: 'medium', message: '资产维修中，请关注维修周期' })
-  if (asset.status === 'ready_scrap') risks.push({ level: 'medium', message: '资产已标记待报废，可提交报废审批' })
-  if (asset.status === 'pending_scrap') risks.push({ level: 'medium', message: '资产已提交报废审批，请关注审批结果' })
+  if (asset.status === 'ready_scrap') risks.push({ level: 'medium', message: '资产已标记待报废，可提交报废处置登记' })
+  if (asset.status === 'pending_scrap') risks.push({ level: 'medium', message: '资产待报废处置登记' })
   if (asset.status === 'scrapped') risks.push({ level: 'low', message: '资产已报废，等待处置归档' })
   if (asset.status === 'disposed') risks.push({ level: 'low', message: '资产已处置归档，仅保留审计记录' })
   if (asset.warranty_expire_date && new Date(asset.warranty_expire_date) < new Date()) risks.push({ level: 'medium', message: '资产质保已过期' })

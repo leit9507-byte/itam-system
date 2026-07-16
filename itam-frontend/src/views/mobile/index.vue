@@ -335,7 +335,7 @@ const modes = [
   { value: 'inbound', label: '扫码入库', hint: '归还/验收入库', icon: Box, formTitle: '入库信息', submitText: '确认入库' },
   { value: 'outbound', label: '扫码出库', hint: '关联领用人', icon: CircleCheck, formTitle: '出库信息', submitText: '确认出库' },
   { value: 'repair', label: '扫码维修', hint: '创建今日维修', icon: Setting, formTitle: '维修信息', submitText: '创建维修' },
-  { value: 'scrap', label: '扫码报废', hint: '提交审批申请', icon: Delete, formTitle: '报废申请', submitText: '提交报废' },
+  { value: 'scrap', label: '扫码报废', hint: '提交处置登记', icon: Delete, formTitle: '报废处置登记', submitText: '提交报废' },
   { value: 'bind', label: '二维码绑定', hint: '确认二维码内容', icon: Search, formTitle: '二维码绑定', submitText: '确认绑定' }
 ]
 const workModes = modes.filter(item => item.value !== 'stocktake')
@@ -849,7 +849,7 @@ async function submitScrap() {
     operator: '移动端扫码'
   })
   addLog('扫码报废', form.scrap_reason)
-  ElMessage.success('报废申请已提交审批')
+  ElMessage.success('报废处置登记已提交')
 }
 
 async function submitScanBinding() {
@@ -889,7 +889,7 @@ async function clearLogs() {
 }
 
 function statusLabel(value) {
-  return ({ pending_purchase: '待采购', pending_acceptance: '待验收', in_stock: '在库', in_use: '在用', idle: '闲置', borrowed: '借出', repair: '维修中', out_stock: '已出库', ready_scrap: '待报废', pending_scrap: '已提交报废审批', scrapped: '已报废' })[value] || value
+  return ({ pending_purchase: '待采购', pending_acceptance: '待验收', in_stock: '在库', in_use: '在用', idle: '闲置', borrowed: '借出', repair: '维修中', out_stock: '已出库', ready_scrap: '待报废', pending_scrap: '待处置登记', scrapped: '已报废' })[value] || value
 }
 
 function statusType(value) {

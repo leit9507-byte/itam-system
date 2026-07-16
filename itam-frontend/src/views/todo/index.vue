@@ -12,7 +12,7 @@
       <el-card shadow="never"><el-statistic title="全部待办" :value="todos.length" /></el-card>
       <el-card shadow="never"><el-statistic title="高优先级" :value="countByPriority('high')" /></el-card>
       <el-card shadow="never"><el-statistic title="入职配置" :value="countByTypes(['onboarding_assign'])" /></el-card>
-      <el-card shadow="never"><el-statistic title="资产回收/报废" :value="countByTypes(['scrap_approval', 'scrap_request', 'offboarding_reclaim'])" /></el-card>
+      <el-card shadow="never"><el-statistic title="资产回收/报废" :value="countByTypes(['scrap_disposal', 'scrap_request', 'offboarding_reclaim'])" /></el-card>
     </div>
 
     <el-card shadow="never" class="filter-card">
@@ -68,8 +68,8 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="scrapDialog.visible" title="提交报废审批" width="620px">
-      <el-alert :title="scrapDialog.todo?.title || '提交报废审批'" type="warning" show-icon :closable="false" />
+    <el-dialog v-model="scrapDialog.visible" title="提交报废处置登记" width="620px">
+      <el-alert :title="scrapDialog.todo?.title || '提交报废处置登记'" type="warning" show-icon :closable="false" />
       <el-form :model="scrapDialog.form" label-width="110px" class="todo-form">
         <el-form-item label="申请人/部门">
           <el-input v-model="scrapDialog.form.applicant" />
@@ -91,7 +91,7 @@
       </el-form>
       <template #footer>
         <el-button @click="scrapDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="processingId === scrapDialog.todo?.id" @click="submitScrapRequest">提交审批</el-button>
+        <el-button type="primary" :loading="processingId === scrapDialog.todo?.id" @click="submitScrapRequest">提交登记</el-button>
       </template>
     </el-dialog>
     <TodoAssetActions ref="todoAssetActionsRef" @completed="load" />
@@ -101,8 +101,9 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { approveScrapRequest, createScrapRequest, getScrapRequests } from '../../api/asset'
+import { createScrapRequest } from '../../api/asset'
 import { getPurchases } from '../../api/purchase'
 import { finishRepairRecord, getRepairRecords } from '../../api/repair'
 import { getTodoItems } from '../../api/todo'
@@ -110,6 +111,7 @@ import TodoAssetActions from '../../components/TodoAssetActions.vue'
 import PurchaseAcceptanceDialog from '../../components/PurchaseAcceptanceDialog.vue'
 
 const loading = ref(false)
+const router = useRouter()
 const processingId = ref('')
 const todos = ref([])
 const filters = reactive({ keyword: '', type: '', priority: '' })
@@ -125,8 +127,8 @@ const scrapDialog = reactive({
 const typeOptions = [
   { label: '入职配置', value: 'onboarding_assign' },
   { label: '采购验收', value: 'purchase_acceptance' },
-  { label: '报废审批', value: 'scrap_approval' },
-  { label: '报废申请', value: 'scrap_request' },
+  { label: '报废处置', value: 'scrap_disposal' },
+  { label: '报废登记', value: 'scrap_request' },
   { label: '离职回收', value: 'offboarding_reclaim' },
   { label: '维修跟进', value: 'repair_followup' }
 ]
@@ -191,7 +193,7 @@ async function handleTodo(row) {
   if (await todoAssetActionsRef.value?.handle(row)) return
   if (row.type === 'scrap_request') return openScrapDialog(row)
   if (row.type === 'purchase_acceptance') return receivePurchaseTodo(row)
-  if (row.type === 'scrap_approval') return approveScrapTodo(row)
+  if (row.type === 'scrap_disposal') return router.push({ path: '/scrap', query: { request_no: row.request_no || '' } })
   if (row.type === 'repair_followup') return finishRepairTodo(row)
   ElMessage.warning('暂不支持该类型待办的直接处理')
 }
@@ -213,7 +215,7 @@ async function submitScrapRequest() {
   processingId.value = todo.id
   try {
     await createScrapRequest(todo.asset_id, scrapDialog.form)
-    ElMessage.success('报废审批已提交')
+    ElMessage.success('报废处置登记已提交')
     scrapDialog.visible = false
     await load()
   } catch (error) {
@@ -226,16 +228,6 @@ async function submitScrapRequest() {
 async function receivePurchaseTodo(row) {
   const purchase = await findPurchase(row.purchase_no)
   purchaseAcceptanceRef.value?.open(purchase)
-}
-
-async function approveScrapTodo(row) {
-  const confirmed = await confirmAction(`确认通过 ${row.asset_id} 的报废审批？通过后资产将正式报废。`, '报废审批')
-  if (!confirmed) return
-  await runTodoAction(row, async () => {
-    const request = await findScrapRequest(row)
-    await approveScrapRequest(request.id, '资产负责人')
-    ElMessage.success('报废审批已通过')
-  })
 }
 
 async function finishRepairTodo(row) {
@@ -265,14 +257,6 @@ async function findPurchase(purchaseNo) {
   const purchase = list.find(item => item.purchase_no === purchaseNo)
   if (!purchase) throw new Error('未找到采购单')
   return purchase
-}
-
-async function findScrapRequest(row) {
-  if (row.request_id) return { id: row.request_id }
-  const { list } = await getScrapRequests({ status: '审批中', page: 1, page_size: 500 })
-  const request = list.find(item => item.request_no === row.request_no || item.asset_id === row.asset_id)
-  if (!request) throw new Error('未找到报废申请')
-  return request
 }
 
 async function findRepair(row) {

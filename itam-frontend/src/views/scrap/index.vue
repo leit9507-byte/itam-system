@@ -2,17 +2,18 @@
   <div class="page">
     <div class="page-header">
       <div>
-        <h2 class="page-title">报废审批</h2>
-        <p class="page-subtitle">审核已提交报废审批的资产，并保留报废申请时的资产历史快照</p>
+        <h2 class="page-title">报废处置登记</h2>
+        <p class="page-subtitle">登记资产退役时间、处理手段、退役审批单号和最终处置结果</p>
       </div>
       <el-button @click="load">刷新</el-button>
     </div>
 
     <div class="metric-grid">
-      <el-card shadow="never"><el-statistic title="审批中" :value="countByStatus('审批中')" /></el-card>
-      <el-card shadow="never"><el-statistic title="已通过" :value="countByStatus('已通过')" /></el-card>
-      <el-card shadow="never"><el-statistic title="已驳回" :value="countByStatus('已驳回')" /></el-card>
+      <el-card shadow="never"><el-statistic title="待处置" :value="pendingDisposalCount" /></el-card>
       <el-card shadow="never"><el-statistic title="已处置" :value="countByStatus('已处置')" /></el-card>
+      <el-card shadow="never"><el-statistic title="员工领走" :value="countByMethod('员工领用')" /></el-card>
+      <el-card shadow="never"><el-statistic title="变卖" :value="countByMethod('变卖')" /></el-card>
+      <el-card shadow="never"><el-statistic title="残值合计" :value="totalResidual" prefix="¥" /></el-card>
     </div>
 
     <el-card shadow="never" class="filter-card">
@@ -28,9 +29,10 @@
             @change="refresh"
           />
         </el-form-item>
-        <el-form-item label="审批状态">
+        <el-form-item label="处置状态">
           <el-select v-model="filters.status" clearable placeholder="全部状态" @change="refresh">
-            <el-option label="审批中" value="审批中" />
+            <el-option label="待处置" value="待处置" />
+            <el-option label="历史审批中" value="审批中" />
             <el-option label="已通过" value="已通过" />
             <el-option label="已驳回" value="已驳回" />
             <el-option label="已处置" value="已处置" />
@@ -73,7 +75,9 @@
           </template>
         </el-table-column>
         <el-table-column prop="reason" label="报废原因" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="disposal_method" label="处置方式" width="120" />
+        <el-table-column prop="retirement_date" label="退役时间" width="120" />
+        <el-table-column prop="retirement_approval_no" label="退役审批单号" width="150" show-overflow-tooltip />
+        <el-table-column prop="disposal_method" label="处理手段" width="120" />
         <el-table-column label="报废领走人" width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.dispose_recipient_name || row.dispose_recipient_user_id || '-' }}</template>
         </el-table-column>
@@ -88,9 +92,7 @@
         <el-table-column prop="created_at" label="创建日期" width="120" />
         <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
-            <el-button type="success" link :disabled="row.status !== '审批中'" @click="approve(row)">通过</el-button>
-            <el-button type="danger" link :disabled="row.status !== '审批中'" @click="reject(row)">驳回</el-button>
-            <el-button type="primary" link :disabled="row.status !== '已通过'" @click="openDispose(row)">处置</el-button>
+            <el-button type="primary" link :disabled="row.status === '已处置' || row.status === '已驳回'" @click="openDispose(row)">登记处置</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -107,7 +109,7 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="disposeDialog.visible" title="确认报废资产处置" width="560px">
+    <el-dialog v-model="disposeDialog.visible" title="报废处置登记" width="620px">
       <el-alert
         :title="disposeDialog.row ? `${disposeDialog.row.asset_id} 将进入已处置终态` : '确认处置'"
         type="warning"
@@ -115,7 +117,13 @@
         :closable="false"
       />
       <el-form :model="disposeDialog.form" label-width="110px" class="dispose-form">
-        <el-form-item label="处置方式">
+        <el-form-item label="退役时间" required>
+          <el-date-picker v-model="disposeDialog.form.retirement_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="退役审批单号">
+          <el-input v-model="disposeDialog.form.retirement_approval_no" placeholder="填写退役/报废审批单号" />
+        </el-form-item>
+        <el-form-item label="处理手段">
           <el-radio-group v-model="disposeDialog.form.disposal_method">
             <el-radio-button label="报废" />
             <el-radio-button label="变卖" />
@@ -148,7 +156,7 @@
       </el-form>
       <template #footer>
         <el-button @click="disposeDialog.visible = false">取消</el-button>
-        <el-button type="primary" @click="dispose">确认处置</el-button>
+        <el-button type="primary" @click="dispose">确认登记</el-button>
       </template>
     </el-dialog>
   </div>
@@ -157,7 +165,7 @@
 <script setup>
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { approveScrapRequest, disposeScrapRequest, getScrapRequests, rejectScrapRequest } from '../../api/asset'
+import { disposeScrapRequest, getScrapRequests } from '../../api/asset'
 import { getUsers } from '../../api/user'
 
 const requests = ref([])
@@ -171,6 +179,8 @@ const disposeDialog = reactive({
   form: {
     final_residual_value: 0,
     disposal_method: '报废',
+    retirement_date: '',
+    retirement_approval_no: '',
     dispose_recipient_user_id: '',
     dispose_recipient_name: '',
     disposal_remark: ''
@@ -179,6 +189,7 @@ const disposeDialog = reactive({
 const SCRAP_SUMMARY_LIMIT = 500
 
 const totalResidual = computed(() => allRequests.value.reduce((sum, item) => sum + Number(item.estimated_residual_value || 0), 0))
+const pendingDisposalCount = computed(() => allRequests.value.filter(item => ['待处置', '审批中', '已通过'].includes(item.status)).length)
 const disposeRemarkPlaceholder = computed(() => {
   if (disposeDialog.form.disposal_method === '员工领用') return '例如：报废资产由员工领走，已签收确认'
   if (disposeDialog.form.disposal_method === '变卖') return '例如：变卖给回收商，交易单号 XXX'
@@ -212,6 +223,10 @@ function countByStatus(status) {
   return allRequests.value.filter(item => item.status === status).length
 }
 
+function countByMethod(method) {
+  return allRequests.value.filter(item => item.disposal_method === method && item.status === '已处置').length
+}
+
 function handlePageSizeChange() {
   pagination.page = 1
   load()
@@ -229,24 +244,12 @@ async function resetFilters() {
   await load()
 }
 
-async function approve(row) {
-  await ElMessageBox.confirm(`确认通过 ${row.asset_id} 的报废审批？通过后资产将正式报废。`, '审批确认', { type: 'warning' })
-  await approveScrapRequest(row.id, '资产负责人')
-  ElMessage.success('报废审批已通过，资产已变更为已报废')
-  await load()
-}
-
-async function reject(row) {
-  await ElMessageBox.confirm(`确认驳回 ${row.asset_id} 的报废申请？`, '驳回确认', { type: 'warning' })
-  await rejectScrapRequest(row.id, '资产负责人')
-  ElMessage.success('报废审批已驳回，资产恢复为闲置')
-  await load()
-}
-
 function openDispose(row) {
   disposeDialog.row = row
   disposeDialog.form.final_residual_value = row.estimated_residual_value || 0
   disposeDialog.form.disposal_method = normalizeDisposeMethod(row.disposal_method)
+  disposeDialog.form.retirement_date = row.retirement_date || todayText()
+  disposeDialog.form.retirement_approval_no = row.retirement_approval_no || row.request_no || ''
   disposeDialog.form.dispose_recipient_user_id = row.dispose_recipient_user_id || ''
   disposeDialog.form.dispose_recipient_name = row.dispose_recipient_name || ''
   disposeDialog.form.disposal_remark = row.disposal_remark || ''
@@ -255,12 +258,13 @@ function openDispose(row) {
 
 async function dispose() {
   if (!disposeDialog.row) return
+  if (!disposeDialog.form.retirement_date) return ElMessage.warning('请选择退役时间')
   if (disposeDialog.form.disposal_method === '员工领用' && !disposeDialog.form.dispose_recipient_user_id) {
     ElMessage.warning('请选择报废领走员工')
     return
   }
   const recipientText = disposeDialog.form.disposal_method === '员工领用' ? `，报废领走人：${disposeDialog.form.dispose_recipient_name || disposeDialog.form.dispose_recipient_user_id}` : ''
-  await ElMessageBox.confirm(`确认 ${disposeDialog.row.asset_id} 已完成实物处置？处置方式：${disposeDialog.form.disposal_method}${recipientText}。处置后资产不可再领用、维修或盘点为普通资产。`, '确认处置', { type: 'warning' })
+  await ElMessageBox.confirm(`确认登记 ${disposeDialog.row.asset_id} 的报废处置？退役时间：${disposeDialog.form.retirement_date}，处理手段：${disposeDialog.form.disposal_method}${recipientText}。登记后资产进入已处置终态。`, '确认登记', { type: 'warning' })
   await disposeScrapRequest(disposeDialog.row.id, disposeDialog.form)
   disposeDialog.visible = false
   ElMessage.success('报废资产已处置归档')
@@ -282,8 +286,13 @@ function userLabel(user) {
   return [user.display_name || user.username || user.user_id, user.dept_name || user.dept_id].filter(Boolean).join(' / ')
 }
 
+function todayText() {
+  return new Date().toISOString().slice(0, 10)
+}
+
 function statusType(status) {
   if (status === '已处置') return 'info'
+  if (status === '待处置') return 'warning'
   if (status === '已通过') return 'success'
   if (status === '已驳回') return 'danger'
   return 'warning'

@@ -14,7 +14,7 @@
         <el-menu-item v-if="canRead('asset')" index="/inventory">库存扩展</el-menu-item>
         <el-menu-item v-if="canRead('asset')" index="/stocktake">资产盘点</el-menu-item>
         <el-menu-item v-if="canRead('repair')" index="/repair">维修管理</el-menu-item>
-        <el-menu-item v-if="canRead('asset')" index="/scrap">报废审批</el-menu-item>
+        <el-menu-item v-if="canRead('asset')" index="/scrap">报废处置登记</el-menu-item>
         <el-menu-item v-if="canRead('purchase')" index="/purchase">采购管理</el-menu-item>
       </el-sub-menu>
       <el-sub-menu v-if="configGroupVisible" index="/manage-config">

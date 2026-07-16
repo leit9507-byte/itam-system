@@ -260,7 +260,7 @@ const inUseAssets = computed(() => metricValue('在用资产'))
 const stockAssets = computed(() => lifecycleValue('库存中') + lifecycleValue('在库'))
 const idleAssets = computed(() => metricValue('闲置资产'))
 const repairAssets = computed(() => metricValue('维修中资产'))
-const pendingScrapAssets = computed(() => lifecycleValue('待报废') + lifecycleValue('已提交报废审批'))
+const pendingScrapAssets = computed(() => lifecycleValue('待报废') + lifecycleValue('待处置登记'))
 const expiringAssets = computed(() => metricValue('即将过保资产'))
 const dashboardRangeText = computed(() => {
   if (!dashboardDateRange.value?.length) return '全部时间范围'
@@ -272,7 +272,7 @@ const summaryCards = computed(() => [
   card('在用资产', inUseAssets.value, '实时', 'up', 'green', CircleCheck, '实时状态'),
   card('闲置资产', idleAssets.value, '实时', 'up', 'cyan', Box, '实时状态'),
   card('维修中', repairAssets.value, '实时', 'up', 'purple', Tools, '实时状态'),
-  card('待报废', pendingScrapAssets.value, '实时', 'up', 'orange', Delete, '含审批中'),
+  card('待报废', pendingScrapAssets.value, '实时', 'up', 'orange', Delete, '含待处置登记'),
   card('即将过保', expiringAssets.value, '180天内', 'down', 'violet', Warning, '180天内')
 ])
 

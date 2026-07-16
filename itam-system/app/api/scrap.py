@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import operator_from_request, user_context_from_request
-from app.services.approval_service import ApprovalService
 from app.services.scrap_service import ScrapService
 
 
@@ -17,6 +16,8 @@ class ScrapPayload(BaseModel):
     applicant: str | None = None
     reason: str | None = None
     disposal_method: str | None = None
+    retirement_date: datetime | None = None
+    retirement_approval_no: str | None = None
     estimated_residual_value: float = 0
     operator: str = "资产管理员"
 
@@ -28,6 +29,8 @@ class ScrapApprovePayload(BaseModel):
 class ScrapDisposePayload(BaseModel):
     final_residual_value: float = 0
     disposal_method: str | None = None
+    retirement_date: datetime | None = None
+    retirement_approval_no: str | None = None
     dispose_recipient_user_id: str | None = None
     dispose_recipient_name: str | None = None
     disposal_remark: str | None = None
@@ -52,23 +55,6 @@ def list_scrap_requests(
 def create_scrap_request(asset_id: str, payload: ScrapPayload, request: Request, db: Session = Depends(get_db)):
     try:
         row = ScrapService.create_request(db, asset_id, payload.model_dump(), operator_from_request(request))
-        config = ApprovalService.match_config(db, "scrap", row.purchase_price or 0, row.dept_id)
-        if config:
-            ApprovalService.submit_feishu_approval(
-                db,
-                "scrap",
-                row.request_no,
-                row.purchase_price or 0,
-                row.dept_id,
-                form={
-                    "request_no": row.request_no,
-                    "asset_id": row.asset_id,
-                    "asset_name": row.asset_name,
-                    "reason": row.reason or "",
-                    "residual_value": row.estimated_residual_value or 0,
-                },
-                requester=operator_from_request(request),
-            )
         return row
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
