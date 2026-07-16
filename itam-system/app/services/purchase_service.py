@@ -56,7 +56,7 @@ class PurchaseService:
             supplier_name=payload.supplier_name,
             purchase_reason=payload.purchase_reason,
             total_amount=payload.total_amount,
-            status=payload.status,
+            status="pending_acceptance",
         )
         SupplierService.ensure_supplier(db, payload.supplier_name)
         db.add(purchase)
@@ -80,9 +80,21 @@ class PurchaseService:
                 )
             )
 
-        AuditLogService.record_operation(db, "purchase", "create", "system", "purchase", purchase.purchase_no, f"创建采购单 {purchase.purchase_no}", payload.model_dump())
+        AuditLogService.record_operation(db, "purchase", "create", "system", "purchase", purchase.purchase_no, f"创建采购单 {purchase.purchase_no}，进入验收", payload.model_dump())
         db.commit()
         db.refresh(purchase)
+        NotificationService.send_event(
+            db,
+            "acceptance",
+            "采购单待验收",
+            [
+                f"采购单号：{purchase.purchase_no}",
+                f"审批单号：{purchase.approval_no or '-'}",
+                f"供应商：{purchase.supplier_name or '-'}",
+                f"采购金额：￥{purchase.total_amount or 0:,.0f}",
+                "当前状态：待验收",
+            ],
+        )
         return purchase
 
     @staticmethod

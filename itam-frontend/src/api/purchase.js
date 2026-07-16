@@ -35,14 +35,10 @@ export async function createPurchase(payload) {
     supplier_name: payload.supplier_name || '',
     purchase_reason: payload.purchase_reason || '',
     total_amount: totalAmount,
-    status: payload.status || 'created',
+    status: payload.status || 'pending_acceptance',
     items
   })
   return mapBackendPurchase(row)
-}
-
-export async function approvePurchase(row) {
-  return mapBackendPurchase(await request.post(`/purchase/${encodeURIComponent(row.purchase_no)}/approve`, {}))
 }
 
 export async function acceptPurchase(purchaseNo, acceptances) {
@@ -77,7 +73,7 @@ export async function receivePurchase(purchaseNo) {
 function mapBackendPurchase(row) {
   const items = row.items || []
   const statusLabelMap = {
-    created: '审批中',
+    created: '待验收',
     approval_submitted: '已提交飞书审批',
     rejected: '已驳回',
     pending_acceptance: '待验收',
@@ -93,7 +89,7 @@ function mapBackendPurchase(row) {
     purchase_reason: row.purchase_reason || purchaseReasonSummary(items),
     total_amount: Number(row.total_amount || 0),
     status: row.status || 'created',
-    status_label: statusLabelMap[row.status] || row.status || '审批中',
+    status_label: statusLabelMap[row.status] || row.status || '待验收',
     items: items.map(item => ({
       id: item.id,
       product_name: item.name,

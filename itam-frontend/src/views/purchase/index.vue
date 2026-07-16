@@ -71,9 +71,8 @@
           <template #default="{ row }">¥{{ row.total_amount.toLocaleString() }}</template>
         </el-table-column>
         <el-table-column prop="status_label" label="状态" width="110" />
-        <el-table-column label="操作" width="190" fixed="right">
+        <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link :disabled="row.status !== 'created'" @click="approve(row)">审批通过</el-button>
             <el-button type="success" link :disabled="row.status === 'received'" @click="openReceive(row)">验收入库</el-button>
           </template>
         </el-table-column>
@@ -165,7 +164,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getCompanies } from '../../api/company'
 import { getLocations } from '../../api/location'
-import { approvePurchase, createPurchase, getPurchases } from '../../api/purchase'
+import { createPurchase, getPurchases } from '../../api/purchase'
 import { getProducts } from '../../api/product'
 import { getSuppliers } from '../../api/supplier'
 import { getUsers } from '../../api/user'
@@ -296,14 +295,8 @@ function syncHeaderDeptToLines(value) {
 async function submit() {
   await createPurchase({ ...form, total_amount: totalAmount.value })
   createDialog.value = false
-  ElMessage.success('采购单已创建')
+  ElMessage.success('采购单已创建，已进入验收入库环节')
   pagination.page = 1
-  await loadPurchases()
-}
-
-async function approve(row) {
-  await approvePurchase(row)
-  ElMessage.success('已提交飞书采购审批，审批通过后进入验收')
   await loadPurchases()
 }
 

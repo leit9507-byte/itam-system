@@ -25,7 +25,7 @@ class PurchaseCreate(BaseModel):
     supplier_name: Optional[str] = None
     purchase_reason: Optional[str] = None
     total_amount: float = Field(default=0, ge=0)
-    status: str = "created"
+    status: str = "pending_acceptance"
     items: List[PurchaseItemCreate] = Field(default_factory=list)
 
 

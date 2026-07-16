@@ -103,7 +103,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { approveScrapRequest, createScrapRequest, getScrapRequests } from '../../api/asset'
-import { approvePurchase, getPurchases } from '../../api/purchase'
+import { getPurchases } from '../../api/purchase'
 import { finishRepairRecord, getRepairRecords } from '../../api/repair'
 import { getTodoItems } from '../../api/todo'
 import TodoAssetActions from '../../components/TodoAssetActions.vue'
@@ -124,7 +124,6 @@ const scrapDialog = reactive({
 
 const typeOptions = [
   { label: '入职配置', value: 'onboarding_assign' },
-  { label: '采购审批', value: 'purchase_approval' },
   { label: '采购验收', value: 'purchase_acceptance' },
   { label: '报废审批', value: 'scrap_approval' },
   { label: '报废申请', value: 'scrap_request' },
@@ -191,7 +190,6 @@ function priorityType(priority) {
 async function handleTodo(row) {
   if (await todoAssetActionsRef.value?.handle(row)) return
   if (row.type === 'scrap_request') return openScrapDialog(row)
-  if (row.type === 'purchase_approval') return approvePurchaseTodo(row)
   if (row.type === 'purchase_acceptance') return receivePurchaseTodo(row)
   if (row.type === 'scrap_approval') return approveScrapTodo(row)
   if (row.type === 'repair_followup') return finishRepairTodo(row)
@@ -223,16 +221,6 @@ async function submitScrapRequest() {
   } finally {
     processingId.value = ''
   }
-}
-
-async function approvePurchaseTodo(row) {
-  const confirmed = await confirmAction(`确认提交采购单 ${row.purchase_no} 的飞书审批？`, '采购审批')
-  if (!confirmed) return
-  await runTodoAction(row, async () => {
-    const purchase = await findPurchase(row.purchase_no)
-    await approvePurchase(purchase)
-    ElMessage.success('已提交飞书采购审批')
-  })
 }
 
 async function receivePurchaseTodo(row) {

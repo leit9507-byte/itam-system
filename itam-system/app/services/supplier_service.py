@@ -66,7 +66,7 @@ class SupplierService:
     def purchase_devices(db: Session, supplier_name: str, page: int = 1, page_size: int = 20) -> dict:
         purchases = SupplierService.purchase_query(db, supplier_name).order_by(Purchase.id.desc()).all()
         rows = []
-        status_map = {"created": "审批中", "pending_acceptance": "待验收", "received": "已入库"}
+        status_map = {"created": "待验收", "pending_acceptance": "待验收", "received": "已入库"}
         for purchase in purchases:
             for item in purchase.items:
                 rows.append(

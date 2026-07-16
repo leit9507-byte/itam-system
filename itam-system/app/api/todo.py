@@ -83,25 +83,9 @@ def build_onboarding_todos(users: list[UserDirectory], assigned_user_ids: set[st
 def build_purchase_todos(purchases: list[Purchase]) -> list[dict]:
     rows = []
     for item in purchases:
-        if item.status not in {"created", "pending_acceptance"}:
+        if item.status != "pending_acceptance":
             continue
         quantity = sum(int(row.quantity or 0) for row in item.items)
-        if item.status == "created":
-            rows.append({
-                "id": f"purchase-approve-{item.purchase_no}",
-                "type": "purchase_approval",
-                "type_label": "采购审批",
-                "title": f"采购单 {item.purchase_no} 待审批",
-                "description": f"{item.company or '未指定公司'} / {item.supplier_name or '未指定供应商'} / {quantity} 台 / ¥{item.total_amount or 0:,.0f}",
-                "owner": next((row.dept_id for row in item.items if row.dept_id), None) or "采购负责人",
-                "priority": "high" if (item.total_amount or 0) >= 50000 else "medium",
-                "status": "待审批",
-                "created_at": item.created_at,
-                "purchase_no": item.purchase_no,
-                "target_path": "/purchase",
-                "target_query": {"todo": "purchase_approval", "purchase_no": item.purchase_no},
-            })
-            continue
         rows.append({
             "id": f"purchase-accept-{item.purchase_no}",
             "type": "purchase_acceptance",
