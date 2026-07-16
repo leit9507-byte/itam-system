@@ -1,6 +1,6 @@
 import logging
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -216,8 +216,10 @@ class IdentityService:
         return user
 
     @staticmethod
-    def authenticate(db: Session, username: str, password: str, provider: str = "local") -> dict:
+    def authenticate(db: Session, username: str, password: str, provider: str = "ldap") -> dict:
         IdentityService.ensure_seed(db)
+        if provider != "ldap":
+            raise ValueError("only LDAP login is enabled")
         if provider == "ldap":
             from app.services.sso_service import SsoService
 
@@ -227,31 +229,7 @@ class IdentityService:
             db.refresh(user)
             token = create_access_token(user.user_id, user.role)
             return {"access_token": token, "token_type": "bearer", "expires_in": get_settings().jwt_expire_minutes * 60, "user": user}
-        if provider in {"oidc", "saml"}:
-            raise ValueError(f"{provider} login must start from SSO redirect/callback")
-        settings = get_settings()
-        user = db.query(UserDirectory).filter(UserDirectory.username == username).first()
-        now = datetime.utcnow()
-        if not user:
-            raise ValueError("invalid credentials")
-        if user.status != "active":
-            raise PermissionError("user is not active")
-        if user.locked_until and user.locked_until > now:
-            raise PermissionError(f"account locked until {user.locked_until.isoformat()}")
-        if provider == "local" and not verify_password(password, user.password_hash):
-            user.failed_login_count += 1
-            if user.failed_login_count >= settings.login_lock_threshold:
-                user.locked_until = now + timedelta(minutes=settings.login_lock_minutes)
-            db.commit()
-            raise ValueError("invalid credentials")
-
-        user.failed_login_count = 0
-        user.locked_until = None
-        user.last_login_at = now
-        db.commit()
-        db.refresh(user)
-        token = create_access_token(user.user_id, user.role)
-        return {"access_token": token, "token_type": "bearer", "expires_in": settings.jwt_expire_minutes * 60, "user": user}
+        raise ValueError("only LDAP login is enabled")
 
     @staticmethod
     def list_permissions(db: Session) -> list[RolePermission]:
@@ -320,7 +298,6 @@ class IdentityService:
 
         required = {
             "ldap": ["host", "base_dn"],
-            "feishu": ["app_id", "app_secret"],
         }.get(provider.provider_type, [])
         missing = [key for key in required if not (provider.config or {}).get(key)]
         if missing:
@@ -332,15 +309,6 @@ class IdentityService:
 
                 provider.last_test_status = "success"
                 provider.last_test_message = LdapClient.test(provider.config or {})
-            except Exception as exc:
-                provider.last_test_status = "failed"
-                provider.last_test_message = str(exc)[:255]
-        elif provider.provider_type == "feishu":
-            try:
-                from app.services.sso_service import FeishuClient
-
-                provider.last_test_status = "success"
-                provider.last_test_message = FeishuClient.test(provider.config or {})
             except Exception as exc:
                 provider.last_test_status = "failed"
                 provider.last_test_message = str(exc)[:255]
@@ -363,12 +331,8 @@ class IdentityService:
             from app.services.sso_service import LdapClient
 
             payloads = LdapClient.sync_users(provider.config or {}, limit=sync_limit)
-        elif provider and provider.provider_type == "feishu":
-            from app.services.sso_service import FeishuClient
-
-            payloads = FeishuClient.sync_users(provider.config or {}, limit=sync_limit)
         else:
-            raise ValueError("No users to sync. Configure an LDAP or Feishu identity source, or submit explicit users.")
+            raise ValueError("No users to sync. Configure an LDAP identity source, or submit explicit users.")
         created = 0
         updated = 0
         offboarded = 0
@@ -380,7 +344,7 @@ class IdentityService:
             created += 1 if was_created else 0
             updated += 0 if was_created else 1
             synced.append(user)
-        if source in {"ldap", "feishu"} and len(payloads) < sync_limit:
+        if source == "ldap" and len(payloads) < sync_limit:
             active_source_users = db.query(UserDirectory).filter(UserDirectory.source == source, UserDirectory.status == "active").all()
             for user in active_source_users:
                 if user.external_id in synced_external_ids or user.username in synced_usernames:

@@ -13,8 +13,6 @@ PUBLIC_PATHS = {
     "/openapi.json",
     "/redoc",
     "/auth/login",
-    "/auth/feishu/login-free",
-    "/auth/feishu/login-free/config",
     "/auth/me/permissions",
     "/ops/database-status",
     "/ops/init-database",
@@ -78,7 +76,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
 
 def is_public_path(path: str) -> bool:
-    return path in PUBLIC_PATHS or path.startswith("/auth/sso/") or path.startswith("/auth/callback/")
+    return path in PUBLIC_PATHS
 
 
 def method_to_action(method: str) -> str:

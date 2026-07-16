@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.auth import decode_access_token
@@ -21,15 +20,9 @@ from app.schemas.user import (
 )
 from app.services.identity_service import IdentityService
 from app.services.audit_log_service import AuditLogService
-from app.services.sso_service import SsoService
 
 
 router = APIRouter(tags=["Identity"])
-
-
-class FeishuLoginFreeRequest(BaseModel):
-    code: str
-    source: str | None = None
 
 
 @router.post("/auth/login", response_model=LoginResponse)
@@ -40,36 +33,6 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=423, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
-
-
-@router.post("/auth/feishu/login-free", response_model=LoginResponse)
-def feishu_login_free(payload: FeishuLoginFreeRequest, db: Session = Depends(get_db)):
-    try:
-        return SsoService.feishu_login_by_code(db, payload.code, source=payload.source or "feishu-webapp")
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.get("/auth/feishu/login-free/config")
-def feishu_login_free_config(db: Session = Depends(get_db)):
-    from app.models.user import IdentityProviderConfig
-
-    row = (
-        db.query(IdentityProviderConfig)
-        .filter(IdentityProviderConfig.provider_type == "feishu", IdentityProviderConfig.enabled.is_(True))
-        .order_by(IdentityProviderConfig.id.desc())
-        .first()
-    )
-    config = row.config if row else {}
-    scope_list = config.get("login_scope_list") or []
-    if isinstance(scope_list, str):
-        scope_list = [item.strip() for item in scope_list.replace("\n", ",").split(",") if item.strip()]
-    return {
-        "enabled": bool(row and config.get("app_id")),
-        "app_id": config.get("app_id") if row else "",
-        "scope_list": scope_list,
-        "message": "Feishu login-free config loaded" if row else "Feishu provider is not configured",
-    }
 
 
 @router.get("/auth/me/permissions")
@@ -100,62 +63,6 @@ def current_permissions(request: Request, db: Session = Depends(get_db)):
         "role": user.role,
         "resources": resources,
         "permissions": [{"resource": row.resource, "action": row.action, "allowed": row.allowed} for row in rows],
-    }
-
-
-@router.get("/auth/sso/{provider_type}/start")
-def start_sso(provider_type: str, state: str | None = None, redirect_uri: str | None = None, db: Session = Depends(get_db)):
-    provider = db_provider_hint(provider_type, db, state, redirect_uri)
-    return {
-        "provider": provider_type,
-        "redirect_url": provider["redirect_url"],
-        "message": provider["message"],
-    }
-
-
-@router.get("/auth/callback/{provider_type}", response_model=LoginResponse)
-def sso_callback(provider_type: str, code: str | None = None, state: str | None = None, db: Session = Depends(get_db)):
-    try:
-        if provider_type == "oidc":
-            if not code:
-                raise ValueError("OIDC callback requires authorization code")
-            return SsoService.oidc_callback_login(db, code, state)
-        if provider_type == "feishu":
-            if not code:
-                raise ValueError("Feishu callback requires authorization code")
-            return SsoService.feishu_callback_login(db, code, state)
-        if provider_type == "saml":
-            raise ValueError("SAML callback requires signed assertion validation and is not enabled yet")
-        raise ValueError("unsupported provider callback")
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-def db_provider_hint(provider_type: str, db: Session, state: str | None = None, redirect_uri: str | None = None) -> dict:
-    from app.models.user import IdentityProviderConfig
-
-    row = db.query(IdentityProviderConfig).filter(IdentityProviderConfig.provider_type == provider_type, IdentityProviderConfig.enabled.is_(True)).first()
-    config = row.config if row else {}
-    if provider_type == "oidc":
-        url = SsoService.build_oidc_url(config or {})
-        return {
-            "redirect_url": url,
-            "message": "OIDC authorization URL generated from provider configuration template.",
-        }
-    if provider_type == "feishu":
-        url = SsoService.build_feishu_url(config or {}, state, redirect_uri)
-        return {
-            "redirect_url": url,
-            "message": "Feishu authorization URL generated from provider configuration.",
-        }
-    if provider_type == "saml":
-        return {
-            "redirect_url": config.get("sso_url", "https://sso.example.com/saml/login?SAMLRequest=<generated-request>"),
-            "message": "SAML SSO URL template generated. Replace metadata in identity provider config.",
-        }
-    return {
-        "redirect_url": f"http://127.0.0.1:5173/login?sso={provider_type}",
-        "message": f"{provider_type.upper()} login uses server-side bind/callback flow.",
     }
 
 

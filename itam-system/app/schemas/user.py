@@ -40,7 +40,7 @@ class UserOut(BaseModel):
 
 class IdentityProviderSave(BaseModel):
     name: str
-    provider_type: str = Field(pattern="^(ldap|feishu)$")
+    provider_type: str = Field(pattern="^ldap$")
     enabled: bool = True
     config: dict[str, Any] = Field(default_factory=dict)
 
@@ -61,7 +61,7 @@ class IdentityProviderOut(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str = ""
-    provider: str = "local"
+    provider: str = "ldap"
 
 
 class LoginResponse(BaseModel):

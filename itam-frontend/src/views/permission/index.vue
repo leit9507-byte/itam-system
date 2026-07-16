@@ -277,13 +277,12 @@
                 type="info"
                 show-icon
                 :closable="false"
-                title="按字段逐项填写即可。LDAP 用于账号登录和目录同步；飞书用于通讯录同步。"
+                title="按字段逐项填写即可。LDAP 用于账号登录和目录同步。"
               />
-              <el-form-item label="名称"><el-input v-model="providerForm.name" placeholder="例如：公司 LDAP 或 飞书通讯录" /></el-form-item>
+              <el-form-item label="名称"><el-input v-model="providerForm.name" placeholder="例如：公司 LDAP" /></el-form-item>
               <el-form-item label="类型">
                 <el-select v-model="providerForm.provider_type" style="width: 100%">
                   <el-option label="LDAP / AD" value="ldap" />
-                  <el-option label="飞书" value="feishu" />
                 </el-select>
               </el-form-item>
               <el-form-item label="启用"><el-switch v-model="providerForm.enabled" /></el-form-item>
@@ -322,76 +321,6 @@
                   show-icon
                   :closable="false"
                   title="OpenLDAP 常用 uid/cn/mail/ou；AD 常用 sAMAccountName/displayName/mail/department。登录过滤器中的 {username} 会自动替换为登录账号。"
-                />
-              </template>
-
-              <template v-else>
-                <el-card shadow="never" class="feishu-guide">
-                  <template #header>
-                    <div class="guide-header">
-                      <span>飞书应用配置指引</span>
-                      <el-link type="primary" href="https://open.feishu.cn/app" target="_blank">打开飞书开放平台</el-link>
-                    </div>
-                  </template>
-                  <el-steps :active="4" finish-status="success" align-center>
-                    <el-step title="创建企业自建应用" description="进入开发者后台，创建企业自建应用" />
-                    <el-step title="复制凭证" description="在凭证与基础信息中复制 App ID / App Secret" />
-                    <el-step title="配置登录" description="仅登录时配置 OAuth 回调地址即可" />
-                    <el-step title="发布测试" description="发布应用后回到本页保存并测试连接" />
-                  </el-steps>
-                  <div class="guide-list">
-                    <div>
-                      <strong>建议开通权限</strong>
-                      <span>仅飞书登录不需要同步组织架构；如需通讯录同步，再开通部门和用户只读权限。</span>
-                    </div>
-                    <div>
-                      <strong>网页应用免登</strong>
-                      <span>飞书工作台入口指向系统地址；客户端内会优先调用 requestAccess，低版本自动回退 requestAuthCode。</span>
-                    </div>
-                    <div>
-                      <strong>根部门 ID</strong>
-                      <span>填 0 表示从根部门同步；只同步某个部门时，填飞书部门的 open_department_id。</span>
-                    </div>
-                    <div>
-                      <strong>发布后再测试</strong>
-                      <span>飞书回调地址和权限变更需要发布应用后生效；保存配置后点击右侧“测试”确认 App Secret 可用。</span>
-                    </div>
-                  </div>
-                </el-card>
-                <el-divider content-position="left">飞书应用</el-divider>
-                <el-form-item label="App ID" required><el-input v-model="providerConfig.app_id" placeholder="cli_xxx" /></el-form-item>
-                <el-form-item label="App Secret" required><el-input v-model="providerConfig.app_secret" type="password" show-password placeholder="飞书应用凭证" /></el-form-item>
-                <el-form-item label="仅用于登录">
-                  <el-switch v-model="providerConfig.login_only" />
-                </el-form-item>
-                <el-form-item label="登录回调地址"><el-input v-model="providerConfig.redirect_uri" placeholder="https://你的域名/login" /></el-form-item>
-                <el-form-item label="免登授权范围">
-                  <el-input v-model="providerConfig.login_scope_list" type="textarea" :rows="2" placeholder="默认留空；需要以用户身份调用 OpenAPI 时再填写 scope，可逗号或换行分隔" />
-                </el-form-item>
-                <el-form-item label="根部门 ID"><el-input v-model="providerConfig.root_department_id" placeholder="0 表示从根部门同步" /></el-form-item>
-                <el-form-item label="指定部门 ID">
-                  <el-input v-model="providerConfig.department_ids" type="textarea" :rows="2" placeholder="没有根部门权限时填写，可多个，用逗号或换行分隔" />
-                </el-form-item>
-                <el-form-item label="同步子部门">
-                  <el-switch v-model="providerConfig.discover_child_departments" />
-                </el-form-item>
-                <el-form-item label="部门 ID 类型"><el-input v-model="providerConfig.department_id_type" placeholder="open_department_id" /></el-form-item>
-                <el-form-item label="用户 ID 类型"><el-input v-model="providerConfig.user_id_type" placeholder="user_id / open_id / union_id" /></el-form-item>
-                <el-form-item label="默认角色">
-                  <el-select v-model="providerConfig.default_role" style="width: 100%">
-                    <el-option label="普通用户" value="user" />
-                    <el-option label="审计员" value="auditor" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="同步用户上限"><el-input v-model="providerConfig.sync_limit" placeholder="200" /></el-form-item>
-                <el-form-item label="同步部门上限"><el-input v-model="providerConfig.department_limit" placeholder="200" /></el-form-item>
-                <el-form-item label="分页大小"><el-input v-model="providerConfig.page_size" placeholder="50" /></el-form-item>
-                <el-alert
-                  class="config-help"
-                  type="info"
-                  show-icon
-                  :closable="false"
-                  title="选择“仅用于登录”时不会同步飞书组织架构；用户首次飞书登录会自动创建为默认角色。"
                 />
               </template>
 
@@ -507,7 +436,6 @@
           <el-form :model="loginForm" label-width="100px">
             <el-form-item label="登录方式">
               <el-radio-group v-model="loginForm.provider">
-                <el-radio-button label="local">本地</el-radio-button>
                 <el-radio-button label="ldap">LDAP</el-radio-button>
               </el-radio-group>
             </el-form-item>
@@ -648,7 +576,7 @@ const pageTitle = computed(() => (isPersonnelMode.value ? '人员管理' : '权�
 const pageSubtitle = computed(() =>
   isPersonnelMode.value
     ? '独立维护本地账号、身份源同步用户、账号状态和离职回收入口'
-    : '统一管理用户权限、RBAC 角色、LDAP/飞书身份源和登录测试'
+    : '统一管理用户权限、RBAC 角色、LDAP 身份源和登录测试'
 )
 const activeTab = ref(isPersonnelMode.value ? 'users' : 'user-permissions')
 const users = ref([])
@@ -663,7 +591,7 @@ const runtimeProtocol = typeof window !== 'undefined' ? window.location.protocol
 const runtimeHost = typeof window !== 'undefined' ? window.location.host : ''
 const providerForm = reactive(defaultProviderForm())
 const providerConfig = reactive(defaultConfig())
-const loginForm = reactive({ provider: 'local', username: 'admin', password: 'admin' })
+const loginForm = reactive({ provider: 'ldap', username: '', password: '' })
 const accountDialog = reactive({ visible: false, form: defaultLocalUserForm() })
 const userPermissionDialog = reactive({ visible: false, user: null, status: 'active', saving: false })
 const permissionDraft = reactive({})
@@ -679,7 +607,7 @@ const offboardingUsers = computed(() => users.value.filter(user => isInactiveUse
 const pagedOnboardingUsers = computed(() => paginate(onboardingUsers.value, onboardingPagination))
 const pagedOffboardingUsers = computed(() => paginate(offboardingUsers.value, offboardingPagination))
 const pagedPermissions = computed(() => paginate(permissions.value, permissionPagination))
-const supportedProviders = computed(() => providers.value.filter(item => ['ldap', 'feishu'].includes(item.provider_type)))
+const supportedProviders = computed(() => providers.value.filter(item => item.provider_type === 'ldap'))
 const pagedProviders = computed(() => paginate(supportedProviders.value, providerPagination))
 const selectedPermissionUser = computed(() => users.value.find(user => user.user_id === selectedUserId.value) || null)
 const mobileConfig = computed(() => {
@@ -984,7 +912,7 @@ function formatDateTime(value) {
 
 async function removeUser(row) {
   if (row.source !== 'local') {
-    ElMessage.warning('LDAP / 飞书同步账户不能手动删除，请通过身份源同步标记离职')
+    ElMessage.warning('LDAP 同步账户不能手动删除，请通过身份源同步标记离职')
     return
   }
   if (row.username === 'admin') {
@@ -1023,22 +951,6 @@ function defaultConfig(type = 'ldap') {
       default_role: 'user',
       sync_limit: '200',
       test_username: ''
-    },
-    feishu: {
-        app_id: '',
-        app_secret: '',
-        login_only: true,
-        redirect_uri: '',
-        login_scope_list: '',
-        root_department_id: '0',
-        department_ids: '',
-        discover_child_departments: true,
-        department_id_type: 'open_department_id',
-        user_id_type: 'user_id',
-      default_role: 'user',
-      sync_limit: '200',
-      department_limit: '200',
-      page_size: '50'
     }
   }
   return { ...(samples[type] || samples.ldap) }
@@ -1063,10 +975,6 @@ async function saveProvider() {
     ElMessage.warning('请填写 LDAP 服务器地址、绑定账号和搜索根 DN')
     return
   }
-  if (providerForm.provider_type === 'feishu' && (!providerConfig.app_id || !providerConfig.app_secret)) {
-    ElMessage.warning('请填写飞书 App ID 和 App Secret')
-    return
-  }
   const payload = {
     name: providerForm.name.trim(),
     provider_type: providerForm.provider_type,
@@ -1081,7 +989,6 @@ async function saveProvider() {
 
 function setProviderConfig(config) {
   Object.keys(providerConfig).forEach(key => delete providerConfig[key])
-  if (Array.isArray(config.login_scope_list)) config.login_scope_list = config.login_scope_list.join('\n')
   Object.assign(providerConfig, config)
 }
 
@@ -1089,16 +996,14 @@ function buildProviderConfig() {
   const config = {}
   Object.entries(providerConfig).forEach(([key, value]) => {
     if (value === '' || value == null) return
-    if (['port', 'sync_limit', 'department_limit', 'page_size'].includes(key)) config[key] = Number(value)
-    else if (['discover_child_departments', 'login_only'].includes(key)) config[key] = Boolean(value)
-    else if (key === 'login_scope_list') config[key] = String(value).replace(/\n/g, ',').split(',').map(item => item.trim()).filter(Boolean)
+    if (['port', 'sync_limit'].includes(key)) config[key] = Number(value)
     else config[key] = value
   })
   return config
 }
 
 function providerTypeLabel(type) {
-  return { ldap: 'LDAP / AD', feishu: '飞书' }[type] || type
+  return { ldap: 'LDAP / AD' }[type] || type
 }
 
 async function copyText(text) {
@@ -1143,8 +1048,8 @@ async function syncFromProvider(row = null) {
     ElMessage.warning('请先配置并启用一个身份源')
     return
   }
-  if (!['ldap', 'feishu'].includes(provider.provider_type)) {
-    ElMessage.warning('当前仅 LDAP 和飞书身份源支持从目录同步用户')
+  if (provider.provider_type !== 'ldap') {
+    ElMessage.warning('当前仅 LDAP 身份源支持从目录同步用户')
     return
   }
   const result = await syncUsers({ provider_id: provider?.id })
