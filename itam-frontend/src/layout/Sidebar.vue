@@ -11,7 +11,8 @@
         <template #title><el-icon><Monitor /></el-icon><span>资产运营</span></template>
         <el-menu-item v-if="canRead('asset')" index="/asset/list">资产管理</el-menu-item>
         <el-menu-item v-if="canRead('asset')" index="/checkout">借用中心</el-menu-item>
-        <el-menu-item v-if="canRead('asset')" index="/inventory">库存扩展</el-menu-item>
+        <el-menu-item v-if="canRead('asset')" index="/inventory">配件管理</el-menu-item>
+        <el-menu-item v-if="canRead('asset')" index="/software-license">软件许可</el-menu-item>
         <el-menu-item v-if="canRead('asset')" index="/stocktake">资产盘点</el-menu-item>
         <el-menu-item v-if="canRead('repair')" index="/repair">维修管理</el-menu-item>
         <el-menu-item v-if="canRead('asset')" index="/scrap">报废处置登记</el-menu-item>

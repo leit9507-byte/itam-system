@@ -24,6 +24,7 @@ export async function getInventoryItems(params = {}) {
     params: {
       keyword: params.keyword || undefined,
       item_type: params.item_type || undefined,
+      item_types: params.item_types || undefined,
       status: params.status || undefined,
       low_stock: params.low_stock || undefined,
       expiring_days: params.expiring_days ?? undefined,

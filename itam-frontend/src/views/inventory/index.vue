@@ -2,10 +2,10 @@
   <div class="page">
     <div class="page-header">
       <div>
-        <h2 class="page-title">许可证 / 耗材 / 配件 / 组件</h2>
-        <p class="page-subtitle">统一管理非固定资产库存、授权数量、分配装配关系和库存流水</p>
+        <h2 class="page-title">{{ pageTitle }}</h2>
+        <p class="page-subtitle">{{ pageSubtitle }}</p>
       </div>
-      <el-button type="primary" @click="openCreate">新增库存对象</el-button>
+      <el-button type="primary" @click="openCreate">{{ createButtonText }}</el-button>
     </div>
 
     <section class="metric-grid inventory-metrics">
@@ -17,8 +17,8 @@
     <el-card shadow="never">
       <div class="toolbar">
         <el-input v-model="filters.keyword" clearable placeholder="搜索编码/名称/品牌/型号/供应商" style="width: 280px" @keyup.enter="refresh" @clear="refresh" />
-        <el-select v-model="filters.item_type" clearable placeholder="类型" style="width: 140px" @change="refresh">
-          <el-option v-for="item in inventoryTypes" :key="item.value" :label="item.label" :value="item.value" />
+        <el-select v-if="!isLicensePage" v-model="filters.item_type" clearable placeholder="类型" style="width: 140px" @change="refresh">
+          <el-option v-for="item in availableInventoryTypes" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
         <el-select v-model="filters.status" clearable placeholder="状态" style="width: 130px" @change="refresh">
           <el-option label="启用" value="active" />
@@ -67,10 +67,14 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="itemDialog.visible" :title="itemDialog.form.id ? '编辑库存对象' : '新增库存对象'" width="820px">
+    <el-dialog v-model="itemDialog.visible" :title="itemDialog.form.id ? `编辑${objectName}` : `新增${objectName}`" width="820px">
       <el-form :model="itemDialog.form" label-width="98px">
         <div class="form-grid">
-          <el-form-item label="类型" required><el-select v-model="itemDialog.form.item_type" style="width:100%"><el-option v-for="item in inventoryTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
+          <el-form-item label="类型" required>
+            <el-select v-model="itemDialog.form.item_type" :disabled="isLicensePage" style="width:100%">
+              <el-option v-for="item in availableInventoryTypes" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="编码" required><el-input v-model="itemDialog.form.code" /></el-form-item>
           <el-form-item label="名称" required><el-input v-model="itemDialog.form.name" /></el-form-item>
           <el-form-item label="品牌"><el-input v-model="itemDialog.form.brand" /></el-form-item>
@@ -80,8 +84,8 @@
           <el-form-item label="可用"><el-input-number v-model="itemDialog.form.available_qty" :min="0" style="width:100%" /></el-form-item>
           <el-form-item label="低库存线"><el-input-number v-model="itemDialog.form.min_qty" :min="0" style="width:100%" /></el-form-item>
           <el-form-item label="单价"><el-input-number v-model="itemDialog.form.unit_cost" :min="0" style="width:100%" /></el-form-item>
-          <el-form-item label="许可证Key"><el-input v-model="itemDialog.form.license_key" /></el-form-item>
-          <el-form-item label="到期日期"><el-date-picker v-model="itemDialog.form.expire_date" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
+          <el-form-item v-if="isLicensePage" label="许可证Key"><el-input v-model="itemDialog.form.license_key" /></el-form-item>
+          <el-form-item v-if="isLicensePage" label="到期日期"><el-date-picker v-model="itemDialog.form.expire_date" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
           <el-form-item label="供应商"><el-input v-model="itemDialog.form.supplier" /></el-form-item>
           <el-form-item label="位置">
             <el-select v-model="itemDialog.form.location" filterable clearable placeholder="选择位置" style="width: 100%">
@@ -104,7 +108,7 @@
         <el-form-item label="数量"><el-input-number v-model="operateDialog.form.quantity" :min="1" style="width:100%" /></el-form-item>
         <el-form-item label="人员"><el-input v-model="operateDialog.form.assignee_name" placeholder="分配/归还人员" /></el-form-item>
         <el-form-item label="部门"><el-input v-model="operateDialog.form.dept_id" /></el-form-item>
-        <el-form-item label="资产ID"><el-input v-model="operateDialog.form.asset_id" placeholder="组件装配/配件绑定到资产时填写" /></el-form-item>
+        <el-form-item label="资产ID"><el-input v-model="operateDialog.form.asset_id" :placeholder="isLicensePage ? '许可证绑定设备时填写' : '组件装配/配件绑定到资产时填写'" /></el-form-item>
         <el-form-item label="位置">
           <el-select v-model="operateDialog.form.location" filterable clearable placeholder="选择位置" style="width: 100%">
             <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
@@ -133,12 +137,14 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { createInventoryItem, getInventoryItems, getInventoryLedger, inventoryActions, inventoryTypes, operateInventoryItem, updateInventoryItem } from '../../api/inventory'
 import { getLocations } from '../../api/location'
 
 const loading = ref(false)
+const route = useRoute()
 const submitting = ref(false)
 const items = ref([])
 const ledgerRows = ref([])
@@ -150,16 +156,36 @@ const itemDialog = reactive({ visible: false, form: defaultItemForm() })
 const operateDialog = reactive({ visible: false, item: null, form: defaultOperateForm() })
 const ledgerDrawer = reactive({ visible: false })
 
+const isLicensePage = computed(() => route.meta.inventoryMode === 'license')
+const scopedTypes = computed(() => (isLicensePage.value ? ['license'] : ['consumable', 'accessory', 'component']))
+const availableInventoryTypes = computed(() => inventoryTypes.filter(item => scopedTypes.value.includes(item.value)))
+const pageTitle = computed(() => (isLicensePage.value ? '软件许可' : '配件管理'))
+const pageSubtitle = computed(() => (isLicensePage.value ? '管理软件授权数量、许可证Key、到期时间、分配绑定和许可流水' : '管理耗材、配件、组件的库存数量、领用归还、装配拆卸和低库存提醒'))
+const createButtonText = computed(() => (isLicensePage.value ? '新增软件许可' : '新增配件库存'))
+const objectName = computed(() => (isLicensePage.value ? '软件许可' : '库存对象'))
 const summaryCards = computed(() => [
-  { label: '库存对象', value: summary.total || 0 },
-  { label: '许可证', value: summary.license || 0 },
-  { label: '耗材', value: summary.consumable || 0 },
-  { label: '低库存', value: summary.low_stock || 0 }
+  ...(isLicensePage.value
+    ? [
+        { label: '软件许可', value: summary.license || 0 },
+        { label: '可用授权', value: summary.total_available_qty || 0 },
+        { label: '已分配', value: summary.assigned_qty || 0 },
+        { label: '即将到期', value: summary.expiring || 0 }
+      ]
+    : [
+        { label: '库存对象', value: summary.total || 0 },
+        { label: '耗材', value: summary.consumable || 0 },
+        { label: '配件', value: summary.accessory || 0 },
+        { label: '低库存', value: summary.low_stock || 0 }
+      ])
 ])
 const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
 
 onMounted(async () => {
   await Promise.all([loadItems(), loadLocations()])
+})
+
+watch(() => route.path, () => {
+  resetFilters()
 })
 
 async function loadLocations() {
@@ -169,7 +195,7 @@ async function loadLocations() {
 async function loadItems() {
   loading.value = true
   try {
-    const result = await getInventoryItems({ ...filters, page: pagination.page, pageSize: pagination.pageSize })
+    const result = await getInventoryItems({ ...buildInventoryQuery(), page: pagination.page, pageSize: pagination.pageSize })
     items.value = result.list
     pagination.total = result.total
     Object.assign(summary, result.summary || {})
@@ -236,7 +262,17 @@ async function openLedger(row) {
 }
 
 function defaultItemForm() {
-  return { item_type: 'consumable', code: '', name: '', brand: '', model: '', spec: '', total_qty: 0, available_qty: 0, min_qty: 0, unit_cost: 0, license_key: '', expire_date: '', supplier: '', location: '', status: 'active', remark: '' }
+  return { item_type: isLicensePage.value ? 'license' : 'accessory', code: '', name: '', brand: '', model: '', spec: '', total_qty: 0, available_qty: 0, min_qty: 0, unit_cost: 0, license_key: '', expire_date: '', supplier: '', location: '', status: 'active', remark: '' }
+}
+
+function buildInventoryQuery() {
+  const query = { ...filters }
+  if (isLicensePage.value) {
+    query.item_type = 'license'
+    return query
+  }
+  if (!query.item_type) query.item_types = scopedTypes.value.join(',')
+  return query
 }
 
 function defaultOperateForm() {

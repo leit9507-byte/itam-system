@@ -21,6 +21,7 @@ def list_items(
     page_size: int = 20,
     keyword: str | None = None,
     item_type: str | None = None,
+    item_types: str | None = None,
     status: str | None = None,
     low_stock: bool = False,
     expiring_days: int | None = None,
@@ -31,7 +32,14 @@ def list_items(
         pattern = f"%{keyword.strip()}%"
         query = query.filter(or_(InventoryItem.code.like(pattern), InventoryItem.name.like(pattern), InventoryItem.brand.like(pattern), InventoryItem.model.like(pattern), InventoryItem.supplier.like(pattern)))
     if item_type:
+        validate_type(item_type)
         query = query.filter(InventoryItem.item_type == item_type)
+    elif item_types:
+        type_values = [value.strip() for value in item_types.split(",") if value.strip()]
+        for value in type_values:
+            validate_type(value)
+        if type_values:
+            query = query.filter(InventoryItem.item_type.in_(type_values))
     if status:
         query = query.filter(InventoryItem.status == status)
     if low_stock:
@@ -44,7 +52,7 @@ def list_items(
     page = max(page, 1)
     page_size = min(max(page_size or 20, 1), 200)
     rows = query.order_by(InventoryItem.updated_at.desc(), InventoryItem.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    summary = build_summary(db)
+    summary = build_summary(db, item_type=item_type, item_types=item_types)
     return {"list": rows, "total": total, "page": page, "page_size": page_size, "summary": summary}
 
 
@@ -132,8 +140,18 @@ def add_ledger(db: Session, item: InventoryItem, payload: InventoryLedgerCreate,
     db.add(InventoryLedger(item_id=item.id, operator=operator, **payload.model_dump()))
 
 
-def build_summary(db: Session) -> dict:
-    rows = db.query(InventoryItem).all()
+def build_summary(db: Session, item_type: str | None = None, item_types: str | None = None) -> dict:
+    from datetime import datetime, timedelta
+
+    query = db.query(InventoryItem)
+    if item_type:
+        query = query.filter(InventoryItem.item_type == item_type)
+    elif item_types:
+        type_values = [value.strip() for value in item_types.split(",") if value.strip()]
+        if type_values:
+            query = query.filter(InventoryItem.item_type.in_(type_values))
+    rows = query.all()
+    expiring_deadline = datetime.utcnow() + timedelta(days=90)
     return {
         "total": len(rows),
         "license": sum(1 for item in rows if item.item_type == "license"),
@@ -142,4 +160,6 @@ def build_summary(db: Session) -> dict:
         "component": sum(1 for item in rows if item.item_type == "component"),
         "low_stock": sum(1 for item in rows if item.available_qty <= item.min_qty),
         "assigned_qty": sum(item.assigned_qty or 0 for item in rows),
+        "total_available_qty": sum(item.available_qty or 0 for item in rows),
+        "expiring": sum(1 for item in rows if item.expire_date and item.expire_date <= expiring_deadline),
     }
