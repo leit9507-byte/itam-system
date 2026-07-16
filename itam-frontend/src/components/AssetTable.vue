@@ -1,7 +1,7 @@
 <template>
   <el-table :data="assets" border stripe>
-    <el-table-column prop="display_id" label="资产ID" width="90" />
-    <el-table-column prop="asset_id" label="资产编号" width="130" />
+    <el-table-column prop="display_id" label="ID" width="90" />
+    <el-table-column prop="asset_id" label="资产编码" width="150" />
     <el-table-column label="产品信息" min-width="240">
       <template #default="{ row }">
         <div class="asset-name">
