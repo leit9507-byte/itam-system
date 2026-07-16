@@ -125,6 +125,17 @@ def default_rules() -> list[dict]:
             "description": "库存中或闲置资产超过指定天数后命中。",
         },
         {
+            "rule_code": "ASSET_RETIREMENT_OVERDUE",
+            "name": "超期服役审计",
+            "severity": "medium",
+            "enabled": True,
+            "scope_category": "",
+            "threshold_value": None,
+            "threshold_days": 0,
+            "audit_scope": "asset",
+            "description": "资产仍在使用、借出、出库或维修中，且已超过采购日期加退役年限后的预计退役日时命中。",
+        },
+        {
             "rule_code": "DEVICE_FAULT_AUDIT",
             "name": "设备故障审计",
             "severity": "medium",

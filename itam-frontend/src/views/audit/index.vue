@@ -264,7 +264,7 @@
         </el-table-column>
         <el-table-column label="天数阈值" width="130">
           <template #default="{ row }">
-            <el-input-number v-if="usesDayThreshold(row.rule_code)" v-model="row.threshold_days" :min="1" :precision="0" size="small" controls-position="right" class="rule-number" />
+            <el-input-number v-if="usesDayThreshold(row.rule_code)" v-model="row.threshold_days" :min="dayThresholdMin(row.rule_code)" :precision="0" size="small" controls-position="right" class="rule-number" />
             <span v-else class="muted">不适用</span>
           </template>
         </el-table-column>
@@ -368,7 +368,9 @@ const builtinRuleCodes = new Set([
   'BORROWED_ASSET_NOT_RETURNED',
   'SINGLE_OWNER_VALUE_LIMIT',
   'HIGH_VALUE_PURCHASE',
-  'ASSET_IDLE_OVER_90_DAYS'
+  'ASSET_IDLE_OVER_90_DAYS',
+  'ASSET_RETIREMENT_OVERDUE',
+  'DEVICE_FAULT_AUDIT'
 ])
 const rulePagination = reactive({ page: 1, pageSize: 10 })
 const resultPagination = reactive({ page: 1, pageSize: 10 })
@@ -576,7 +578,11 @@ function usesValueThreshold(ruleCode) {
 }
 
 function usesDayThreshold(ruleCode) {
-  return ['ASSET_IDLE_OVER_90_DAYS', 'BORROWED_ASSET_NOT_RETURNED'].includes(ruleCode)
+  return ['ASSET_IDLE_OVER_90_DAYS', 'ASSET_RETIREMENT_OVERDUE', 'BORROWED_ASSET_NOT_RETURNED', 'DEVICE_FAULT_AUDIT'].includes(ruleCode)
+}
+
+function dayThresholdMin(ruleCode) {
+  return ruleCode === 'ASSET_RETIREMENT_OVERDUE' ? 0 : 1
 }
 
 function ruleThreshold(row) {

@@ -10,6 +10,7 @@ export const ruleLabels = {
   SINGLE_OWNER_VALUE_LIMIT: '资产价值超标',
   HIGH_VALUE_PURCHASE: '超价值采购',
   ASSET_IDLE_OVER_90_DAYS: '长期闲置',
+  ASSET_RETIREMENT_OVERDUE: '超期服役审计',
   DEVICE_FAULT_AUDIT: '设备故障审计'
 }
 
@@ -186,11 +187,14 @@ function buildAssetRisks(assets, purchases, violations, rules) {
   const highValue = Number(highValueRule?.threshold_value || 50000)
   const highValueAssets = assets.filter(item => Number(item.price || 0) >= highValue)
   const idleAssets = assets.filter(item => ['idle', 'in_stock'].includes(item.status))
+  const retirementOverdueAssetIds = new Set(violations.filter(item => item.rule === 'ASSET_RETIREMENT_OVERDUE').map(item => item.asset_id))
+  const retirementOverdueAssets = retirementOverdueAssetIds.size ? assets.filter(item => retirementOverdueAssetIds.has(item.asset_id)) : assets.filter(isActiveRetirementOverdue)
   const faultyAssetIds = new Set(violations.filter(item => item.rule === 'DEVICE_FAULT_AUDIT').map(item => item.asset_id))
   const faultyAssets = assets.filter(item => faultyAssetIds.has(item.asset_id) || item.status === 'repair')
   return [
     riskCard('HIGH_VALUE_PURCHASE', '超价值采购', 'asset', violations, highValueAssets, rules, '复核采购审批、供应商和预算依据'),
     riskCard('ASSET_IDLE_OVER_90_DAYS', '长期闲置', 'asset', violations, idleAssets, rules, '优先调拨复用，无法复用则进入处置流程'),
+    riskCard('ASSET_RETIREMENT_OVERDUE', '超期服役审计', 'asset', violations, retirementOverdueAssets, rules, '评估性能、安全和维修成本，安排替换、延寿审批或报废处置'),
     riskCard('DEVICE_FAULT_AUDIT', '设备故障审计', 'asset', violations, faultyAssets, rules, '复核重复故障、未修好和在保送修设备，必要时进入报废或换新流程')
   ]
 }
@@ -240,6 +244,7 @@ function buildSuggestions(risks, violations, backendSuggestions) {
   addWhen('BORROWED_ASSET_NOT_RETURNED', '借用未回收建议记录预计归还日期，并对超期借用自动提醒。')
   addWhen('HIGH_VALUE_PURCHASE', '超价值采购建议复核采购审批单、供应商和合同预算。')
   addWhen('ASSET_IDLE_OVER_90_DAYS', '长期闲置资产建议优先调拨复用，降低重复采购。')
+  addWhen('ASSET_RETIREMENT_OVERDUE', '超期服役资产建议评估继续使用风险，形成延寿审批、换新计划或报废处置台账。')
   addWhen('DEVICE_FAULT_AUDIT', '设备故障审计建议重点跟进重复维修、未修好和在保送修设备，评估报废、换新或供应商质保。')
 
   if (!suggestions.length) suggestions.push('当前正式数据未发现高优先级风险，建议保持月度盘点和季度审计节奏。')
@@ -308,6 +313,12 @@ function countRule(violations, rule) {
 
 function countStatus(assets, status) {
   return assets.filter(item => item.status === status).length
+}
+
+function isActiveRetirementOverdue(asset) {
+  if (!['in_use', 'borrowed', 'out_stock', 'repair'].includes(asset.status)) return false
+  if (!asset.retirement_date) return false
+  return new Date(asset.retirement_date) < new Date()
 }
 
 function sumValue(list) {

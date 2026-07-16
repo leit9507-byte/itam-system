@@ -31,6 +31,7 @@ class RuleEngine:
         violations.extend(self._single_owner_value_limit(assets, rules["SINGLE_OWNER_VALUE_LIMIT"]))
         violations.extend(self._high_value_purchase(assets, rules["HIGH_VALUE_PURCHASE"]))
         violations.extend(self._idle_assets_over_threshold(assets, rules["ASSET_IDLE_OVER_90_DAYS"]))
+        violations.extend(self._asset_retirement_overdue(assets, rules["ASSET_RETIREMENT_OVERDUE"]))
         violations.extend(self._device_fault_audit(assets, rules["DEVICE_FAULT_AUDIT"]))
         return violations
 
@@ -88,6 +89,15 @@ class RuleEngine:
                 "scope_category": "",
                 "threshold_value": None,
                 "threshold_days": self.settings.idle_days_threshold,
+                "audit_scope": "asset",
+            },
+            "ASSET_RETIREMENT_OVERDUE": {
+                "name": "超期服役审计",
+                "severity": "medium",
+                "enabled": True,
+                "scope_category": "",
+                "threshold_value": None,
+                "threshold_days": 0,
                 "audit_scope": "asset",
             },
             "DEVICE_FAULT_AUDIT": {
@@ -148,6 +158,21 @@ class RuleEngine:
         )
         return last_event.timestamp if last_event else asset.created_at
 
+    def _retirement_due_date(self, asset: Asset) -> datetime | None:
+        if not asset.purchase_date:
+            return None
+        config = asset.config or {}
+        try:
+            years = int(config.get("retirement_years") or 0)
+        except (TypeError, ValueError):
+            return None
+        if years <= 0:
+            return None
+        try:
+            return asset.purchase_date.replace(year=asset.purchase_date.year + years)
+        except ValueError:
+            return asset.purchase_date.replace(month=2, day=28, year=asset.purchase_date.year + years)
+
     def _user_asset_count_limit(self, assets: list[Asset], rule: dict, rule_code: str) -> list[dict]:
         if not rule.get("enabled"):
             return []
@@ -207,6 +232,28 @@ class RuleEngine:
             if risky_rows:
                 message = f"{message}；存在未修好或在保送修记录，建议复核是否报废、换新或供应商质保处理"
             violations.append(self._violation(asset, "DEVICE_FAULT_AUDIT", rule, message))
+        return violations
+
+    def _asset_retirement_overdue(self, assets: list[Asset], rule: dict) -> list[dict]:
+        if not rule.get("enabled"):
+            return []
+        grace_days = int(rule.get("threshold_days") or 0)
+        active_statuses = {"in_use", "borrowed", "out_stock", "repair"}
+        today = datetime.utcnow()
+        violations = []
+        for asset in self._category_assets(assets, rule.get("scope_category")):
+            if asset.status not in active_statuses:
+                continue
+            due_date = self._retirement_due_date(asset)
+            if not due_date:
+                continue
+            overdue_days = (today.date() - due_date.date()).days
+            if overdue_days <= grace_days:
+                continue
+            years = int((asset.config or {}).get("retirement_years") or 0)
+            owner = asset.owner_user_id or asset.location or "未分配"
+            message = f"预计服役 {years} 年，退役日期 {due_date.date().isoformat()}，已超期 {overdue_days} 天；当前状态 {asset.status}，责任/位置：{owner}"
+            violations.append(self._violation(asset, "ASSET_RETIREMENT_OVERDUE", rule, message))
         return violations
 
     def _offboarding_assets_not_returned(self, assets: list[Asset], rule: dict) -> list[dict]:
