@@ -38,6 +38,7 @@
         <el-button :disabled="!selected.length" @click="openBatch('inbound')">批量入库</el-button>
         <el-button :disabled="!selected.length" @click="openBatch('outbound')">批量出库</el-button>
         <el-button type="danger" :disabled="!selected.length" @click="openBatch('scrap')">批量申请报废</el-button>
+        <el-button @click="columnDialog.visible = true">字段顺序</el-button>
       </div>
     </el-card>
 
@@ -54,42 +55,37 @@
       <el-alert v-if="selected.length" :title="`已选择 ${selected.length} 个资产`" type="info" show-icon :closable="false" class="selection-alert" />
       <el-table :data="assets" border stripe @selection-change="selected = $event">
         <el-table-column type="selection" width="48" />
-        <el-table-column prop="display_id" label="ID" width="90" />
-        <el-table-column prop="asset_id" label="资产编码" width="150" />
-        <el-table-column prop="company" label="公司" width="140" show-overflow-tooltip />
-        <el-table-column label="产品信息" min-width="240">
-          <template #default="{ row }">
-            <div class="asset-name">
-              <strong>{{ row.name }}</strong>
-              <span>{{ row.brand || '-' }} / {{ row.model || '-' }} / {{ row.spec || '-' }}</span>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="sn" label="序列号" width="150" />
-        <el-table-column prop="category" label="类型" width="110" />
-        <el-table-column prop="purchase_supplier_name" label="供应商" width="150" show-overflow-tooltip />
-        <el-table-column prop="remark" label="备注" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="purchase_date" label="采购时间" width="120" />
-        <el-table-column prop="retirement_years" label="退役年限" width="100">
-          <template #default="{ row }">{{ row.retirement_years ? `${row.retirement_years} 年` : '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="retirement_date" label="预计退役时间" width="130">
-          <template #default="{ row }">{{ row.retirement_date || '-' }}</template>
-        </el-table-column>
-        <el-table-column label="使用人" width="150">
-          <template #default="{ row }">{{ displayUser(row) }}</template>
-        </el-table-column>
-        <el-table-column label="部门" width="140">
-          <template #default="{ row }">{{ displayDept(row) }}</template>
-        </el-table-column>
-        <el-table-column prop="status" label="状态" width="110">
-          <template #default="{ row }">
-            <el-tag :type="statusMap[row.status]?.type || 'info'">{{ statusMap[row.status]?.label || row.status }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="price" label="价值" width="120">
-          <template #default="{ row }">¥{{ Number(row.price || 0).toLocaleString() }}</template>
-        </el-table-column>
+        <template v-for="column in orderedAssetColumns" :key="column.key">
+          <el-table-column v-if="column.key === 'product'" label="产品信息" min-width="240">
+            <template #default="{ row }">
+              <div class="asset-name">
+                <strong>{{ row.name }}</strong>
+                <span>{{ row.brand || '-' }} / {{ row.model || '-' }} / {{ row.spec || '-' }}</span>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column v-else-if="column.key === 'retirement_years'" prop="retirement_years" label="退役年限" width="100">
+            <template #default="{ row }">{{ row.retirement_years ? `${row.retirement_years} 年` : '-' }}</template>
+          </el-table-column>
+          <el-table-column v-else-if="column.key === 'retirement_date'" prop="retirement_date" label="预计退役时间" width="130">
+            <template #default="{ row }">{{ row.retirement_date || '-' }}</template>
+          </el-table-column>
+          <el-table-column v-else-if="column.key === 'owner'" label="使用人" width="150">
+            <template #default="{ row }">{{ displayUser(row) }}</template>
+          </el-table-column>
+          <el-table-column v-else-if="column.key === 'dept'" label="部门" width="140">
+            <template #default="{ row }">{{ displayDept(row) }}</template>
+          </el-table-column>
+          <el-table-column v-else-if="column.key === 'status'" prop="status" label="状态" width="110">
+            <template #default="{ row }">
+              <el-tag :type="statusMap[row.status]?.type || 'info'">{{ statusMap[row.status]?.label || row.status }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column v-else-if="column.key === 'price'" prop="price" label="价值" width="120">
+            <template #default="{ row }">¥{{ Number(row.price || 0).toLocaleString() }}</template>
+          </el-table-column>
+          <el-table-column v-else :prop="column.prop" :label="column.label" :width="column.width" :min-width="column.minWidth" :show-overflow-tooltip="column.tooltip" />
+        </template>
         <el-table-column label="操作" width="270" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="goDetail(row)">详细</el-button>
@@ -140,6 +136,23 @@
       <template #footer>
         <el-button @click="editDialog.visible = false">取消</el-button>
         <el-button type="primary" @click="submitEdit">保存调整</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="columnDialog.visible" title="资产列表字段顺序" width="520px">
+      <el-alert title="调整后仅影响当前浏览器；选择列和操作列固定显示。" type="info" show-icon :closable="false" class="dialog-alert" />
+      <div class="column-order-list">
+        <div v-for="(column, index) in orderedAssetColumns" :key="column.key" class="column-order-row">
+          <span>{{ index + 1 }}. {{ column.label }}</span>
+          <div>
+            <el-button size="small" :disabled="index === 0" @click="moveColumn(index, -1)">上移</el-button>
+            <el-button size="small" :disabled="index === orderedAssetColumns.length - 1" @click="moveColumn(index, 1)">下移</el-button>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="resetColumnOrder">恢复默认</el-button>
+        <el-button type="primary" @click="columnDialog.visible = false">完成</el-button>
       </template>
     </el-dialog>
 
@@ -397,9 +410,29 @@ const batchEdit = reactive({ visible: false, form: defaultBatchEditForm(), field
 const importDialog = reactive({ visible: false, loading: false, importing: false, content: '', preview: null, result: null })
 const editDialog = reactive({ visible: false, form: {} })
 const repairDialog = reactive({ visible: false, asset: null, assets: [], form: defaultRepairForm() })
+const columnDialog = reactive({ visible: false })
 const workflowHint = ref('')
 const assignedStatuses = ['in_use', 'borrowed']
 const unassignedStatuses = ['pending_purchase', 'pending_acceptance', 'in_stock', 'idle', 'ready_scrap']
+const ASSET_COLUMN_ORDER_KEY = 'itam_asset_list_column_order'
+const assetColumnDefs = [
+  { key: 'display_id', prop: 'display_id', label: 'ID', width: 90 },
+  { key: 'asset_id', prop: 'asset_id', label: '资产编码', width: 150 },
+  { key: 'company', prop: 'company', label: '公司', width: 140, tooltip: true },
+  { key: 'product', label: '产品信息' },
+  { key: 'sn', prop: 'sn', label: '序列号', width: 150 },
+  { key: 'category', prop: 'category', label: '类型', width: 110 },
+  { key: 'purchase_supplier_name', prop: 'purchase_supplier_name', label: '供应商', width: 150, tooltip: true },
+  { key: 'remark', prop: 'remark', label: '备注', minWidth: 160, tooltip: true },
+  { key: 'purchase_date', prop: 'purchase_date', label: '采购时间', width: 120 },
+  { key: 'retirement_years', label: '退役年限' },
+  { key: 'retirement_date', label: '预计退役时间' },
+  { key: 'owner', label: '使用人' },
+  { key: 'dept', label: '部门' },
+  { key: 'status', label: '状态' },
+  { key: 'price', label: '价值' }
+]
+const columnOrder = ref(loadColumnOrder())
 const outboundTargetOptions = [
   { label: '人员', value: 'user' },
   { label: '地址', value: 'location' }
@@ -411,6 +444,10 @@ const activeLocations = computed(() => locations.value.filter(item => item.statu
 const activeFaultTypes = computed(() => faultTypes.value.filter(item => item.enabled !== '停用'))
 const batchEditSelectedCount = computed(() => Object.values(batchEdit.fields).filter(Boolean).length)
 const canConfirmImport = computed(() => importDialog.preview?.valid > 0 && !importDialog.preview.errors.length)
+const orderedAssetColumns = computed(() => {
+  const map = Object.fromEntries(assetColumnDefs.map(item => [item.key, item]))
+  return columnOrder.value.map(key => map[key]).filter(Boolean)
+})
 
 onMounted(async () => {
   applyWorkflowQuery()
@@ -432,6 +469,36 @@ function refreshAssets() {
 function handleAssetPageSizeChange() {
   pagination.page = 1
   loadAssets()
+}
+
+function loadColumnOrder() {
+  const defaults = assetColumnDefs.map(item => item.key)
+  try {
+    const saved = JSON.parse(localStorage.getItem(ASSET_COLUMN_ORDER_KEY) || '[]')
+    const valid = Array.isArray(saved) ? saved.filter(key => defaults.includes(key)) : []
+    return [...valid, ...defaults.filter(key => !valid.includes(key))]
+  } catch {
+    return defaults
+  }
+}
+
+function saveColumnOrder() {
+  localStorage.setItem(ASSET_COLUMN_ORDER_KEY, JSON.stringify(columnOrder.value))
+}
+
+function moveColumn(index, direction) {
+  const nextIndex = index + direction
+  if (nextIndex < 0 || nextIndex >= columnOrder.value.length) return
+  const next = [...columnOrder.value]
+  const [item] = next.splice(index, 1)
+  next.splice(nextIndex, 0, item)
+  columnOrder.value = next
+  saveColumnOrder()
+}
+
+function resetColumnOrder() {
+  columnOrder.value = assetColumnDefs.map(item => item.key)
+  saveColumnOrder()
 }
 
 async function loadUsers() {
@@ -1131,6 +1198,28 @@ function resolveDatePicker() { return resolveComponent('ElDatePicker') }
 .repair-asset,
 .dialog-alert {
   margin-bottom: 16px;
+}
+
+.column-order-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.column-order-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e5edf7;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.column-order-row span {
+  font-weight: 600;
+  color: var(--text);
 }
 
 .upload-row,
