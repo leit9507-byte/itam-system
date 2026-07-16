@@ -31,7 +31,6 @@ const routes = [
       { path: 'lifecycle', name: 'Lifecycle', component: () => import('../views/lifecycle/index.vue'), meta: { title: '生命周期' } },
       { path: 'scrap', name: 'ScrapDisposal', component: () => import('../views/scrap/index.vue'), meta: { title: '报废处置登记' } },
       { path: 'report', name: 'Report', component: () => import('../views/report/index.vue'), meta: { title: '报告中心' } },
-      { path: 'approval', name: 'ApprovalConfig', component: () => import('../views/approval/index.vue'), meta: { title: '飞书审批对接' } },
       { path: 'permission', name: 'Permission', component: () => import('../views/permission/index.vue'), props: { mode: 'permission' }, meta: { title: '权限管理' } },
       { path: 'personnel', name: 'Personnel', component: () => import('../views/permission/index.vue'), props: { mode: 'personnel' }, meta: { title: '人员管理' } },
       { path: 'notification', name: 'Notification', component: () => import('../views/notification/index.vue'), meta: { title: '消息通知' } },

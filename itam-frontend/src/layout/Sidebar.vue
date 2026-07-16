@@ -30,7 +30,6 @@
       <el-sub-menu v-if="systemGroupVisible" index="/system">
         <template #title><el-icon><Tools /></el-icon><span>系统设置</span></template>
         <el-menu-item v-if="canRead('rbac')" index="/permission">权限管理</el-menu-item>
-        <el-menu-item v-if="canRead('rbac')" index="/approval">飞书审批对接</el-menu-item>
         <el-menu-item v-if="canRead('identity')" index="/personnel">人员管理</el-menu-item>
         <el-menu-item v-if="canRead('identity')" index="/notification">消息通知</el-menu-item>
         <el-menu-item v-if="canRead('ops')" index="/ops">运维面板</el-menu-item>

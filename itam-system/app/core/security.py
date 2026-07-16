@@ -16,7 +16,6 @@ PUBLIC_PATHS = {
     "/auth/feishu/login-free",
     "/auth/feishu/login-free/config",
     "/auth/me/permissions",
-    "/approval/feishu/callback",
     "/ops/database-status",
     "/ops/init-database",
 }
@@ -42,7 +41,6 @@ RESOURCE_PREFIXES = {
     "/files": "file",
     "/reports": "report",
     "/todo": "asset",
-    "/approval": "rbac",
     "/ops": "ops",
 }
 
