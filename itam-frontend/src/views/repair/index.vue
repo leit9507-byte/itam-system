@@ -52,6 +52,11 @@
               <el-option label="未修好" value="未修好" />
               <el-option label="在保送修" value="在保送修" />
             </el-select>
+            <el-select v-model="filters.sortMode" placeholder="排序" style="width: 170px" @change="refresh">
+              <el-option label="最新维修单" value="latest" />
+              <el-option label="故障设备数量降序" value="fault_count_desc" />
+              <el-option label="故障设备数量升序" value="fault_count_asc" />
+            </el-select>
           </div>
         </div>
       </template>
@@ -63,6 +68,11 @@
         <el-table-column prop="repair_time" label="维修时间" width="120" />
         <el-table-column prop="repair_type" label="维修类型" width="110" />
         <el-table-column prop="fault_reason" label="故障原因" min-width="220" />
+        <el-table-column prop="fault_device_count" label="故障次数" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.fault_device_count > 1 ? 'warning' : 'info'" effect="light">{{ row.fault_device_count }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="repair_cost" label="维修费用" width="120">
           <template #default="{ row }">¥{{ Number(row.repair_cost || 0).toLocaleString() }}</template>
         </el-table-column>
@@ -163,7 +173,7 @@ const trendRef = ref(null)
 const faultRef = ref(null)
 const charts = []
 const faultTypes = ref([])
-const filters = reactive({ keyword: '', status: '', dateRange: defaultDateRange() })
+const filters = reactive({ keyword: '', status: '', dateRange: defaultDateRange(), sortMode: 'latest' })
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const dashboard = reactive({ total: 0, inProgress: 0, completed: 0, totalCost: 0, avgCost: 0, topFaults: [], costTrend: [] })
 const faultTypeDialog = reactive({ visible: false, form: defaultFaultTypeForm() })
@@ -173,13 +183,19 @@ onMounted(load)
 onUnmounted(() => charts.forEach(chart => chart.dispose()))
 
 async function load() {
-  const result = await getRepairRecords({ ...filters, page: pagination.page, page_size: pagination.pageSize })
+  const result = await getRepairRecords({ ...filters, ...repairSortParams(), page: pagination.page, page_size: pagination.pageSize })
   records.value = result.list
   pagination.total = result.total
   Object.assign(dashboard, await getRepairDashboard(filters))
   faultTypes.value = await getRepairFaultTypes()
   await nextTick()
   renderCharts()
+}
+
+function repairSortParams() {
+  if (filters.sortMode === 'fault_count_desc') return { sort_by: 'fault_device_count', sort_order: 'desc' }
+  if (filters.sortMode === 'fault_count_asc') return { sort_by: 'fault_device_count', sort_order: 'asc' }
+  return {}
 }
 
 function handlePageSizeChange() {

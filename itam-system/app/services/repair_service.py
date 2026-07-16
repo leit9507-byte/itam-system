@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import or_
+from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.security import can_view_all_data, is_department_manager, scoped_dept_id, scoped_user_identities
@@ -65,6 +65,8 @@ class RepairService:
         status: str | None = None,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
+        sort_by: str | None = None,
+        sort_order: str | None = None,
         user_context: dict | None = None,
     ) -> dict:
         query = db.query(RepairRecord).outerjoin(Asset, Asset.asset_id == RepairRecord.asset_id)
@@ -89,13 +91,26 @@ class RepairService:
                 )
             )
         total = query.count()
-        query = query.order_by(RepairRecord.id.desc())
+        count_subquery = query.with_entities(
+            RepairRecord.asset_id.label("asset_id"),
+            func.count(RepairRecord.id).label("fault_device_count"),
+        ).group_by(RepairRecord.asset_id).subquery()
+        if sort_by == "fault_device_count":
+            count_column = count_subquery.c.fault_device_count
+            query = query.join(count_subquery, count_subquery.c.asset_id == RepairRecord.asset_id)
+            query = query.order_by(count_column.asc() if sort_order == "asc" else desc(count_column), RepairRecord.id.desc())
+        else:
+            query = query.order_by(RepairRecord.id.desc())
         if page_size and page_size > 0:
             query = query.offset((max(page, 1) - 1) * page_size).limit(page_size)
         rows = query.all()
         asset_ids = [row.asset_id for row in rows]
         assets = {asset.asset_id: asset for asset in db.query(Asset).filter(Asset.asset_id.in_(asset_ids)).all()} if asset_ids else {}
-        return {"list": [RepairService.to_dict(row, assets.get(row.asset_id)) for row in rows], "total": total, "page": max(page, 1), "page_size": page_size or total}
+        repair_counts = {
+            row.asset_id: int(row.fault_device_count or 0)
+            for row in db.query(count_subquery).filter(count_subquery.c.asset_id.in_(asset_ids)).all()
+        } if asset_ids else {}
+        return {"list": [RepairService.to_dict(row, assets.get(row.asset_id), repair_counts.get(row.asset_id, 1)) for row in rows], "total": total, "page": max(page, 1), "page_size": page_size or total}
 
     @staticmethod
     def apply_data_scope(query, user_context: dict | None):
@@ -260,7 +275,7 @@ class RepairService:
         return f"RP-{year}-{count:04d}"
 
     @staticmethod
-    def to_dict(record: RepairRecord, asset: Asset | None = None) -> dict:
+    def to_dict(record: RepairRecord, asset: Asset | None = None, fault_device_count: int = 1) -> dict:
         return {
             "id": record.id,
             "repair_no": record.repair_no,
@@ -273,6 +288,7 @@ class RepairService:
             "operator": record.operator,
             "status": record.status,
             "repair_result": record.repair_result,
+            "fault_device_count": fault_device_count,
             "finish_time": record.finish_time,
             "remark": record.remark,
             "created_at": record.created_at,

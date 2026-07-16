@@ -45,6 +45,8 @@ export async function getRepairRecords(filters = {}) {
       status: filters.status || undefined,
       start_date: filters.dateRange?.[0] || undefined,
       end_date: filters.dateRange?.[1] || undefined,
+      sort_by: filters.sort_by || undefined,
+      sort_order: filters.sort_order || undefined,
       page: filters.page || undefined,
       page_size: filters.page_size ?? filters.pageSize ?? undefined
     }
@@ -101,6 +103,7 @@ function mapRepair(row) {
     status: row.status,
     status_label: statusLabelMap[row.status] || row.status,
     repair_result: row.repair_result || '',
+    fault_device_count: Number(row.fault_device_count || 1),
     finish_time: row.finish_time ? formatDate(row.finish_time) : '',
     created_at: formatDate(row.created_at),
     remark: row.remark || '',

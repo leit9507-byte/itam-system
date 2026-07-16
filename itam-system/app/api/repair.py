@@ -52,12 +52,14 @@ def list_repairs(
     status: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    sort_by: str | None = None,
+    sort_order: str | None = None,
     request: Request = None,
     db: Session = Depends(get_db),
 ):
     start = datetime.combine(datetime.fromisoformat(start_date).date(), time.min) if start_date else None
     end = datetime.combine(datetime.fromisoformat(end_date).date(), time.max) if end_date else None
-    return RepairService.list_records(db, page, page_size, keyword, status, start, end, user_context_from_request(request))
+    return RepairService.list_records(db, page, page_size, keyword, status, start, end, sort_by, sort_order, user_context_from_request(request))
 
 
 @router.post("/create", response_model=RepairOut)
