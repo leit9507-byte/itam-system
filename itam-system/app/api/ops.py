@@ -226,7 +226,7 @@ def parse_log_datetime(value: str, fallback_time) -> datetime:
 @router.get("/jobs")
 def scheduled_jobs():
     return [
-        {"key": "ldap_sync", "name": "Feishu/LDAP user sync", "schedule": "daily", "status": "enabled"},
+        {"key": "ldap_sync", "name": "LDAP user sync", "schedule": "daily", "status": "enabled"},
         {"key": "audit_report", "name": "audit report", "schedule": "manual/weekly", "status": "planned"},
         {"key": "todo_reminder", "name": "todo reminder", "schedule": "daily", "status": "planned"},
         {"key": "backup", "name": "database and upload backup", "schedule": "script/manual", "status": "available"},
