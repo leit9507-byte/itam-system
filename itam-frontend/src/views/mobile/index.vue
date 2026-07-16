@@ -175,12 +175,15 @@
         </template>
 
         <template v-if="mode === 'outbound'">
-          <el-form-item label="领用人">
+          <el-form-item label="出库对象">
+            <el-segmented v-model="form.outboundTarget" :options="outboundTargetOptions" @change="changeOutboundTarget" />
+          </el-form-item>
+          <el-form-item v-if="form.outboundTarget === 'user'" label="领用人">
             <el-select v-model="form.owner_user_id" filterable remote clearable reserve-keyword :remote-method="searchUsers" placeholder="搜索姓名/账号" class="mobile-select" popper-class="mobile-select-popper" @visible-change="visible => visible && searchUsers('')" @change="selectUser">
               <el-option v-for="user in filteredUsers" :key="user.user_id" :label="`${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`" :value="user.user_id" />
             </el-select>
           </el-form-item>
-          <el-form-item label="使用位置">
+          <el-form-item :label="form.outboundTarget === 'location' ? '出库地址' : '使用位置'">
             <el-select
               v-model="form.location"
               filterable
@@ -335,6 +338,10 @@ const modes = [
   { value: 'bind', label: '二维码绑定', hint: '确认二维码内容', icon: Search, formTitle: '二维码绑定', submitText: '确认绑定' }
 ]
 const workModes = modes.filter(item => item.value !== 'stocktake')
+const outboundTargetOptions = [
+  { label: '人员', value: 'user' },
+  { label: '地址', value: 'location' }
+]
 const activeSection = ref('todo')
 const mode = ref('stocktake')
 const assetCode = ref('')
@@ -716,6 +723,15 @@ function selectUser(userId) {
   form.dept_name = user?.dept_name || ''
 }
 
+function changeOutboundTarget(value) {
+  if (value === 'location') {
+    form.owner_user_id = ''
+    form.owner_name = ''
+    form.dept_id = ''
+    form.dept_name = ''
+  }
+}
+
 function locationLabel(item) {
   const meta = [item.code, item.type].filter(Boolean).join(' / ')
   return meta ? `${item.name} (${meta})` : item.name
@@ -800,9 +816,10 @@ async function submitOutbound() {
   if (!OUTBOUND_ALLOWED_STATUSES.includes(asset.value?.status)) {
     return ElMessage.warning(`当前状态为 ${statusLabel(asset.value?.status)}，不能重复出库；请先归还入库后再出库`)
   }
-  if (!form.owner_user_id) return ElMessage.warning('请选择领用人')
+  if (form.outboundTarget === 'user' && !form.owner_user_id) return ElMessage.warning('请选择领用人')
+  if (form.outboundTarget === 'location' && !form.location) return ElMessage.warning('请选择出库地址')
   const updated = await outboundAsset(asset.value.asset_id, {
-    outboundTarget: 'user',
+    outboundTarget: form.outboundTarget,
     owner_user_id: form.owner_user_id,
     owner_name: form.owner_name,
     dept_id: form.dept_id,
@@ -810,7 +827,7 @@ async function submitOutbound() {
     location: form.location,
     remark: form.remark || '移动端扫码出库'
   })
-  addLog('扫码出库', `${updated.owner_name || form.owner_name} / ${updated.dept_name || form.dept_name}`)
+  addLog('扫码出库', form.outboundTarget === 'location' ? form.location : `${updated.owner_name || form.owner_name} / ${updated.dept_name || form.dept_name}`)
   ElMessage.success('出库成功')
 }
 

@@ -130,8 +130,8 @@ class AssetService:
             raise AssetValidationError("待采购、待验收、在库、闲置、待报废状态不能填写使用人/责任人；请清空使用人，或把状态改为 in_use、borrowed、out_stock")
         if status in AssetService.ASSIGNED_STATUSES and not has_owner:
             raise AssetValidationError("在用、借出状态必须填写使用人/责任人")
-        if status == "out_stock" and not has_owner:
-            raise AssetValidationError("已出库状态必须填写领用人，不能直接出库到地址或机房")
+        if status == "out_stock" and not has_owner and not has_location:
+            raise AssetValidationError("已出库状态必须填写领用人或出库地址")
 
     @staticmethod
     def ensure_asset_operable(asset: Asset, action: str = "操作") -> None:
@@ -458,7 +458,7 @@ class AssetService:
             ("purchase_supplier_name", "否", "采购供应商"),
             ("warranty_years", "否", "维保年限，系统会换算为月数并计算质保到期"),
             ("status", "是", "可填 in_stock、in_use、idle、borrowed、out_stock、repair、ready_scrap"),
-            ("owner_user_id", "按状态", "in_use、borrowed、out_stock 必填；库存/闲置/待报废必须留空"),
+            ("owner_user_id", "按状态", "in_use、borrowed 必填；out_stock 可填写领用人或出库地址；库存/闲置/待报废必须留空"),
             ("dept_id", "否", "部门编号或部门名称"),
             ("location", "否", "当前位置"),
             ("company", "否", "所属公司"),
@@ -995,8 +995,10 @@ class AssetService:
         checkout_type = payload.checkout_type or "in_use"
         if checkout_type not in {"in_use", "borrowed", "out_stock"}:
             raise AssetValidationError("领用类型只能是 in_use、borrowed 或 out_stock")
-        if not AssetService.normalize_blank(payload.owner_user_id):
-            raise AssetValidationError("出库/领用必须选择领用人，不能直接出库到地址或机房")
+        if checkout_type in {"in_use", "borrowed"} and not AssetService.normalize_blank(payload.owner_user_id):
+            raise AssetValidationError("领用/借出必须选择领用人")
+        if checkout_type == "out_stock" and not AssetService.normalize_blank(payload.owner_user_id) and not AssetService.normalize_blank(payload.location):
+            raise AssetValidationError("出库必须选择领用人或出库地址")
         return AssetService.change_status(
             db,
             asset_id,

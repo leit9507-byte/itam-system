@@ -237,13 +237,16 @@
         </template>
         <template v-if="batch.type === 'outbound'">
           <el-form-item label="出库类型">
-            <el-select v-model="batch.form.toStatus" style="width: 100%">
+            <el-select v-model="batch.form.toStatus" style="width: 100%" @change="handleOutboundStatusChange">
               <el-option label="领用在用" value="in_use" />
               <el-option label="借出" value="borrowed" />
               <el-option label="已出库" value="out_stock" />
             </el-select>
           </el-form-item>
-          <el-form-item :label="batch.form.toStatus === 'borrowed' ? '借用人' : '领用人'" required>
+          <el-form-item v-if="batch.form.toStatus === 'out_stock'" label="出库对象">
+            <el-segmented v-model="batch.form.outboundTarget" :options="outboundTargetOptions" @change="handleOutboundTargetChange" />
+          </el-form-item>
+          <el-form-item v-if="batch.form.outboundTarget !== 'location'" :label="batch.form.toStatus === 'borrowed' ? '借用人' : '领用人'" required>
             <el-select v-model="batch.form.owner_user_id" filterable remote reserve-keyword style="width: 100%" placeholder="搜索用户姓名/账号/部门" :remote-method="searchUsers" @change="fillUserToForm(batch.form, $event)">
               <el-option v-for="user in filteredUsers" :key="user.user_id" :label="userLabel(user)" :value="user.user_id" />
             </el-select>
@@ -251,7 +254,12 @@
           <el-form-item v-if="batch.form.toStatus === 'borrowed'" label="借用到期" required>
             <el-date-picker v-model="batch.form.borrow_due_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" placeholder="选择借用到期时间" />
           </el-form-item>
-          <el-form-item label="部门"><el-input v-model="batch.form.dept_id" disabled /></el-form-item>
+          <el-form-item v-if="batch.form.outboundTarget !== 'location'" label="部门"><el-input v-model="batch.form.dept_id" disabled /></el-form-item>
+          <el-form-item :label="batch.form.outboundTarget === 'location' ? '出库地址' : '使用位置'" :required="batch.form.outboundTarget === 'location'">
+            <el-select v-model="batch.form.location" filterable clearable style="width: 100%" placeholder="选择地址">
+              <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="意图说明">
             <el-input v-model="batch.form.remark" type="textarea" :rows="3" placeholder="例如：入职资产分配、临时借用、项目领用" />
           </el-form-item>
@@ -392,6 +400,10 @@ const repairDialog = reactive({ visible: false, asset: null, assets: [], form: d
 const workflowHint = ref('')
 const assignedStatuses = ['in_use', 'borrowed']
 const unassignedStatuses = ['pending_purchase', 'pending_acceptance', 'in_stock', 'idle', 'ready_scrap']
+const outboundTargetOptions = [
+  { label: '人员', value: 'user' },
+  { label: '地址', value: 'location' }
+]
 
 const batchTitle = computed(() => ({ inbound: '批量入库', outbound: '批量出库', scrap: '批量申请报废' }[batch.type]))
 const realCompanies = computed(() => companies.value.filter(item => !item.virtual && item.name !== '未设置公司'))
@@ -620,6 +632,20 @@ function fillUserToForm(form, userId) {
   form.dept_name = user?.dept_name || user?.dept_id || ''
 }
 
+function handleOutboundStatusChange(value) {
+  if (value !== 'out_stock') batch.form.outboundTarget = 'user'
+  if (value !== 'borrowed') batch.form.borrow_due_date = ''
+}
+
+function handleOutboundTargetChange(value) {
+  if (value === 'location') {
+    batch.form.owner_user_id = ''
+    batch.form.owner_name = ''
+    batch.form.dept_id = ''
+    batch.form.dept_name = ''
+  }
+}
+
 function canInbound(row) {
   return !['in_stock', 'pending_scrap', 'scrapped', 'disposed'].includes(row.status)
 }
@@ -752,7 +778,6 @@ function openBatch(type) {
   Object.assign(batch.form, defaultBatchForm())
   if (type === 'outbound') {
     batch.form.outboundTarget = 'user'
-    batch.form.location = ''
     applyAssignUserToBatch()
   }
   if (type === 'inbound') applyReclaimRemarkToBatch()
@@ -926,7 +951,12 @@ async function submitBatch() {
     }
   }
   if (batch.type === 'outbound') {
-    if (!batch.form.owner_user_id) {
+    const isLocationOutbound = batch.form.toStatus === 'out_stock' && batch.form.outboundTarget === 'location'
+    if (isLocationOutbound && !batch.form.location) {
+      ElMessage.warning('请选择出库地址')
+      return
+    }
+    if (!isLocationOutbound && !batch.form.owner_user_id) {
       ElMessage.warning(batch.form.toStatus === 'borrowed' ? '请选择借用人' : '请选择领用人')
       return
     }
@@ -934,8 +964,14 @@ async function submitBatch() {
       ElMessage.warning('请选择借用到期时间')
       return
     }
-    batch.form.outboundTarget = 'user'
-    batch.form.location = ''
+    if (isLocationOutbound) {
+      batch.form.owner_user_id = ''
+      batch.form.owner_name = ''
+      batch.form.dept_id = ''
+      batch.form.dept_name = ''
+    } else {
+      batch.form.outboundTarget = 'user'
+    }
   }
   const results = []
   for (const asset of batch.assets) {

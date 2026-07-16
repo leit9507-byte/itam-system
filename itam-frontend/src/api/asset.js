@@ -290,14 +290,15 @@ export async function submitReclaimApproval(assetId, payload = {}) {
 
 export async function outboundAsset(assetId, payload = {}) {
   const status = payload.toStatus || 'in_use'
+  const isPublicLocation = status === 'out_stock' && payload.outboundTarget === 'location'
   const borrowDueDateText = status === 'borrowed' && payload.borrow_due_date ? `借用到期时间：${payload.borrow_due_date}` : ''
-  const remark = [payload.remark || '资产出库', borrowDueDateText].filter(Boolean).join('；')
+  const remark = [payload.remark || (isPublicLocation ? `出库到地址：${payload.location || ''}` : '资产出库'), borrowDueDateText].filter(Boolean).join('；')
   const asset = await checkoutAsset(assetId, {
     ...payload,
     toStatus: status,
-    outboundTarget: 'user',
-    owner_user_id: payload.owner_user_id,
-    dept_id: payload.dept_id,
+    outboundTarget: isPublicLocation ? 'location' : 'user',
+    owner_user_id: isPublicLocation ? '' : payload.owner_user_id,
+    dept_id: isPublicLocation ? '' : payload.dept_id,
     location: payload.location,
     action: '出库',
     remark
