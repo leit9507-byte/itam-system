@@ -37,7 +37,7 @@
       <article class="panel chart-panel">
         <header class="panel-head">
           <h3>资产状态分布</h3>
-          <el-button link type="primary" @click="$router.push('/asset/list')">查看详情</el-button>
+          <el-button link type="primary" @click="openDashboardDialog('status')">查看详情</el-button>
         </header>
         <div class="donut-layout">
           <div ref="statusRef" class="donut-chart" />
@@ -56,7 +56,7 @@
       <article class="panel chart-panel">
         <header class="panel-head">
           <h3>资产分类占比</h3>
-          <el-button link type="primary" @click="$router.push('/asset/list')">查看详情</el-button>
+          <el-button link type="primary" @click="openDashboardDialog('category')">查看详情</el-button>
         </header>
         <div class="donut-layout">
           <div ref="categoryRef" class="donut-chart" />
@@ -73,7 +73,7 @@
       <article class="panel people-panel">
         <header class="panel-head">
           <h3>入离职人员趋势</h3>
-          <el-button link type="primary" @click="$router.push('/personnel')">人员管理</el-button>
+          <el-button link type="primary" @click="openDashboardDialog('personnel')">人员管理</el-button>
         </header>
         <div class="people-layout">
           <div ref="peopleRef" class="people-chart" />
@@ -91,7 +91,7 @@
       <article class="panel trend-panel">
         <header class="panel-head">
           <h3>采购和报废趋势</h3>
-          <el-button link type="primary" @click="$router.push('/purchase')">采购管理</el-button>
+          <el-button link type="primary" @click="openDashboardDialog('purchase')">采购管理</el-button>
         </header>
         <div ref="purchaseScrapRef" class="trend-chart" />
       </article>
@@ -99,7 +99,7 @@
       <article class="panel trend-panel">
         <header class="panel-head">
           <h3>待退役资产趋势</h3>
-          <el-button link type="primary" @click="$router.push('/asset/list')">查看资产</el-button>
+          <el-button link type="primary" @click="openDashboardDialog('retirement')">查看资产</el-button>
         </header>
         <div ref="retirementTrendRef" class="trend-chart" />
       </article>
@@ -109,7 +109,7 @@
       <article class="panel recent-panel">
         <header class="panel-head">
           <h3>最近领用 / 归还记录</h3>
-          <el-button link type="primary" @click="$router.push('/lifecycle')">查看全部</el-button>
+          <el-button link type="primary" @click="openDashboardDialog('recent')">查看全部</el-button>
         </header>
         <el-table :data="data.recentRecords" border stripe size="small" empty-text="暂无记录">
           <el-table-column prop="user" label="用户" width="86" />
@@ -127,7 +127,7 @@
       <article class="panel warranty-panel">
         <header class="panel-head">
           <h3>维保到期提醒</h3>
-          <el-button link type="primary" @click="$router.push('/asset/list')">查看全部</el-button>
+          <el-button link type="primary" @click="openDashboardDialog('warranty')">查看全部</el-button>
         </header>
         <el-table :data="data.warrantyRows" border stripe size="small" empty-text="暂无即将到期资产">
           <el-table-column prop="name" label="资产名称" min-width="170" show-overflow-tooltip />
@@ -142,6 +142,73 @@
         </el-table>
       </article>
     </section>
+
+    <el-dialog v-model="detailDialog.visible" :title="detailDialogTitle" width="860px" class="dashboard-detail-dialog">
+      <template v-if="detailDialog.type === 'status'">
+        <el-table :data="statusDistribution" border stripe>
+          <el-table-column prop="name" label="状态" min-width="160" />
+          <el-table-column prop="value" label="数量" width="120">
+            <template #default="{ row }">{{ formatValue(row.value) }}</template>
+          </el-table-column>
+          <el-table-column label="占比" width="120">
+            <template #default="{ row }">{{ percent(row.value, totalAssets) }}</template>
+          </el-table-column>
+        </el-table>
+        <p class="dialog-note">其他包含待采购、待验收、借出、已出库、已报废、已处置等未展开状态。</p>
+      </template>
+
+      <el-table v-else-if="detailDialog.type === 'category'" :data="categoryDetailRows" border stripe>
+        <el-table-column prop="name" label="分类" min-width="180" />
+        <el-table-column prop="value" label="数量" width="120">
+          <template #default="{ row }">{{ formatValue(row.value) }}</template>
+        </el-table-column>
+        <el-table-column label="占比" width="120">
+          <template #default="{ row }">{{ percent(row.value, categoryDetailTotal) }}</template>
+        </el-table-column>
+      </el-table>
+
+      <el-table v-else-if="detailDialog.type === 'personnel'" :data="personnelDetailRows" border stripe>
+        <el-table-column prop="month" label="月份" min-width="140" />
+        <el-table-column prop="onboarding" label="入职" width="120" />
+        <el-table-column prop="offboarding" label="离职" width="120" />
+      </el-table>
+
+      <el-table v-else-if="detailDialog.type === 'purchase'" :data="purchaseDetailRows" border stripe>
+        <el-table-column prop="month" label="月份" min-width="140" />
+        <el-table-column prop="amount" label="采购金额" width="160">
+          <template #default="{ row }">¥{{ Number(row.amount || 0).toLocaleString() }}</template>
+        </el-table-column>
+        <el-table-column prop="quantity" label="采购数量" width="120" />
+        <el-table-column prop="scrapApproved" label="报废通过" width="120" />
+      </el-table>
+
+      <template v-else-if="detailDialog.type === 'retirement'">
+        <el-table :data="retirementDetailRows" border stripe>
+          <el-table-column prop="asset_id" label="资产编号" width="150" />
+          <el-table-column prop="name" label="资产名称" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="retirement_date" label="到期/退役日期" width="140" />
+          <el-table-column prop="days_remaining" label="剩余天数" width="110">
+            <template #default="{ row }">{{ row.overdue ? `逾期 ${Math.abs(row.days_remaining)} 天` : `${row.days_remaining} 天` }}</template>
+          </el-table-column>
+        </el-table>
+      </template>
+
+      <el-table v-else-if="detailDialog.type === 'recent'" :data="data.recentRecords" border stripe>
+        <el-table-column prop="user" label="用户" width="130" />
+        <el-table-column prop="asset" label="资产名称" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="type" label="类型" width="120" />
+        <el-table-column prop="action" label="操作" width="100" />
+        <el-table-column prop="time" label="时间" width="130" />
+      </el-table>
+
+      <el-table v-else-if="detailDialog.type === 'warranty'" :data="data.warrantyRows" border stripe>
+        <el-table-column prop="name" label="资产名称" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="type" label="类型" width="120" />
+        <el-table-column prop="date" label="到期日期" width="130" />
+        <el-table-column prop="days" label="剩余天数" width="110" />
+        <el-table-column prop="status" label="状态" width="110" />
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
@@ -166,6 +233,7 @@ const retirementTrendRef = ref(null)
 const charts = []
 let resizeTimer = null
 const dashboardDateRange = ref([])
+const detailDialog = reactive({ visible: false, type: 'status' })
 const data = reactive({
   metrics: [],
   categoryDistribution: [],
@@ -231,6 +299,36 @@ const categoryLegend = computed(() => {
     color: categoryColors[index % categoryColors.length]
   }))
 })
+const categoryDetailRows = computed(() => data.categoryDistribution.filter(item => Number(item.value || 0) > 0))
+const categoryDetailTotal = computed(() => categoryDetailRows.value.reduce((sum, item) => sum + Number(item.value || 0), 0))
+const personnelDetailRows = computed(() => {
+  const trend = data.personnelTrend || {}
+  return (trend.months || []).map((month, index) => ({
+    month,
+    onboarding: trend.onboarding?.[index] || 0,
+    offboarding: trend.offboarding?.[index] || 0
+  }))
+})
+const purchaseDetailRows = computed(() => {
+  const purchase = data.purchaseTrend || {}
+  const scrap = data.scrapTrend || {}
+  return (purchase.months || scrap.months || []).map((month, index) => ({
+    month,
+    amount: purchase.amount?.[index] || 0,
+    quantity: purchase.quantity?.[index] || 0,
+    scrapApproved: scrap.approved?.[index] || 0
+  }))
+})
+const retirementDetailRows = computed(() => data.retirementSoonAssets || [])
+const detailDialogTitle = computed(() => ({
+  status: '资产状态分布详情',
+  category: '资产分类占比详情',
+  personnel: '入离职人员趋势详情',
+  purchase: '采购和报废趋势详情',
+  retirement: '待退役资产详情',
+  recent: '最近领用 / 归还记录',
+  warranty: '维保到期提醒详情'
+})[detailDialog.type] || '详情')
 
 onMounted(() => {
   window.addEventListener('resize', resizeCharts)
@@ -252,6 +350,11 @@ async function load() {
 function clearDateRange() {
   dashboardDateRange.value = []
   load()
+}
+
+function openDashboardDialog(type) {
+  detailDialog.type = type
+  detailDialog.visible = true
 }
 
 function recentRange(days) {
@@ -614,6 +717,17 @@ function percentValue(value) {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.55;
+}
+
+.dialog-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.dashboard-detail-dialog :deep(.el-dialog__body) {
+  max-height: 70vh;
+  overflow: auto;
 }
 
 .people-layout {
