@@ -23,7 +23,6 @@ class StocktakeTaskCreate(BaseModel):
     targets: list[str] = Field(default_factory=list)
     owner: str | None = None
     include_scrapped: bool = False
-    include_disposed: bool = False
 
 
 class StocktakeItemSubmit(BaseModel):
@@ -76,7 +75,7 @@ def create_task(payload: StocktakeTaskCreate, request: Request, db: Session = De
         owner=payload.owner or "资产管理员",
         status="待开始",
     )
-    for asset in scoped_assets(db, payload.scope, targets, user_context_from_request(request), payload.include_scrapped, payload.include_disposed):
+    for asset in scoped_assets(db, payload.scope, targets, user_context_from_request(request), payload.include_scrapped):
         task.items.append(
             StocktakeItem(
                 asset_id=asset.asset_id,
@@ -220,14 +219,13 @@ def list_scan_logs(task_id: str, db: Session = Depends(get_db)):
     ]
 
 
-def scoped_assets(db: Session, scope: str, target: str | list[str] | None, user_context: dict | None = None, include_scrapped: bool = False, include_disposed: bool = False):
+def scoped_assets(db: Session, scope: str, target: str | list[str] | None, user_context: dict | None = None, include_scrapped: bool = False):
     query = AssetService.apply_data_scope(db.query(Asset), user_context)
     targets = normalize_targets(target)
     excluded_statuses = []
     if not include_scrapped:
         excluded_statuses.append("scrapped")
-    if not include_disposed:
-        excluded_statuses.append("disposed")
+    excluded_statuses.append("disposed")
     if excluded_statuses:
         query = query.filter(~Asset.status.in_(excluded_statuses))
     if scope == "部门" and targets:

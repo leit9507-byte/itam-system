@@ -161,7 +161,6 @@
         <el-form-item label="专项范围">
           <div class="scope-switches">
             <el-checkbox v-model="form.include_scrapped">包含已报废未处置资产</el-checkbox>
-            <el-checkbox v-model="form.include_disposed">包含已处置资产</el-checkbox>
           </div>
         </el-form-item>
         <el-form-item label="负责人"><el-input v-model="form.owner" /></el-form-item>
@@ -370,8 +369,7 @@ function defaultForm() {
     scope: '全部',
     target: [],
     owner: '资产管理员',
-    include_scrapped: false,
-    include_disposed: false
+    include_scrapped: false
   }
 }
 
