@@ -124,10 +124,10 @@
           <el-input v-model="disposeDialog.form.retirement_approval_no" placeholder="填写退役/报废审批单号" />
         </el-form-item>
         <el-form-item label="处理手段">
-          <el-radio-group v-model="disposeDialog.form.disposal_method">
-            <el-radio-button label="报废" />
-            <el-radio-button label="变卖" />
-            <el-radio-button label="员工领用" />
+          <el-radio-group v-model="disposeDialog.form.disposal_method" class="disposal-method-group">
+            <el-radio-button label="报废">报废</el-radio-button>
+            <el-radio-button label="变卖">变卖</el-radio-button>
+            <el-radio-button label="员工领用">员工领用</el-radio-button>
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="disposeDialog.form.disposal_method === '员工领用'" label="领用员工" required>
@@ -333,6 +333,17 @@ function statusType(status) {
 
 .dispose-form {
   margin-top: 16px;
+}
+
+.disposal-method-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.disposal-method-group :deep(.el-radio-button__inner) {
+  border-radius: 8px;
+  border-left: var(--el-border);
 }
 
 .pagination-bar {
