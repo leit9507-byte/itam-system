@@ -305,6 +305,7 @@ export async function getScrapRequests(params = {}) {
   const result = await request.get('/scrap/list', {
     params: {
       status: params.status || undefined,
+      disposal_method: params.disposal_method || undefined,
       created_from: params.created_from || undefined,
       created_to: params.created_to || undefined,
       page: params.page || undefined,

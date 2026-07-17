@@ -40,11 +40,15 @@ class ScrapService:
         created_from: datetime | None = None,
         created_to: datetime | None = None,
         user_context: dict | None = None,
+        disposal_method: str | None = None,
     ) -> dict:
         query = db.query(ScrapRequest)
         query = ScrapService.apply_data_scope(query, user_context)
         if status:
             query = query.filter(ScrapRequest.status == status)
+        if disposal_method:
+            normalized_method = ScrapService.normalize_disposal_method(disposal_method)
+            query = query.filter(ScrapRequest.disposal_method == normalized_method) if normalized_method else query.filter(False)
         if created_from:
             query = query.filter(ScrapRequest.created_at >= created_from)
         if created_to:

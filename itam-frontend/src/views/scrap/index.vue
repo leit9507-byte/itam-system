@@ -29,13 +29,11 @@
             @change="refresh"
           />
         </el-form-item>
-        <el-form-item label="处置状态">
-          <el-select v-model="filters.status" clearable placeholder="全部状态" @change="refresh">
-            <el-option label="待处置" value="待处置" />
-            <el-option label="历史审批中" value="审批中" />
-            <el-option label="已通过" value="已通过" />
-            <el-option label="已驳回" value="已驳回" />
-            <el-option label="已处置" value="已处置" />
+        <el-form-item label="处理手段">
+          <el-select v-model="filters.disposalMethod" clearable placeholder="全部处理手段" @change="refresh">
+            <el-option label="员工领用" value="员工领用" />
+            <el-option label="变卖" value="变卖" />
+            <el-option label="报废" value="报废" />
           </el-select>
         </el-form-item>
         <el-button @click="resetFilters">重置</el-button>
@@ -178,7 +176,7 @@ const requests = ref([])
 const allRequests = ref([])
 const users = ref([])
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
-const filters = reactive({ createdRange: [], status: '' })
+const filters = reactive({ createdRange: [], disposalMethod: '' })
 const disposeDialog = reactive({
   visible: false,
   row: null,
@@ -217,7 +215,7 @@ async function loadUsers() {
 
 async function load() {
   const params = {
-    status: filters.status || '',
+    disposal_method: filters.disposalMethod || '',
     created_from: filters.createdRange?.[0] || '',
     created_to: filters.createdRange?.[1] || ''
   }
@@ -250,7 +248,7 @@ function refresh() {
 
 async function resetFilters() {
   filters.createdRange = []
-  filters.status = ''
+  filters.disposalMethod = ''
   pagination.page = 1
   await load()
 }
