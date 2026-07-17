@@ -125,7 +125,7 @@ class RepairService:
         return query.filter(False)
 
     @staticmethod
-    def create_record(db: Session, payload: RepairCreate, start_work: bool = True) -> dict:
+    def create_record(db: Session, payload: RepairCreate) -> dict:
         asset = db.get(Asset, payload.asset_id)
         if not asset:
             raise ValueError("asset not found")
@@ -140,24 +140,21 @@ class RepairService:
             repair_cost=payload.repair_cost,
             vendor=payload.vendor,
             operator=payload.operator,
-            status="维修中" if start_work else "approval_submitted",
+            status="维修中",
             remark=payload.remark,
         )
         db.add(record)
-        if start_work:
-            from_status = asset.status
-            asset.status = "repair"
-            LifecycleService.record(db, asset.asset_id, "REPAIR_CREATE", from_status, "repair", payload.operator)
-        else:
-            LifecycleService.record(db, asset.asset_id, "REPAIR_APPROVAL_SUBMIT", asset.status, asset.status, payload.operator)
-        AuditLogService.record_operation(db, "repair", "create" if start_work else "approval_submit", payload.operator, "repair", record.repair_no, f"维修{'创建' if start_work else '提交飞书审批'} {record.asset_id}", payload.model_dump())
+        from_status = asset.status
+        asset.status = "repair"
+        LifecycleService.record(db, asset.asset_id, "REPAIR_CREATE", from_status, "repair", payload.operator)
+        AuditLogService.record_operation(db, "repair", "create", payload.operator, "repair", record.repair_no, f"维修创建 {record.asset_id}", payload.model_dump())
         db.commit()
         db.refresh(record)
         db.refresh(asset)
         NotificationService.send_event(
             db,
             "repair",
-            "维修任务已创建" if start_work else "维修审批已提交",
+            "维修任务已创建",
             [
                 f"维修单号：{record.repair_no}",
                 f"资产编号：{record.asset_id}",
@@ -166,62 +163,6 @@ class RepairService:
                 f"故障类型：{record.fault_reason or '-'}",
                 f"维修供应商：{record.vendor or '-'}",
                 f"操作人：{payload.operator}",
-            ],
-        )
-        return RepairService.to_dict(record, asset)
-
-    @staticmethod
-    def approve_record(db: Session, record_id: int, operator: str = "system") -> dict:
-        record = db.get(RepairRecord, record_id)
-        if not record:
-            raise ValueError("repair record not found")
-        asset = db.get(Asset, record.asset_id)
-        record.status = "维修中"
-        if asset:
-            if asset.status in {"scrapped", "disposed"}:
-                raise ValueError("已报废/已处置资产不能进入维修")
-            from_status = asset.status
-            asset.status = "repair"
-            LifecycleService.record(db, asset.asset_id, "REPAIR_APPROVE", from_status, "repair", operator)
-        AuditLogService.record_operation(db, "repair", "approve", operator, "repair", record.repair_no, f"维修审批通过 {record.asset_id}")
-        db.commit()
-        db.refresh(record)
-        if asset:
-            db.refresh(asset)
-        NotificationService.send_event(
-            db,
-            "repair",
-            "维修审批已通过",
-            [
-                f"维修单号：{record.repair_no}",
-                f"资产编号：{record.asset_id}",
-                f"当前状态：维修中",
-                f"审批人：{operator}",
-            ],
-        )
-        return RepairService.to_dict(record, asset)
-
-    @staticmethod
-    def reject_record(db: Session, record_id: int, operator: str = "system") -> dict:
-        record = db.get(RepairRecord, record_id)
-        if not record:
-            raise ValueError("repair record not found")
-        asset = db.get(Asset, record.asset_id)
-        record.status = "rejected"
-        if asset:
-            LifecycleService.record(db, asset.asset_id, "REPAIR_REJECT", asset.status, asset.status, operator)
-        AuditLogService.record_operation(db, "repair", "reject", operator, "repair", record.repair_no, f"维修审批驳回 {record.asset_id}")
-        db.commit()
-        db.refresh(record)
-        NotificationService.send_event(
-            db,
-            "repair",
-            "维修审批已驳回",
-            [
-                f"维修单号：{record.repair_no}",
-                f"资产编号：{record.asset_id}",
-                f"审批人：{operator}",
-                f"当前状态：已驳回",
             ],
         )
         return RepairService.to_dict(record, asset)

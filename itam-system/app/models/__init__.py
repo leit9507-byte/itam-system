@@ -1,5 +1,4 @@
 from app.models.asset import Asset
-from app.models.approval import ApprovalInstanceLog, ApprovalRule
 from app.models.audit_log import AssetChangeLog, OperationAuditLog
 from app.models.audit_response import AuditResponse
 from app.models.audit_rule import AuditRule
@@ -19,8 +18,6 @@ from app.models.user import IdentityProviderConfig, RolePermission, UserDirector
 
 __all__ = [
     "Asset",
-    "ApprovalRule",
-    "ApprovalInstanceLog",
     "AssetChangeLog",
     "OperationAuditLog",
     "AuditResponse",

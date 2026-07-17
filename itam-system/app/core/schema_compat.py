@@ -85,21 +85,6 @@ def ensure_compatible_schema(engine) -> None:
         add_column(engine, columns, "asset_attachments", "deleted_at", "DATETIME NULL")
         add_column(engine, columns, "asset_attachments", "remark", "VARCHAR(512) NULL")
 
-    if "approval_rules" in inspector.get_table_names():
-        columns = {column["name"] for column in inspector.get_columns("approval_rules")}
-        add_column(engine, columns, "approval_rules", "provider", "VARCHAR(32) DEFAULT 'feishu' NOT NULL")
-        add_column(engine, columns, "approval_rules", "approval_code", "VARCHAR(128) NULL")
-        add_column(engine, columns, "approval_rules", "app_id", "VARCHAR(128) NULL")
-        add_column(engine, columns, "approval_rules", "app_secret", "VARCHAR(255) NULL")
-        add_column(engine, columns, "approval_rules", "tenant_access_token_url", "VARCHAR(255) NULL")
-        add_column(engine, columns, "approval_rules", "instance_create_url", "VARCHAR(255) NULL")
-        add_column(engine, columns, "approval_rules", "submitter_user_id", "VARCHAR(128) NULL")
-        add_column(engine, columns, "approval_rules", "submitter_open_id", "VARCHAR(128) NULL")
-        add_column(engine, columns, "approval_rules", "form_template", "TEXT NULL")
-        add_column(engine, columns, "approval_rules", "callback_token", "VARCHAR(255) NULL")
-        add_column(engine, columns, "approval_rules", "callback_encrypt_key", "VARCHAR(255) NULL")
-
-
 def add_column(engine, columns: set[str], table: str, column: str, definition: str) -> None:
     if column in columns:
         return

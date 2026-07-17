@@ -279,15 +279,6 @@ export async function inboundAsset(assetId, payload = {}) {
   return asset
 }
 
-export async function submitReclaimApproval(assetId, payload = {}) {
-  return request.post(`/asset/${assetId}/reclaim-approval`, {
-    location: payload.location || '',
-    remark: payload.remark || '资产回收审批',
-    user_id: payload.user_id || '',
-    open_id: payload.open_id || ''
-  })
-}
-
 export async function outboundAsset(assetId, payload = {}) {
   const status = payload.toStatus || 'in_use'
   const isPublicLocation = status === 'out_stock' && payload.outboundTarget === 'location'

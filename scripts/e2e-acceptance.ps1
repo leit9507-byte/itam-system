@@ -17,8 +17,8 @@ $StatusFinished = U "5bey5a6M5oiQ"
 $ScopeAll = U "5YWo6YOo"
 $StatusInProgress = U "6L+b6KGM5Lit"
 $ResultNormal = U "5q2j5bi4"
-$StatusApproving = U "5a6h5om55Lit"
-$StatusApproved = U "5bey6YCa6L+H"
+$StatusPendingDisposal = U "5b6F5aSE572u"
+$StatusDisposed = U "5bey5aSE572u"
 
 function Write-Step {
   param([string]$Message)
@@ -146,7 +146,7 @@ $purchase = Invoke-ItamApi -Method POST -Path "/purchase/create" -Body @{
   supplier_name = "E2E Acceptance Supplier"
   purchase_reason = "E2E business acceptance"
   total_amount = 68000
-  status = "created"
+  status = "pending_acceptance"
   items = @(
     @{
       name = "E2E High Value Laptop"
@@ -163,7 +163,7 @@ $purchase = Invoke-ItamApi -Method POST -Path "/purchase/create" -Body @{
   )
 }
 Assert-Equal $purchase.purchase_no $purchaseNo "Purchase number persisted"
-Assert-Equal $purchase.status "created" "Purchase initial status"
+Assert-Equal $purchase.status "pending_acceptance" "Purchase initial status"
 $itemId = $purchase.items[0].id
 Assert-True ($itemId -gt 0) "Purchase item generated"
 
@@ -261,23 +261,26 @@ Assert-Equal $stocktakeItem.result $ResultNormal "Stocktake item result"
 $stocktakeFinished = Invoke-ItamApi -Method POST -Path "/stocktake/tasks/$($stocktake.id)/finish"
 Assert-Equal $stocktakeFinished.status $StatusFinished "Stocktake finished status"
 
-Write-Step "Scrap: submit request and approve"
+Write-Step "Scrap: submit request and register disposal"
 $scrap = Invoke-ItamApi -Method POST -Path "/scrap/$assetId/create" -Body @{
   applicant = "E2E Asset Admin"
   reason = "E2E scrap acceptance"
-  disposal_method = "Recycle"
   estimated_residual_value = 100
 }
-Assert-Equal $scrap.status $StatusApproving "Scrap request initial status"
+Assert-Equal $scrap.status $StatusPendingDisposal "Scrap request initial status"
 $asset = Get-AssetById $assetId
 Assert-Equal $asset.status "pending_scrap" "Asset status after scrap request"
 
-$scrapApproved = Invoke-ItamApi -Method POST -Path "/scrap/$($scrap.id)/approve" -Body @{
-  approver = "E2E Asset Owner"
+$scrapDisposed = Invoke-ItamApi -Method POST -Path "/scrap/$($scrap.id)/dispose" -Body @{
+  retirement_date = "${today}T00:00:00"
+  retirement_approval_no = "E2E-SC-$stamp"
+  disposal_method = "报废"
+  final_residual_value = 100
+  disposal_remark = "E2E disposal registration"
 }
-Assert-Equal $scrapApproved.status $StatusApproved "Scrap approved status"
+Assert-Equal $scrapDisposed.status $StatusDisposed "Scrap disposed status"
 $asset = Get-AssetById $assetId
-Assert-Equal $asset.status "scrapped" "Asset status after scrap approval"
+Assert-Equal $asset.status "disposed" "Asset status after disposal registration"
 
 Write-Step "Audit report: run audit and download HTML"
 $audit = Invoke-ItamApi -Method POST -Path "/audit/run" -Body @{ users = @() }

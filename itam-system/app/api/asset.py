@@ -2,25 +2,16 @@ from io import BytesIO
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import operator_from_request, user_context_from_request
 from app.models.asset import Asset
 from app.schemas.asset import AssetBatchCheckinCreate, AssetBatchCheckoutCreate, AssetBatchImport, AssetCheckinCreate, AssetCheckoutCreate, AssetCheckoutOut, AssetCreate, AssetImportResult, AssetOut, AssetStatusChange, AssetTextImport, AssetUpdate
-from app.services.approval_service import ApprovalService
 from app.services.asset_service import AssetService, AssetValidationError
 
 
 router = APIRouter(prefix="/asset", tags=["Asset"])
-
-
-class ReclaimApprovalPayload(BaseModel):
-    location: str | None = None
-    remark: str | None = None
-    user_id: str | None = None
-    open_id: str | None = None
 
 
 @router.post("/create", response_model=AssetOut)
@@ -93,7 +84,6 @@ def get_asset(asset_id: str, request: Request, db: Session = Depends(get_db)):
         return AssetService.get_asset(db, asset_id, user_context_from_request(request))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-
 
 @router.post("/checkouts/batch-checkout")
 def batch_checkout_assets(payload: AssetBatchCheckoutCreate, request: Request, db: Session = Depends(get_db)):
@@ -215,33 +205,3 @@ def checkin_asset(asset_id: str, payload: AssetCheckinCreate, request: Request, 
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-@router.post("/{asset_id}/reclaim-approval")
-def submit_reclaim_approval(asset_id: str, payload: ReclaimApprovalPayload, request: Request, db: Session = Depends(get_db)):
-    asset = db.get(Asset, asset_id)
-    if not asset:
-        raise HTTPException(status_code=404, detail="asset not found")
-    try:
-        result = ApprovalService.submit_feishu_approval(
-            db,
-            "reclaim",
-            asset_id,
-            asset.purchase_price or 0,
-            asset.dept_id,
-            payload.user_id,
-            payload.open_id,
-            {
-                "asset_id": asset.asset_id,
-                "asset_name": asset.name,
-                "owner_user_id": asset.owner_user_id or "",
-                "location": payload.location or asset.location or "",
-                "remark": payload.remark or "资产回收审批",
-            },
-            operator_from_request(request),
-        )
-        return {"ok": True, "instance": ApprovalService.instance_out(result["instance"])}
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"飞书审批提交失败：{exc}") from exc

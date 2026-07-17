@@ -283,6 +283,7 @@
               <el-form-item label="类型">
                 <el-select v-model="providerForm.provider_type" style="width: 100%">
                   <el-option label="LDAP / AD" value="ldap" />
+                  <el-option label="飞书应用（仅 JSAPI）" value="feishu" />
                 </el-select>
               </el-form-item>
               <el-form-item label="启用"><el-switch v-model="providerForm.enabled" /></el-form-item>
@@ -321,6 +322,19 @@
                   show-icon
                   :closable="false"
                   title="OpenLDAP 常用 uid/cn/mail/ou；AD 常用 sAMAccountName/displayName/mail/department。登录过滤器中的 {username} 会自动替换为登录账号。"
+                />
+              </template>
+
+              <template v-else-if="providerForm.provider_type === 'feishu'">
+                <el-divider content-position="left">JSAPI 鉴权</el-divider>
+                <el-form-item label="App ID" required><el-input v-model="providerConfig.app_id" placeholder="cli_xxxxxxxxxxxxxxxx" /></el-form-item>
+                <el-form-item label="App Secret" required><el-input v-model="providerConfig.app_secret" type="password" show-password placeholder="飞书应用 App Secret" /></el-form-item>
+                <el-alert
+                  class="config-help"
+                  type="info"
+                  show-icon
+                  :closable="false"
+                  title="此配置只用于生成飞书 JSAPI 签名和移动端扫码，不提供飞书登录，也不会发起飞书审批。"
                 />
               </template>
 
@@ -411,7 +425,7 @@
               <el-step title="应用能力" description="在飞书开放平台创建企业自建应用，网页应用或工作台入口指向移动端地址。" />
               <el-step title="安全域名" :description="mobileConfig.host ? `把 ${mobileConfig.host} 加入网页应用安全域名。` : '把当前系统域名加入网页应用安全域名。'" />
               <el-step title="JS SDK" description="需要原生扫码时启用飞书 JS SDK，并确保页面使用 HTTPS 或飞书客户端内访问。" />
-              <el-step title="通讯录权限" description="如果要同步人员，继续在身份源配置里填写 App ID / App Secret 并开通通讯录只读权限。" />
+              <el-step title="应用凭证" description="在身份源配置中新增“飞书应用（仅 JSAPI）”，填写 App ID 和 App Secret。" />
               <el-step title="发布应用" description="权限、域名、工作台入口变更后发布应用，移动端扫码才会按最新配置生效。" />
             </el-steps>
           </el-card>
@@ -608,7 +622,7 @@ const offboardingUsers = computed(() => users.value.filter(user => isInactiveUse
 const pagedOnboardingUsers = computed(() => paginate(onboardingUsers.value, onboardingPagination))
 const pagedOffboardingUsers = computed(() => paginate(offboardingUsers.value, offboardingPagination))
 const pagedPermissions = computed(() => paginate(permissions.value, permissionPagination))
-const supportedProviders = computed(() => providers.value.filter(item => item.provider_type === 'ldap'))
+const supportedProviders = computed(() => providers.value.filter(item => ['ldap', 'feishu'].includes(item.provider_type)))
 const pagedProviders = computed(() => paginate(supportedProviders.value, providerPagination))
 const selectedPermissionUser = computed(() => users.value.find(user => user.user_id === selectedUserId.value) || null)
 const mobileConfig = computed(() => {
@@ -952,6 +966,10 @@ function defaultConfig(type = 'ldap') {
       default_role: 'user',
       sync_limit: '200',
       test_username: ''
+    },
+    feishu: {
+      app_id: '',
+      app_secret: ''
     }
   }
   return { ...(samples[type] || samples.ldap) }
@@ -974,6 +992,10 @@ async function saveProvider() {
   }
   if (providerForm.provider_type === 'ldap' && (!providerConfig.host || !providerConfig.bind_dn || !providerConfig.base_dn)) {
     ElMessage.warning('请填写 LDAP 服务器地址、绑定账号和搜索根 DN')
+    return
+  }
+  if (providerForm.provider_type === 'feishu' && (!providerConfig.app_id || !providerConfig.app_secret)) {
+    ElMessage.warning('请填写飞书应用 App ID 和 App Secret')
     return
   }
   const payload = {
@@ -1004,7 +1026,7 @@ function buildProviderConfig() {
 }
 
 function providerTypeLabel(type) {
-  return { ldap: 'LDAP / AD' }[type] || type
+  return { ldap: 'LDAP / AD', feishu: '飞书 JSAPI' }[type] || type
 }
 
 async function copyText(text) {
@@ -1044,7 +1066,7 @@ async function removeProvider(row) {
 }
 
 async function syncFromProvider(row = null) {
-  const provider = row?.id ? row : supportedProviders.value.find(item => item.enabled)
+  const provider = row?.id ? row : supportedProviders.value.find(item => item.enabled && item.provider_type === 'ldap')
   if (!provider) {
     ElMessage.warning('请先配置并启用一个身份源')
     return

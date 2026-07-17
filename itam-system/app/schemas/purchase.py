@@ -33,10 +33,6 @@ class PurchaseReceive(BaseModel):
     operator: str = "system"
 
 
-class PurchaseApprove(BaseModel):
-    operator: str = "system"
-
-
 class AcceptedAssetCreate(BaseModel):
     asset_id: Optional[str] = None
     sn: Optional[str] = None

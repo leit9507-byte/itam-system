@@ -320,6 +320,7 @@ class IdentityService:
 
         required = {
             "ldap": ["host", "base_dn"],
+            "feishu": ["app_id", "app_secret"],
         }.get(provider.provider_type, [])
         missing = [key for key in required if not (provider.config or {}).get(key)]
         if missing:

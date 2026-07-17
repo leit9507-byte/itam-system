@@ -8,11 +8,10 @@ from urllib.request import Request as UrlRequest, urlopen
 
 from sqlalchemy.orm import Session
 
-from app.models.approval import ApprovalRule
 from app.models.user import IdentityProviderConfig
-from app.services.approval_service import ApprovalService
 
 
+DEFAULT_TOKEN_URL = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
 DEFAULT_JSAPI_TICKET_URL = "https://open.feishu.cn/open-apis/jssdk/ticket/get"
 TICKET_REFRESH_SKEW_SECONDS = 300
 
@@ -61,15 +60,6 @@ class FeishuJsapiService:
             if app_id and app_secret:
                 return app_id, app_secret
 
-        rule = (
-            db.query(ApprovalRule)
-            .filter(ApprovalRule.provider == "feishu", ApprovalRule.enabled.is_(True), ApprovalRule.app_id.isnot(None), ApprovalRule.app_secret.isnot(None))
-            .order_by(ApprovalRule.id.asc())
-            .first()
-        )
-        if rule and rule.app_id and rule.app_secret:
-            return rule.app_id, rule.app_secret
-
         raise ValueError("未配置启用的飞书 App ID/App Secret")
 
     @staticmethod
@@ -79,21 +69,31 @@ class FeishuJsapiService:
         if cached and cached[1] > now:
             return cached[0]
 
-        token = ApprovalService.fetch_tenant_access_token(
-            type(
-                "FeishuTokenConfig",
-                (),
-                {
-                    "app_id": app_id,
-                    "app_secret": app_secret,
-                    "tenant_access_token_url": None,
-                },
-            )()
-        )
+        token = FeishuJsapiService.fetch_tenant_access_token(app_id, app_secret)
         ticket, expires_in = FeishuJsapiService.fetch_jsapi_ticket(token)
         ttl = max(int(expires_in or 7200) - TICKET_REFRESH_SKEW_SECONDS, 60)
         FeishuJsapiService._ticket_cache[app_id] = (ticket, now + ttl)
         return ticket
+
+    @staticmethod
+    def fetch_tenant_access_token(app_id: str, app_secret: str) -> str:
+        body = json.dumps({"app_id": app_id, "app_secret": app_secret}).encode("utf-8")
+        request = UrlRequest(DEFAULT_TOKEN_URL, data=body, headers={"Content-Type": "application/json; charset=utf-8"}, method="POST")
+        try:
+            with urlopen(request, timeout=15) as response:
+                result = json.loads(response.read().decode("utf-8") or "{}")
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="ignore")
+            raise ValueError(f"tenant token fetch failed: HTTP {exc.code} {detail}") from exc
+        except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise ValueError(f"tenant token fetch failed: {exc}") from exc
+        code = result.get("code", 0)
+        if code not in (0, None):
+            raise ValueError(result.get("msg") or "tenant token fetch failed")
+        token = result.get("tenant_access_token") or (result.get("data") or {}).get("tenant_access_token")
+        if not token:
+            raise ValueError("tenant_access_token missing")
+        return token
 
     @staticmethod
     def fetch_jsapi_ticket(tenant_access_token: str) -> tuple[str, int]:

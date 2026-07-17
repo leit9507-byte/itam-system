@@ -163,60 +163,6 @@ class PurchaseService:
         return {"purchase": purchase, "assets": created_assets}
 
     @staticmethod
-    def approve_purchase(db: Session, purchase_no: str, operator: str = "system", allow_submitted: bool = False) -> Purchase:
-        purchase = db.query(Purchase).filter(Purchase.purchase_no == purchase_no).first()
-        if not purchase:
-            raise ValueError("purchase not found")
-        if purchase.status == "received":
-            raise ValueError("received purchase cannot be approved again")
-        if purchase.status == "pending_acceptance":
-            return purchase
-        allowed = {"created", "approval_submitted"} if allow_submitted else {"created"}
-        if purchase.status not in allowed:
-            raise ValueError(f"purchase status cannot be approved: {purchase.status}")
-        purchase.status = "pending_acceptance"
-        AuditLogService.record_operation(db, "purchase", "approve", operator, "purchase", purchase.purchase_no, f"采购审批通过 {purchase.purchase_no}")
-        db.commit()
-        db.refresh(purchase)
-        NotificationService.send_event(
-            db,
-            "acceptance",
-            "采购单已进入验收",
-            [
-                f"采购单号：{purchase.purchase_no}",
-                f"供应商：{purchase.supplier_name or '-'}",
-                f"采购金额：￥{purchase.total_amount or 0:,.0f}",
-                f"当前状态：待验收",
-                f"处理建议：请进入待办中心完善资产编号、序列号和使用人",
-            ],
-        )
-        return purchase
-
-    @staticmethod
-    def mark_approval_submitted(db: Session, purchase_no: str, operator: str = "system") -> Purchase:
-        purchase = db.query(Purchase).filter(Purchase.purchase_no == purchase_no).first()
-        if not purchase:
-            raise ValueError("purchase not found")
-        if purchase.status == "created":
-            purchase.status = "approval_submitted"
-            AuditLogService.record_operation(db, "purchase", "approval_submit", operator, "purchase", purchase.purchase_no, f"采购提交飞书审批 {purchase.purchase_no}")
-            db.commit()
-            db.refresh(purchase)
-            NotificationService.send_event(
-                db,
-                "purchase",
-                "采购审批已提交",
-                [
-                    f"采购单号：{purchase.purchase_no}",
-                    f"供应商：{purchase.supplier_name or '-'}",
-                    f"采购金额：￥{purchase.total_amount or 0:,.0f}",
-                    f"当前状态：审批中",
-                    f"操作人：{operator}",
-                ],
-            )
-        return purchase
-
-    @staticmethod
     def accept_purchase(db: Session, purchase_no: str, payload: PurchaseAcceptanceReceive) -> dict:
         purchase = db.query(Purchase).filter(Purchase.purchase_no == purchase_no).first()
         if not purchase:

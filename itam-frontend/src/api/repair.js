@@ -95,7 +95,7 @@ export async function getRepairDashboard(filters = {}) {
 }
 
 function mapRepair(row) {
-  const statusLabelMap = { approval_submitted: '已提交飞书审批', rejected: '已驳回' }
+  const statusLabelMap = { approval_submitted: '维修中', rejected: '已驳回' }
   return {
     id: row.id,
     repair_no: row.repair_no,

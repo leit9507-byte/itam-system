@@ -50,6 +50,16 @@
       </el-table-column>
       <el-table-column prop="location" label="位置" min-width="140" show-overflow-tooltip />
     </el-table>
+    <el-form :model="reclaimDialog.form" label-width="88px" class="todo-asset-form">
+      <el-form-item label="入库位置" required>
+        <el-select v-model="reclaimDialog.form.location" filterable clearable placeholder="选择回收入库位置" :teleported="false" style="width: 100%">
+          <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="备注">
+        <el-input v-model="reclaimDialog.form.remark" type="textarea" :rows="2" />
+      </el-form-item>
+    </el-form>
     <template #footer>
       <el-button @click="reclaimDialog.visible = false">取消</el-button>
       <el-button type="primary" :disabled="!reclaimDialog.selected.length" :loading="processing" @click="submitUserReclaim">确认回收 {{ reclaimDialog.selected.length }} 个资产</el-button>
@@ -60,7 +70,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getAssets, inboundAsset, outboundAsset, submitReclaimApproval } from '../api/asset'
+import { getAssets, inboundAsset, outboundAsset } from '../api/asset'
 import { getLocations } from '../api/location'
 import { getUsers } from '../api/user'
 
@@ -82,7 +92,8 @@ const reclaimDialog = reactive({
   user: null,
   userName: '',
   assets: [],
-  selected: []
+  selected: [],
+  form: { location: '', remark: '离职资产回收入库' }
 })
 
 const dialogWidth = computed(() => (props.mobile ? 'min(360px, calc(100vw - 28px))' : '620px'))
@@ -159,9 +170,10 @@ async function openUserReclaimDialog(item) {
   reclaimDialog.user = item
   reclaimDialog.userName = item.name || item.owner || item.display_name || item.username || ''
   reclaimDialog.selected = []
+  Object.assign(reclaimDialog.form, { location: '', remark: '离职资产回收入库' })
   processing.value = true
   try {
-    const { list } = await getAssets({ page: 1, page_size: 500 })
+    const [{ list }] = await Promise.all([getAssets({ page: 1, page_size: 500 }), ensureOptions()])
     reclaimDialog.assets = list.filter(asset => {
       if (!['in_use', 'borrowed', 'out_stock', 'repair'].includes(asset.status)) return false
       if (item.asset_ids?.length) return item.asset_ids.includes(asset.asset_id)
@@ -182,12 +194,13 @@ async function openUserReclaimDialog(item) {
 
 async function submitUserReclaim() {
   if (!reclaimDialog.selected.length) return ElMessage.warning('请选择要回收的资产')
+  if (!reclaimDialog.form.location) return ElMessage.warning('请选择回收入库位置')
   processing.value = true
   try {
     for (const asset of reclaimDialog.selected) {
-      await submitReclaimApproval(asset.asset_id, { location: '', remark: '离职资产回收审批' })
+      await inboundAsset(asset.asset_id, reclaimDialog.form)
     }
-    ElMessage.success(`已提交 ${reclaimDialog.selected.length} 个资产的飞书回收审批`)
+    ElMessage.success(`已回收入库 ${reclaimDialog.selected.length} 个资产`)
     reclaimDialog.visible = false
     emit('completed')
   } catch (error) {
