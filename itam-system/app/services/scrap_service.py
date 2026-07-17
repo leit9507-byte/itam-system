@@ -8,6 +8,7 @@ from app.models.asset import Asset
 from app.models.scrap import ScrapRequest
 from app.models.user import UserDirectory
 from app.services.audit_log_service import AuditLogService
+from app.services.asset_residual_service import AssetResidualService
 from app.services.lifecycle_service import LifecycleService
 from app.services.notification_service import NotificationService
 
@@ -95,7 +96,7 @@ class ScrapService:
             disposal_method=None,
             retirement_date=payload.get("retirement_date"),
             retirement_approval_no=payload.get("retirement_approval_no") or "",
-            estimated_residual_value=float(payload.get("estimated_residual_value") or 0),
+            estimated_residual_value=AssetResidualService.calculate_asset(asset),
             status="待处置",
         )
         from_status = asset.status

@@ -53,6 +53,7 @@
               <el-descriptions-item label="部门">{{ deptName }}</el-descriptions-item>
               <el-descriptions-item label="位置">{{ detail.asset?.location || '-' }}</el-descriptions-item>
               <el-descriptions-item label="价值">¥{{ Number(detail.asset?.price || 0).toLocaleString() }}</el-descriptions-item>
+              <el-descriptions-item label="当前残值">¥{{ Number(detail.asset?.current_residual_value || 0).toLocaleString() }}</el-descriptions-item>
               <el-descriptions-item label="备注" :span="2">{{ detail.asset?.remark || '-' }}</el-descriptions-item>
             </el-descriptions>
           </div>

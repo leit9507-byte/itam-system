@@ -81,6 +81,7 @@ class Settings(BaseModel):
     max_assets_per_user: int = int(os.getenv("MAX_ASSETS_PER_USER", "5"))
     high_value_threshold: float = float(os.getenv("HIGH_VALUE_THRESHOLD", "50000"))
     idle_days_threshold: int = int(os.getenv("IDLE_DAYS_THRESHOLD", "90"))
+    asset_residual_rate: float = float(os.getenv("ASSET_RESIDUAL_RATE", "0.05"))
     jwt_secret: str = os.getenv("JWT_SECRET", "change-me-in-production")
     jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", "480"))
     login_lock_threshold: int = int(os.getenv("LOGIN_LOCK_THRESHOLD", "5"))

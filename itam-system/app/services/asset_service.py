@@ -25,6 +25,7 @@ from app.models.stocktake import StocktakeItem
 from app.models.user import UserDirectory
 from app.schemas.asset import AssetBatchCheckinCreate, AssetBatchCheckoutCreate, AssetBatchImport, AssetCheckinCreate, AssetCheckoutCreate, AssetCreate, AssetImportRow, AssetTextImport, AssetUpdate
 from app.services.audit_log_service import AuditLogService
+from app.services.asset_residual_service import AssetResidualService
 from app.services.lifecycle_service import LifecycleService
 from app.services.notification_service import NotificationService
 from app.services.supplier_service import SupplierService
@@ -1518,6 +1519,7 @@ class AssetService:
             "sn": asset.sn,
             "config": asset.config,
             "purchase_price": asset.purchase_price,
+            "current_residual_value": AssetResidualService.calculate_asset(asset),
             "purchase_date": asset.purchase_date,
             "purchase_approval_no": asset.purchase_approval_no,
             "purchase_supplier_name": asset.purchase_supplier_name,

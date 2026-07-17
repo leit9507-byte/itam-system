@@ -116,6 +116,7 @@ class AssetOut(BaseModel):
     sn: Optional[str]
     config: Optional[Dict[str, Any]]
     purchase_price: float
+    current_residual_value: float = 0
     purchase_date: Optional[datetime]
     purchase_approval_no: Optional[str]
     purchase_supplier_name: Optional[str]

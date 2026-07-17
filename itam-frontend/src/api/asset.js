@@ -408,6 +408,7 @@ function mapBackendAsset(row) {
     status: row.status || 'in_stock',
     price: Number(row.purchase_price || 0),
     purchase_price: Number(row.purchase_price || 0),
+    current_residual_value: Number(row.current_residual_value || 0),
     purchase_date: purchaseDate,
     purchase_approval_no: row.purchase_approval_no || '',
     purchase_supplier_name: row.purchase_supplier_name || '',

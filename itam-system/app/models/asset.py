@@ -29,3 +29,9 @@ class Asset(Base):
     location = Column(String(128), nullable=True, index=True)
     remark = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    @property
+    def current_residual_value(self) -> float:
+        from app.services.asset_residual_service import AssetResidualService
+
+        return AssetResidualService.calculate_asset(self)

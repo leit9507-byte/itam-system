@@ -84,6 +84,9 @@
           <el-table-column v-else-if="column.key === 'price'" prop="price" label="价值" width="120">
             <template #default="{ row }">¥{{ Number(row.price || 0).toLocaleString() }}</template>
           </el-table-column>
+          <el-table-column v-else-if="column.key === 'current_residual_value'" prop="current_residual_value" label="当前残值" width="120">
+            <template #default="{ row }">¥{{ Number(row.current_residual_value || 0).toLocaleString() }}</template>
+          </el-table-column>
           <el-table-column v-else :prop="column.prop" :label="column.label" :width="column.width" :min-width="column.minWidth" :show-overflow-tooltip="column.tooltip" />
         </template>
         <el-table-column label="操作" width="270" fixed="right">
@@ -415,7 +418,7 @@ const columnDialog = reactive({ visible: false })
 const workflowHint = ref('')
 const assignedStatuses = ['in_use', 'borrowed']
 const unassignedStatuses = ['pending_purchase', 'pending_acceptance', 'in_stock', 'idle', 'ready_scrap']
-const ASSET_COLUMN_ORDER_KEY = 'itam_asset_list_column_order_v4'
+const ASSET_COLUMN_ORDER_KEY = 'itam_asset_list_column_order_v5'
 const assetColumnDefs = [
   { key: 'display_id', prop: 'display_id', label: 'ID', width: 90 },
   { key: 'company', prop: 'company', label: '公司', width: 140, tooltip: true },
@@ -425,6 +428,7 @@ const assetColumnDefs = [
   { key: 'sn', prop: 'sn', label: '序列号', width: 150 },
   { key: 'purchase_supplier_name', prop: 'purchase_supplier_name', label: '供应商', width: 150, tooltip: true },
   { key: 'price', label: '价值' },
+  { key: 'current_residual_value', label: '当前残值' },
   { key: 'status', label: '状态' },
   { key: 'dept', label: '部门' },
   { key: 'owner', label: '使用人' },
@@ -443,6 +447,7 @@ const DEFAULT_ASSET_COLUMN_ORDER = [
   'sn',
   'purchase_supplier_name',
   'price',
+  'current_residual_value',
   'status',
   'dept',
   'owner',
