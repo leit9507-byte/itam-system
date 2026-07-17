@@ -249,6 +249,7 @@ import { getLocations } from '../../api/location'
 
 const loading = ref(false)
 const route = useRoute()
+const isLicensePage = computed(() => route.meta.inventoryMode === 'license')
 const submitting = ref(false)
 const items = ref([])
 const ledgerRows = ref([])
@@ -275,7 +276,6 @@ const seatStats = reactive({ available: 0, assigned: 0, recovered: 0, disabled: 
 const installationFilters = reactive({ keyword: '' })
 const installationPagination = reactive({ page: 1, pageSize: 10, total: 0 })
 
-const isLicensePage = computed(() => route.meta.inventoryMode === 'license')
 const scopedTypes = computed(() => (isLicensePage.value ? ['license'] : ['consumable', 'accessory', 'component']))
 const availableInventoryTypes = computed(() => inventoryTypes.filter(item => scopedTypes.value.includes(item.value)))
 const pageTitle = computed(() => (isLicensePage.value ? '软件许可' : '配件管理'))
