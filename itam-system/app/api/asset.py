@@ -54,6 +54,7 @@ def asset_summary(db: Session = Depends(get_db)):
 
 @router.get("/checkouts/list")
 def list_asset_checkouts(
+    request: Request,
     page: int = 1,
     page_size: int = 20,
     keyword: str | None = None,
@@ -82,6 +83,7 @@ def list_asset_checkouts(
         due_from,
         due_to,
         due_days,
+        user_context_from_request(request),
     )
 
 

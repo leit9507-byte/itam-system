@@ -1144,10 +1144,12 @@ class AssetService:
         due_from: str | None = None,
         due_to: str | None = None,
         due_days: int = 7,
+        user_context: dict | None = None,
     ) -> dict:
         now = datetime.utcnow()
         due_limit = now + AssetService.timedelta_days(max(due_days, 0))
         query = db.query(AssetCheckout, Asset).outerjoin(Asset, Asset.asset_id == AssetCheckout.asset_id)
+        query = AssetService.apply_data_scope(query, user_context)
         clean_keyword = AssetService.normalize_blank(keyword)
         if clean_keyword:
             pattern = f"%{clean_keyword}%"
@@ -1207,7 +1209,10 @@ class AssetService:
             .limit(page_size)
             .all()
         )
-        base = db.query(AssetCheckout)
+        base = db.query(AssetCheckout).join(Asset, Asset.asset_id == AssetCheckout.asset_id)
+        base = AssetService.apply_data_scope(base, user_context)
+        if checkout_type:
+            base = base.filter(AssetCheckout.checkout_type == checkout_type)
         summary = {
             "open": base.filter(AssetCheckout.status == "open").count(),
             "closed": base.filter(AssetCheckout.status == "closed").count(),
