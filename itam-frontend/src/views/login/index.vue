@@ -47,6 +47,7 @@
               <template #prefix><el-icon><Lock /></el-icon></template>
             </el-input>
           </el-form-item>
+          <el-checkbox v-model="form.remember_me" class="remember-login">30 天内保持登录</el-checkbox>
           <el-button type="primary" size="large" class="login-button" :loading="loading" @click="submitLogin">登录系统</el-button>
         </el-form>
 
@@ -70,7 +71,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useAppStore()
 const loading = ref(false)
-const form = reactive({ provider: 'local', username: '', password: '' })
+const form = reactive({ provider: 'local', username: '', password: '', remember_me: false })
 const providerOptions = [
   { label: '本地账号', value: 'local' },
   { label: 'LDAP', value: 'ldap' }

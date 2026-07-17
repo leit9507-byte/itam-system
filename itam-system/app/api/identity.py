@@ -28,7 +28,7 @@ router = APIRouter(tags=["Identity"])
 @router.post("/auth/login", response_model=LoginResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     try:
-        return IdentityService.authenticate(db, payload.username, payload.password, payload.provider)
+        return IdentityService.authenticate(db, payload.username, payload.password, payload.provider, payload.remember_me)
     except PermissionError as exc:
         raise HTTPException(status_code=423, detail=str(exc)) from exc
     except ValueError as exc:

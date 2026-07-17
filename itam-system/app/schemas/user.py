@@ -63,6 +63,7 @@ class LoginRequest(BaseModel):
     username: str
     password: str = ""
     provider: str = "local"
+    remember_me: bool = False
 
 
 class LoginResponse(BaseModel):

@@ -84,6 +84,7 @@ class Settings(BaseModel):
     asset_residual_rate: float = float(os.getenv("ASSET_RESIDUAL_RATE", "0.05"))
     jwt_secret: str = os.getenv("JWT_SECRET", "change-me-in-production")
     jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", "480"))
+    jwt_remember_expire_days: int = int(os.getenv("JWT_REMEMBER_EXPIRE_DAYS", "30"))
     login_lock_threshold: int = int(os.getenv("LOGIN_LOCK_THRESHOLD", "5"))
     login_lock_minutes: int = int(os.getenv("LOGIN_LOCK_MINUTES", "15"))
     upload_dir: str = os.getenv("UPLOAD_DIR", "uploads")

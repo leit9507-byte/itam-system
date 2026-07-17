@@ -220,8 +220,13 @@ class IdentityService:
         return user
 
     @staticmethod
-    def authenticate(db: Session, username: str, password: str, provider: str = "local") -> dict:
+    def authenticate(db: Session, username: str, password: str, provider: str = "local", remember_me: bool = False) -> dict:
         IdentityService.ensure_seed(db)
+        settings = get_settings()
+        expires_minutes = max(
+            settings.jwt_remember_expire_days * 24 * 60 if remember_me else settings.jwt_expire_minutes,
+            1,
+        )
         if provider == "ldap":
             from app.services.sso_service import SsoService
 
@@ -229,11 +234,10 @@ class IdentityService:
             user.last_login_at = datetime.utcnow()
             db.commit()
             db.refresh(user)
-            token = create_access_token(user.user_id, user.role)
-            return {"access_token": token, "token_type": "bearer", "expires_in": get_settings().jwt_expire_minutes * 60, "user": user}
+            token = create_access_token(user.user_id, user.role, expires_minutes)
+            return {"access_token": token, "token_type": "bearer", "expires_in": expires_minutes * 60, "user": user}
         if provider != "local":
             raise ValueError("only local and LDAP login are enabled")
-        settings = get_settings()
         user = db.query(UserDirectory).filter(UserDirectory.username == username).first()
         now = datetime.utcnow()
         if not user:
@@ -254,8 +258,8 @@ class IdentityService:
         user.last_login_at = now
         db.commit()
         db.refresh(user)
-        token = create_access_token(user.user_id, user.role)
-        return {"access_token": token, "token_type": "bearer", "expires_in": settings.jwt_expire_minutes * 60, "user": user}
+        token = create_access_token(user.user_id, user.role, expires_minutes)
+        return {"access_token": token, "token_type": "bearer", "expires_in": expires_minutes * 60, "user": user}
 
     @staticmethod
     def list_permissions(db: Session) -> list[RolePermission]:

@@ -289,6 +289,7 @@ docker compose -p itam -f docker-compose.yml -f docker-compose.dev.yml up --buil
 DATABASE_URL=mysql+pymysql://itam:itam_pass@mysql:3306/itam_system?charset=utf8mb4
 JWT_SECRET=change-this-secret
 JWT_EXPIRE_MINUTES=480
+JWT_REMEMBER_EXPIRE_DAYS=30
 LOGIN_LOCK_THRESHOLD=5
 LOGIN_LOCK_MINUTES=15
 UPLOAD_DIR=/app/runtime/uploads
