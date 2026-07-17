@@ -42,6 +42,15 @@
         <template #header>维修型号 TOP10</template>
         <div ref="modelRef" class="chart" />
       </el-card>
+      <el-card shadow="never">
+        <template #header>
+          <div class="card-header">
+            <span>品牌故障率</span>
+            <el-tag v-if="dashboard.brandFaultPeak" type="danger" effect="light">{{ dashboard.brandFaultPeak }}</el-tag>
+          </div>
+        </template>
+        <div ref="brandRateRef" class="chart" />
+      </el-card>
       <el-card shadow="never" class="wide-chart">
         <template #header>
           <div class="card-header">
@@ -186,12 +195,13 @@ const records = ref([])
 const trendRef = ref(null)
 const faultRef = ref(null)
 const modelRef = ref(null)
+const brandRateRef = ref(null)
 const ageTrendRef = ref(null)
 const charts = []
 const faultTypes = ref([])
 const filters = reactive({ keyword: '', status: '', dateRange: defaultDateRange(), sortMode: 'latest' })
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
-const dashboard = reactive({ total: 0, inProgress: 0, completed: 0, totalCost: 0, avgCost: 0, topFaults: [], topModels: [], ageTrend: [], ageTrendPeak: '', costTrend: [] })
+const dashboard = reactive({ total: 0, inProgress: 0, completed: 0, totalCost: 0, avgCost: 0, topFaults: [], topModels: [], brandFaultRates: [], brandFaultPeak: '', ageTrend: [], ageTrendPeak: '', costTrend: [] })
 const faultTypeDialog = reactive({ visible: false, form: defaultFaultTypeForm() })
 const finishDialog = reactive({ visible: false, row: null, form: defaultFinishForm() })
 
@@ -262,6 +272,31 @@ function renderCharts() {
     series: [{ name: '维修次数', type: 'bar', data: dashboard.topModels.map(item => item.value), itemStyle: { color: '#2563eb', borderRadius: [0, 4, 4, 0] } }]
   })
 
+  const brandRate = echarts.init(brandRateRef.value)
+  brandRate.setOption({
+    tooltip: {
+      trigger: 'axis',
+      formatter(params) {
+        const brand = params[0]?.axisValue || ''
+        const row = dashboard.brandFaultRates.find(item => item.brand === brand)
+        if (!row) return brand
+        return `${brand}<br/>故障率：${row.rate}%<br/>故障设备：${row.fault_asset_count}/${row.asset_count}<br/>维修次数：${row.repair_count}`
+      }
+    },
+    grid: { left: 118, right: 48, top: 26, bottom: 28 },
+    xAxis: { type: 'value', name: '%' },
+    yAxis: { type: 'category', data: dashboard.brandFaultRates.map(item => item.brand), axisLabel: { width: 104, overflow: 'truncate' } },
+    series: [
+      {
+        name: '故障率',
+        type: 'bar',
+        data: dashboard.brandFaultRates.map(item => item.rate),
+        label: { show: true, position: 'right', formatter: '{c}%' },
+        itemStyle: { color: '#dc2626', borderRadius: [0, 4, 4, 0] }
+      }
+    ]
+  })
+
   const ageTrend = echarts.init(ageTrendRef.value)
   ageTrend.setOption({
     tooltip: {
@@ -285,7 +320,7 @@ function renderCharts() {
     ]
   })
 
-  charts.push(trend, fault, model, ageTrend)
+  charts.push(trend, fault, model, brandRate, ageTrend)
 }
 
 function isRepairClosed(row) {

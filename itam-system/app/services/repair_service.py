@@ -295,6 +295,7 @@ class RepairService:
             "asset_name": asset.name if asset else None,
             "sn": asset.sn if asset else None,
             "category": asset.category if asset else None,
+            "brand": asset.brand if asset else None,
             "asset_model": asset.model if asset else None,
             "purchase_date": asset.purchase_date if asset else None,
             "owner": asset.owner_user_id if asset else None,

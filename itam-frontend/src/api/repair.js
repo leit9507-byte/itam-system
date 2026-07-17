@@ -1,6 +1,8 @@
 import request from '../utils/request'
+import { getAssets } from './asset'
 
 const REPAIR_DASHBOARD_LIMIT = 500
+const REPAIR_ASSET_RATE_LIMIT = 2000
 
 export async function createRepairRecord(asset, payload) {
   return mapRepair(
@@ -68,10 +70,14 @@ export async function finishRepairRecord(recordId, payload = {}) {
 }
 
 export async function getRepairDashboard(filters = {}) {
-  const { list: rows } = await getRepairRecords({ ...filters, page: 1, page_size: REPAIR_DASHBOARD_LIMIT })
+  const [{ list: rows }, { list: assets }] = await Promise.all([
+    getRepairRecords({ ...filters, page: 1, page_size: REPAIR_DASHBOARD_LIMIT }),
+    getAssets({ page: 1, page_size: REPAIR_ASSET_RATE_LIMIT }).catch(() => ({ list: [] }))
+  ])
   const inProgress = rows.filter(item => item.status === '维修中')
   const completed = rows.filter(item => ['已完成', '未修好'].includes(item.status))
   const totalCost = rows.reduce((sum, item) => sum + Number(item.repair_cost || 0), 0)
+  const brandFaultRates = buildBrandFaultRates(rows, assets)
   return {
     total: rows.length,
     inProgress: inProgress.length,
@@ -80,6 +86,8 @@ export async function getRepairDashboard(filters = {}) {
     avgCost: rows.length ? Math.round(totalCost / rows.length) : 0,
     topFaults: groupCount(rows, 'fault_reason').slice(0, 10),
     topModels: groupCount(rows, 'asset_model').slice(0, 10),
+    brandFaultRates,
+    brandFaultPeak: buildBrandFaultPeak(brandFaultRates),
     ageTrend: buildAgeTrend(rows),
     ageTrendPeak: buildAgeTrendPeak(rows),
     costTrend: buildCostTrend(rows)
@@ -95,6 +103,7 @@ function mapRepair(row) {
     asset_name: row.asset_name || '',
     sn: row.sn || '',
     category: row.category || '',
+    brand: row.brand || '',
     asset_model: row.asset_model || '',
     purchase_date: formatDate(row.purchase_date),
     owner: row.owner || '',
@@ -173,6 +182,43 @@ function buildAgeTrend(rows) {
     cost: item.cost,
     avg_cost: item.value ? Math.round(item.cost / item.value) : 0
   }))
+}
+
+function buildBrandFaultRates(rows, assets) {
+  const managedAssets = assets.filter(item => !['scrapped', 'disposed'].includes(item.status))
+  const byBrand = new Map()
+  managedAssets.forEach(asset => {
+    const brand = normalizeBrand(asset.brand)
+    if (!byBrand.has(brand)) byBrand.set(brand, { brand, asset_count: 0, fault_asset_ids: new Set(), repair_count: 0, rate: 0 })
+    byBrand.get(brand).asset_count += 1
+  })
+  const assetBrandMap = new Map(managedAssets.map(asset => [asset.asset_id, normalizeBrand(asset.brand)]))
+  rows.forEach(row => {
+    const brand = assetBrandMap.get(row.asset_id) || normalizeBrand(row.brand)
+    if (!byBrand.has(brand)) byBrand.set(brand, { brand, asset_count: 0, fault_asset_ids: new Set(), repair_count: 0, rate: 0 })
+    const item = byBrand.get(brand)
+    if (row.asset_id) item.fault_asset_ids.add(row.asset_id)
+    item.repair_count += 1
+  })
+  return [...byBrand.values()]
+    .map(item => {
+      const fault_asset_count = item.fault_asset_ids.size
+      const rate = item.asset_count ? Math.round((fault_asset_count / item.asset_count) * 1000) / 10 : 0
+      return { brand: item.brand, asset_count: item.asset_count, fault_asset_count, repair_count: item.repair_count, rate }
+    })
+    .filter(item => item.asset_count > 0 || item.repair_count > 0)
+    .sort((a, b) => b.rate - a.rate || b.repair_count - a.repair_count)
+    .slice(0, 10)
+}
+
+function buildBrandFaultPeak(rows) {
+  if (!rows.length) return ''
+  const peak = rows[0]
+  return peak.rate ? `${peak.brand}故障率最高：${peak.rate}%` : ''
+}
+
+function normalizeBrand(value) {
+  return String(value || '').trim() || '未填写'
 }
 
 function buildAgeTrendPeak(rows) {
