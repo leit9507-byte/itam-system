@@ -92,6 +92,7 @@ function normalizeItem(payload) {
     license_key: payload.license_key || '',
     expire_date: payload.expire_date ? `${payload.expire_date}T00:00:00` : null,
     supplier: payload.supplier || '',
+    dept_id: payload.dept_id || '',
     location: payload.location || '',
     status: payload.status || 'active',
     remark: payload.remark || ''

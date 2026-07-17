@@ -23,6 +23,7 @@ class InventoryItem(Base):
     license_key = Column(String(255), nullable=True)
     expire_date = Column(DateTime, nullable=True)
     supplier = Column(String(128), nullable=True)
+    dept_id = Column(String(64), nullable=True, index=True)
     location = Column(String(128), nullable=True)
     status = Column(String(32), default="active", nullable=False, index=True)
     remark = Column(Text, nullable=True)

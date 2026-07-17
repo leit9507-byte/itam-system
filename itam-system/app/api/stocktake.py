@@ -94,8 +94,8 @@ def create_task(payload: StocktakeTaskCreate, request: Request, db: Session = De
 
 
 @router.post("/tasks/{task_id}/start")
-def start_task(task_id: str, db: Session = Depends(get_db)):
-    task = get_task(db, task_id)
+def start_task(task_id: str, request: Request, db: Session = Depends(get_db)):
+    task, visible_asset_ids = get_scoped_task(db, task_id, request, require_full_scope=True)
     if task.status == "待开始":
         task.status = "进行中"
         db.commit()
@@ -113,17 +113,16 @@ def start_task(task_id: str, db: Session = Depends(get_db)):
                 f"开始时间：{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}",
             ],
         )
-    return serialize_task(task)
+    return serialize_task(task, visible_asset_ids)
 
 
 @router.post("/tasks/{task_id}/items/{asset_id}")
-def submit_item(task_id: str, asset_id: str, payload: StocktakeItemSubmit, db: Session = Depends(get_db)):
-    task = get_task(db, task_id)
+def submit_item(task_id: str, asset_id: str, payload: StocktakeItemSubmit, request: Request, db: Session = Depends(get_db)):
+    task, visible_asset_ids = get_scoped_task(db, task_id, request)
     item = next((row for row in task.items if row.asset_id == asset_id or row.sn == asset_id), None)
-    if not item:
+    if not item or item.asset_id not in visible_asset_ids:
         raise HTTPException(status_code=404, detail="该资产不在当前盘点任务范围内")
-    if task.status == "待开始":
-        task.status = "进行中"
+    ensure_task_accepts_items(task, visible_asset_ids)
     item.actual_location = payload.actual_location or ""
     item.result = payload.result
     item.checker = payload.checker or task.owner
@@ -139,13 +138,12 @@ def submit_item(task_id: str, asset_id: str, payload: StocktakeItemSubmit, db: S
 
 
 @router.post("/tasks/{task_id}/items/{asset_id}/exception")
-def report_exception(task_id: str, asset_id: str, payload: StocktakeExceptionSubmit, db: Session = Depends(get_db)):
-    task = get_task(db, task_id)
+def report_exception(task_id: str, asset_id: str, payload: StocktakeExceptionSubmit, request: Request, db: Session = Depends(get_db)):
+    task, visible_asset_ids = get_scoped_task(db, task_id, request)
     item = next((row for row in task.items if row.asset_id == asset_id or row.sn == asset_id), None)
-    if not item:
+    if not item or item.asset_id not in visible_asset_ids:
         raise HTTPException(status_code=404, detail="该资产不在当前盘点任务范围内")
-    if task.status == "待开始":
-        task.status = "进行中"
+    ensure_task_accepts_items(task, visible_asset_ids)
     item.actual_location = payload.actual_location or ""
     item.result = payload.result if payload.result in {"盘盈", "盘亏", "位置不符", "状态不符"} else "位置不符"
     item.checker = payload.reporter or task.owner
@@ -164,10 +162,10 @@ def report_exception(task_id: str, asset_id: str, payload: StocktakeExceptionSub
 
 
 @router.post("/tasks/{task_id}/items/{asset_id}/review")
-def review_exception(task_id: str, asset_id: str, payload: StocktakeReviewSubmit, db: Session = Depends(get_db)):
-    task = get_task(db, task_id)
+def review_exception(task_id: str, asset_id: str, payload: StocktakeReviewSubmit, request: Request, db: Session = Depends(get_db)):
+    task, visible_asset_ids = get_scoped_task(db, task_id, request)
     item = next((row for row in task.items if row.asset_id == asset_id), None)
-    if not item:
+    if not item or item.asset_id not in visible_asset_ids:
         raise HTTPException(status_code=404, detail="该资产不在当前盘点任务范围内")
     if item.result == "正常":
         item.review_status = "无需复核"
@@ -183,8 +181,8 @@ def review_exception(task_id: str, asset_id: str, payload: StocktakeReviewSubmit
 
 
 @router.post("/tasks/{task_id}/finish")
-def finish_task(task_id: str, db: Session = Depends(get_db)):
-    task = get_task(db, task_id)
+def finish_task(task_id: str, request: Request, db: Session = Depends(get_db)):
+    task, visible_asset_ids = get_scoped_task(db, task_id, request, require_full_scope=True)
     for item in task.items:
         if item.result == "未盘":
             item.result = "盘亏"
@@ -196,12 +194,19 @@ def finish_task(task_id: str, db: Session = Depends(get_db)):
     task.status = "已完成"
     db.commit()
     db.refresh(task)
-    return serialize_task(task)
+    return serialize_task(task, visible_asset_ids)
 
 
 @router.get("/tasks/{task_id}/scan-logs")
-def list_scan_logs(task_id: str, db: Session = Depends(get_db)):
-    rows = db.query(StocktakeScanLog).filter(StocktakeScanLog.task_id == task_id).order_by(StocktakeScanLog.created_at.desc()).limit(500).all()
+def list_scan_logs(task_id: str, request: Request, db: Session = Depends(get_db)):
+    _, visible_asset_ids = get_scoped_task(db, task_id, request)
+    rows = (
+        db.query(StocktakeScanLog)
+        .filter(StocktakeScanLog.task_id == task_id, StocktakeScanLog.asset_id.in_(visible_asset_ids))
+        .order_by(StocktakeScanLog.created_at.desc())
+        .limit(500)
+        .all()
+    )
     return [
         {
             "id": row.id,
@@ -256,11 +261,34 @@ def get_task(db: Session, task_id: str) -> StocktakeTask:
     return task
 
 
+def get_scoped_task(db: Session, task_id: str, request: Request, require_full_scope: bool = False) -> tuple[StocktakeTask, set[str]]:
+    task = get_task(db, task_id)
+    visible_asset_ids = visible_asset_id_set(db, request)
+    task_asset_ids = {item.asset_id for item in task.items}
+    visible_task_asset_ids = task_asset_ids & visible_asset_ids
+    if not visible_task_asset_ids:
+        raise HTTPException(status_code=404, detail="盘点任务不存在")
+    if require_full_scope and visible_task_asset_ids != task_asset_ids:
+        raise HTTPException(status_code=403, detail="不能启动或完成包含数据范围外资产的盘点任务")
+    return task, visible_asset_ids
+
+
 def refresh_task_status(task: StocktakeTask) -> None:
     total = len(task.items)
     checked = len([item for item in task.items if item.result != "未盘"])
     if task.status != "已完成" and total and checked == total:
         task.status = "待确认"
+
+
+def ensure_task_accepts_items(task: StocktakeTask, visible_asset_ids: set[str]) -> None:
+    if task.status == "已完成":
+        raise HTTPException(status_code=400, detail="已完成的盘点任务不能继续登记")
+    if task.status != "待开始":
+        return
+    task_asset_ids = {item.asset_id for item in task.items}
+    if not task_asset_ids.issubset(visible_asset_ids):
+        raise HTTPException(status_code=403, detail="跨部门盘点任务需由具有全局数据权限的管理员先启动")
+    task.status = "进行中"
 
 
 def record_scan_log(db: Session, task_id: str, asset_id: str | None, scan_raw: str | None, parsed_code: str | None, result: str, client_source: str | None, operator: str | None, message: str | None) -> None:
@@ -280,13 +308,14 @@ def record_scan_log(db: Session, task_id: str, asset_id: str | None, scan_raw: s
 
 def serialize_task(task: StocktakeTask, visible_asset_ids: set[str] | None = None) -> dict:
     items = [item for item in task.items if visible_asset_ids is None or item.asset_id in visible_asset_ids]
+    is_partial = visible_asset_ids is not None and len(items) != len(task.items)
     checked = len([item for item in items if item.result != "未盘"])
     abnormal = len([item for item in items if item.result in {"盘盈", "盘亏", "位置不符", "状态不符"}])
     return {
         "id": task.id,
         "name": task.name,
         "scope": task.scope,
-        "target": task.target or "",
+        "target": "当前数据范围" if is_partial else task.target or "",
         "owner": task.owner or "",
         "status": task.status,
         "created_at": task.created_at.date().isoformat() if task.created_at else "",

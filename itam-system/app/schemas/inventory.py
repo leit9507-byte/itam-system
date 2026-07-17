@@ -18,6 +18,7 @@ class InventoryItemBase(BaseModel):
     license_key: Optional[str] = None
     expire_date: Optional[datetime] = None
     supplier: Optional[str] = None
+    dept_id: Optional[str] = None
     location: Optional[str] = None
     status: str = "active"
     remark: Optional[str] = None
@@ -41,6 +42,7 @@ class InventoryItemUpdate(BaseModel):
     license_key: Optional[str] = None
     expire_date: Optional[datetime] = None
     supplier: Optional[str] = None
+    dept_id: Optional[str] = None
     location: Optional[str] = None
     status: Optional[str] = None
     remark: Optional[str] = None

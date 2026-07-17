@@ -1,13 +1,15 @@
 import json
 from datetime import datetime, time
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.security import user_context_from_request
 from app.models.asset import Asset
 from app.models.lifecycle import Lifecycle
+from app.services.asset_service import AssetService
 
 
 router = APIRouter(prefix="/lifecycle", tags=["Lifecycle"])
@@ -15,6 +17,7 @@ router = APIRouter(prefix="/lifecycle", tags=["Lifecycle"])
 
 @router.get("/list")
 def list_lifecycles(
+    request: Request,
     asset_id: str | None = None,
     company: str | None = None,
     keyword: str | None = None,
@@ -26,6 +29,7 @@ def list_lifecycles(
     db: Session = Depends(get_db),
 ):
     query = db.query(Lifecycle, Asset).join(Asset, Asset.asset_id == Lifecycle.asset_id)
+    query = AssetService.apply_data_scope(query, user_context_from_request(request))
     if asset_id:
         query = query.filter(Lifecycle.asset_id == asset_id)
     if company:

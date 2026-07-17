@@ -53,6 +53,7 @@
         <el-table-column prop="expire_date_text" label="到期" width="120">
           <template #default="{ row }">{{ row.expire_date_text || '-' }}</template>
         </el-table-column>
+        <el-table-column prop="dept_id" label="所属部门" min-width="130" show-overflow-tooltip />
         <el-table-column prop="location" label="位置" min-width="130" show-overflow-tooltip />
         <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
@@ -87,6 +88,7 @@
           <el-form-item v-if="isLicensePage" label="许可证Key"><el-input v-model="itemDialog.form.license_key" /></el-form-item>
           <el-form-item v-if="isLicensePage" label="到期日期"><el-date-picker v-model="itemDialog.form.expire_date" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
           <el-form-item label="供应商"><el-input v-model="itemDialog.form.supplier" /></el-form-item>
+          <el-form-item label="所属部门"><el-input v-model="itemDialog.form.dept_id" placeholder="部门负责人保存时自动使用本部门" /></el-form-item>
           <el-form-item label="位置">
             <el-select v-model="itemDialog.form.location" filterable clearable placeholder="选择位置" style="width: 100%">
               <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
@@ -262,7 +264,7 @@ async function openLedger(row) {
 }
 
 function defaultItemForm() {
-  return { item_type: isLicensePage.value ? 'license' : 'accessory', code: '', name: '', brand: '', model: '', spec: '', total_qty: 0, available_qty: 0, min_qty: 0, unit_cost: 0, license_key: '', expire_date: '', supplier: '', location: '', status: 'active', remark: '' }
+  return { item_type: isLicensePage.value ? 'license' : 'accessory', code: '', name: '', brand: '', model: '', spec: '', total_qty: 0, available_qty: 0, min_qty: 0, unit_cost: 0, license_key: '', expire_date: '', supplier: '', dept_id: '', location: '', status: 'active', remark: '' }
 }
 
 function buildInventoryQuery() {
