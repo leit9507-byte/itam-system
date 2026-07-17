@@ -3,18 +3,17 @@
     <header v-if="showMobileAppbar" class="mobile-appbar">
       <button type="button" class="appbar-icon" @click="router.back()">&lt;</button>
       <strong>ITAM Dashboard</strong>
-      <button type="button" class="appbar-icon appbar-dot" @click="selectSection('logs')">...</button>
+      <span class="appbar-icon" aria-hidden="true"></span>
     </header>
 
     <section class="mobile-hero">
       <div>
         <span class="eyebrow">{{ currentSectionTitle }}</span>
-        <h1>{{ activeSection === 'work' || activeSection === 'stocktake' ? currentMode.label : '移动作业' }}</h1>
+        <h1>{{ currentSectionTitle }}</h1>
         <p>{{ sectionSubtitle }}</p>
       </div>
       <div class="hero-stats">
         <span><strong>{{ todos.length }}</strong>待办</span>
-        <span><strong>{{ logs.length }}</strong>记录</span>
       </div>
     </section>
 
@@ -117,9 +116,6 @@
           show-icon
           :closable="false"
         />
-        <div class="quick-codes">
-          <button v-for="item in recentCodes" :key="item" type="button" @click="quickLoad(item)">{{ item }}</button>
-        </div>
       </div>
     </el-card>
 
@@ -202,95 +198,12 @@
           </el-form-item>
         </template>
 
-        <template v-if="mode === 'repair'">
-          <el-form-item label="维修日期">
-            <el-date-picker v-model="form.repair_time" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
-          </el-form-item>
-          <el-form-item label="维修类型">
-            <el-select v-model="form.repair_type" style="width: 100%">
-              <el-option label="普通维修" value="普通维修" />
-              <el-option label="在保维修" value="在保维修" />
-              <el-option label="内部维修" value="内部维修" />
-              <el-option label="外部付费维修" value="外部付费维修" />
-              <el-option label="返厂维修" value="返厂维修" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="故障类型">
-            <el-select
-              v-model="form.fault_reason"
-              filterable
-              remote
-              clearable
-              allow-create
-              default-first-option
-              reserve-keyword
-              :remote-method="searchFaultTypes"
-              placeholder="搜索或输入故障类型"
-              class="mobile-select" popper-class="mobile-select-popper"
-              style="width: 100%"
-              @visible-change="visible => visible && resetFaultTypeOptions()"
-            >
-              <el-option v-for="item in visibleFaultTypes" :key="item.id || item.name" :label="item.name" :value="item.name" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="维修费用">
-            <el-input-number v-model="form.repair_cost" :min="0" :precision="2" style="width: 100%" />
-          </el-form-item>
-          <el-form-item label="维修供应商">
-            <el-input v-model="form.vendor" placeholder="可选" />
-          </el-form-item>
-        </template>
-
-        <template v-if="mode === 'scrap'">
-          <el-form-item label="预计残值">
-            <el-input-number v-model="form.estimated_residual_value" :min="0" :precision="2" style="width: 100%" />
-          </el-form-item>
-          <el-form-item label="报废原因">
-            <el-input v-model="form.scrap_reason" type="textarea" :rows="3" placeholder="说明报废原因" />
-          </el-form-item>
-        </template>
-
-        <template v-if="mode === 'bind'">
-          <el-alert class="inline-alert" title="先确认上方资产，再填写扫码实际返回的文字；支持多行，一行一个二维码内容。" type="info" show-icon :closable="false" />
-          <el-form-item label="二维码内容">
-            <el-input v-model="bindingForm.scan_raw" type="textarea" :rows="4" placeholder="扫描二维码后自动填入，也可以手动输入；多个内容请每行填写一个" />
-          </el-form-item>
-          <div class="binding-actions">
-            <el-button type="primary" :icon="Camera" @click="scanBindingRaw">读取二维码</el-button>
-            <el-button :icon="Refresh" @click="bindingForm.scan_raw = ''">清空内容</el-button>
-          </div>
-          <div v-if="bindingForm.scan_raw" class="qr-confirm-box">
-            <span>将把以下二维码内容绑定到资产</span>
-            <strong>{{ asset.asset_id }} / {{ asset.name }}</strong>
-          </div>
-          <el-form-item label="重新绑定">
-            <el-switch v-model="bindingForm.force" active-text="允许覆盖已绑定资产" />
-          </el-form-item>
-        </template>
-
         <el-form-item label="备注">
           <el-input v-model="form.remark" type="textarea" :rows="3" placeholder="补充说明" />
         </el-form-item>
       </el-form>
       <div class="sticky-submit">
         <el-button type="primary" size="large" class="submit-btn" :loading="submitting" @click="submitWork">{{ currentMode.submitText }}</el-button>
-      </div>
-    </el-card>
-
-    <el-card v-if="activeSection === 'logs'" shadow="never" class="log-card mobile-panel">
-      <template #header>
-        <div class="card-header">
-          <span>今日操作</span>
-          <el-button text type="primary" @click="clearLogs">清空</el-button>
-        </div>
-      </template>
-      <el-empty v-if="!logs.length" description="暂无扫码操作记录" />
-      <div v-else class="log-list">
-        <div v-for="item in logs" :key="item.id" class="log-item">
-          <strong>{{ item.action }}</strong>
-          <span>{{ item.asset_id }} / {{ item.asset_name }}</span>
-          <small>{{ item.time }} - {{ item.remark || '操作成功' }}</small>
-        </div>
       </div>
     </el-card>
 
@@ -307,15 +220,14 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Box, Camera, CircleCheck, Delete, FolderOpened, HomeFilled, Refresh, Search, Setting, UserFilled } from '@element-plus/icons-vue'
-import { createRepairRecord, getRepairFaultTypes } from '../../api/repair'
-import { createScrapRequest, getAssets, inboundAsset, outboundAsset } from '../../api/asset'
+import { ElMessage } from 'element-plus'
+import { Box, Camera, CircleCheck, FolderOpened, HomeFilled, Search } from '@element-plus/icons-vue'
+import { getAssets, inboundAsset, outboundAsset } from '../../api/asset'
 import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
 import { getStocktakeTasks, submitStocktakeItem } from '../../api/stocktake'
 import { getTodoItems } from '../../api/todo'
-import { bindAssetScanCode, resolveScanBinding } from '../../api/scanBinding'
+import { resolveScanBinding } from '../../api/scanBinding'
 import TodoAssetActions from '../../components/TodoAssetActions.vue'
 import { assetCodeCandidates, assetCodeMatches, parseAssetCode } from '../../utils/assetCode'
 import { feishuRuntimeStatus, getLastFeishuScanError, isFeishuClient, scanByFeishuSdk } from '../../utils/feishuSdk'
@@ -325,10 +237,7 @@ const SCAN_CANCELLED = Symbol('scan-cancelled')
 const modes = [
   { value: 'stocktake', label: '扫码盘点', hint: '执行后台任务', icon: Search, formTitle: '盘点确认', submitText: '提交盘点' },
   { value: 'inbound', label: '扫码入库', hint: '归还/验收入库', icon: Box, formTitle: '入库信息', submitText: '确认入库' },
-  { value: 'outbound', label: '扫码出库', hint: '关联领用人', icon: CircleCheck, formTitle: '出库信息', submitText: '确认出库' },
-  { value: 'repair', label: '扫码维修', hint: '创建今日维修', icon: Setting, formTitle: '维修信息', submitText: '创建维修' },
-  { value: 'scrap', label: '扫码报废', hint: '提交处置登记', icon: Delete, formTitle: '报废处置登记', submitText: '提交报废' },
-  { value: 'bind', label: '二维码绑定', hint: '确认二维码内容', icon: Search, formTitle: '二维码绑定', submitText: '确认绑定' }
+  { value: 'outbound', label: '扫码出库', hint: '关联人员或地址', icon: CircleCheck, formTitle: '出库信息', submitText: '确认出库' }
 ]
 const workModes = modes.filter(item => item.value !== 'stocktake')
 const outboundTargetOptions = [
@@ -344,9 +253,6 @@ const users = ref([])
 const filteredUsers = ref([])
 const locations = ref([])
 const visibleLocations = ref([])
-const faultTypes = ref([])
-const visibleFaultTypes = ref([])
-const logs = ref([])
 const todos = ref([])
 const todoLoading = ref(false)
 const todoAssetActionsRef = ref(null)
@@ -356,7 +262,6 @@ const scanRuntimeStatus = ref(feishuRuntimeStatus())
 const scanRuntimeError = ref('')
 const showMobileAppbar = computed(() => !scanRuntimeStatus.value.isFeishu)
 const form = reactive(defaultForm())
-const bindingForm = reactive(defaultBindingForm())
 
 const OPEN_STOCKTAKE_STATUSES = ['进行中']
 const INBOUND_ALLOWED_STATUSES = ['in_use', 'borrowed', 'out_stock', 'repair']
@@ -370,17 +275,14 @@ const currentStocktakeItem = computed(() => {
 })
 const stocktakeProgress = computed(() => (selectedTask.value?.total ? Math.round((Number(selectedTask.value.checked || 0) / Number(selectedTask.value.total || 0)) * 100) : 0))
 const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
-const activeFaultTypes = computed(() => faultTypes.value.filter(item => item.enabled !== '停用'))
-const recentCodes = computed(() => [...new Set(logs.value.map(item => item.asset_id).filter(Boolean))].slice(0, 4))
 const mobileTodos = computed(() => todos.value.slice(0, 5))
 const currentSectionTitle = computed(() => {
   if (activeSection.value === 'work') return currentMode.value.label
-  return ({ todo: '待办中心', stocktake: '扫码盘点', logs: '今日记录' })[activeSection.value] || '移动作业'
+  return ({ todo: '待办处理', stocktake: '资产盘点' })[activeSection.value] || '出入库'
 })
 const sectionSubtitle = computed(() => {
   if (activeSection.value === 'todo') return '处理入职分配、离职回收和审批待办。'
   if (activeSection.value === 'stocktake') return '选择后台盘点任务后，现场扫码确认资产。'
-  if (activeSection.value === 'logs') return '查看本机今日扫码作业记录。'
   return `${currentMode.value.hint}，扫码后按表单确认提交。`
 })
 const scanRuntimeTitle = computed(() => {
@@ -397,25 +299,20 @@ const scanRuntimeDescription = computed(() => {
 })
 const showScanRuntimeHint = computed(() => scanRuntimeError.value || !scanRuntimeStatus.value.hasScanCode)
 const sectionMenus = computed(() => [
-  { value: 'todo', label: '首页', count: todos.value.length, icon: HomeFilled },
-  { value: 'work', label: '扫码', icon: Search },
-  { value: 'stocktake', label: '资产', icon: FolderOpened },
-  { value: 'logs', label: '我的', count: logs.value.length, icon: UserFilled }
+  { value: 'todo', label: '待办', count: todos.value.length, icon: HomeFilled },
+  { value: 'work', label: '出入库', icon: Box },
+  { value: 'stocktake', label: '资产盘点', icon: FolderOpened }
 ])
 
 onMounted(async () => {
-  logs.value = JSON.parse(localStorage.getItem('itam_mobile_logs') || '[]')
-  const [userRows, locationRows, faultRows] = await Promise.all([
+  const [userRows, locationRows] = await Promise.all([
     getUsers().catch(() => []),
-    getLocations().catch(() => []),
-    getRepairFaultTypes().catch(() => [])
+    getLocations().catch(() => [])
   ])
   users.value = userRows
   locations.value = locationRows
-  faultTypes.value = faultRows
   filteredUsers.value = users.value.slice(0, 20)
   resetLocationOptions()
-  resetFaultTypeOptions()
   await Promise.all([loadStocktakeTasks(), loadTodos()])
 })
 
@@ -429,22 +326,7 @@ function defaultForm() {
     dept_id: '',
     dept_name: '',
     outboundTarget: 'user',
-    repair_time: new Date().toISOString().slice(0, 10),
-    repair_type: '普通维修',
-    fault_reason: '',
-    repair_cost: 0,
-    vendor: '',
-    estimated_residual_value: 0,
-    scrap_reason: '',
     remark: ''
-  }
-}
-
-function defaultBindingForm() {
-  return {
-    scan_raw: '',
-    scan_type: 'qrcode',
-    force: false
   }
 }
 
@@ -497,16 +379,10 @@ function selectMode(value) {
   mode.value = value
   const taskId = form.task_id
   Object.assign(form, defaultForm(), { task_id: taskId })
-  Object.assign(bindingForm, defaultBindingForm())
 }
 
 function fillExample() {
   assetCode.value = 'ITAM-000001'
-  loadAsset()
-}
-
-function quickLoad(code) {
-  assetCode.value = code
   loadAsset()
 }
 
@@ -523,27 +399,6 @@ async function scanCode() {
   const fromBrowser = await scanByBrowser()
   if (fromBrowser) return handleScanResult(fromBrowser)
   ElMessage.info(isFeishuClient() ? '飞书扫码未返回内容，请确认已在飞书客户端内打开' : '当前环境暂未开放摄像头扫码，请手动输入资产编号')
-}
-
-async function scanBindingRaw() {
-  refreshScanRuntime()
-  scanRuntimeError.value = ''
-  const fromFeishu = await scanByFeishu()
-  refreshScanRuntime()
-  if (fromFeishu === SCAN_CANCELLED) {
-    scanRuntimeError.value = ''
-    return
-  }
-  if (fromFeishu) {
-    appendBindingRaw(fromFeishu)
-    return ElMessage.success('已读取二维码内容')
-  }
-  const fromBrowser = await scanByBrowser()
-  if (fromBrowser) {
-    appendBindingRaw(fromBrowser)
-    return ElMessage.success('已读取二维码内容')
-  }
-  ElMessage.info(isFeishuClient() ? '飞书扫码未返回内容，请确认已在飞书客户端内打开' : '当前环境暂未开放摄像头扫码，请手动输入二维码内容')
 }
 
 function refreshScanRuntime() {
@@ -665,7 +520,6 @@ async function resolveAssetFromScan(value) {
 function resetAsset() {
   asset.value = null
   assetCode.value = ''
-  Object.assign(bindingForm, defaultBindingForm())
 }
 
 function searchUsers(query = '') {
@@ -694,17 +548,6 @@ function searchLocations(query = '') {
   const keyword = query.trim().toLowerCase()
   visibleLocations.value = activeLocations.value
     .filter(item => !keyword || [item.name, item.code, item.type, item.owner_dept].join(' ').toLowerCase().includes(keyword))
-    .slice(0, 30)
-}
-
-function resetFaultTypeOptions() {
-  visibleFaultTypes.value = activeFaultTypes.value.slice(0, 30)
-}
-
-function searchFaultTypes(query = '') {
-  const keyword = query.trim().toLowerCase()
-  visibleFaultTypes.value = activeFaultTypes.value
-    .filter(item => !keyword || [item.name, item.description].join(' ').toLowerCase().includes(keyword))
     .slice(0, 30)
 }
 
@@ -737,15 +580,11 @@ async function copyAssetId() {
 
 async function submitWork() {
   if (!asset.value) return ElMessage.warning('请先扫码选择资产')
-  if (mode.value === 'bind' && !parseScanRawLines(bindingForm.scan_raw).length) return ElMessage.warning('请先扫描或输入需要绑定的二维码内容')
   submitting.value = true
   try {
     if (mode.value === 'stocktake') await submitStocktake()
     if (mode.value === 'inbound') await submitInbound()
     if (mode.value === 'outbound') await submitOutbound()
-    if (mode.value === 'repair') await submitRepair()
-    if (mode.value === 'scrap') await submitScrap()
-    if (mode.value === 'bind') await submitScanBinding()
     resetAsset()
   } finally {
     submitting.value = false
@@ -766,7 +605,6 @@ async function submitStocktake() {
     client_source: isFeishuClient() ? 'feishu_mobile' : 'mobile_browser'
   })
   applyStocktakeItem(saved)
-  addLog('扫码盘点', `${selectedTask.value.id} / 正常`)
   ElMessage.success('扫码确认完成')
 }
 
@@ -799,8 +637,7 @@ async function submitInbound() {
   if (!INBOUND_ALLOWED_STATUSES.includes(asset.value?.status)) {
     return ElMessage.warning(`当前状态为 ${statusLabel(asset.value?.status)}，不能重复入库`)
   }
-  const updated = await inboundAsset(asset.value.asset_id, { warehouse: form.location, location: form.location, remark: form.remark || '移动端扫码入库' })
-  addLog('扫码入库', updated.location || form.location || '入库成功')
+  await inboundAsset(asset.value.asset_id, { warehouse: form.location, location: form.location, remark: form.remark || '移动端扫码入库' })
   ElMessage.success('入库成功')
 }
 
@@ -810,7 +647,7 @@ async function submitOutbound() {
   }
   if (form.outboundTarget === 'user' && !form.owner_user_id) return ElMessage.warning('请选择领用人')
   if (form.outboundTarget === 'location' && !form.location) return ElMessage.warning('请选择出库地址')
-  const updated = await outboundAsset(asset.value.asset_id, {
+  await outboundAsset(asset.value.asset_id, {
     outboundTarget: form.outboundTarget,
     owner_user_id: form.owner_user_id,
     owner_name: form.owner_name,
@@ -819,63 +656,7 @@ async function submitOutbound() {
     location: form.location,
     remark: form.remark || '移动端扫码出库'
   })
-  addLog('扫码出库', form.outboundTarget === 'location' ? form.location : `${updated.owner_name || form.owner_name} / ${updated.dept_name || form.dept_name}`)
   ElMessage.success('出库成功')
-}
-
-async function submitRepair() {
-  if (!form.fault_reason) return ElMessage.warning('请选择故障类型')
-  await createRepairRecord(asset.value, { repair_time: form.repair_time, repair_type: form.repair_type, fault_reason: form.fault_reason, repair_cost: form.repair_cost, vendor: form.vendor, remark: form.remark || '移动端扫码报修' })
-  addLog('扫码维修', form.fault_reason)
-  ElMessage.success('维修单已创建')
-}
-
-async function submitScrap() {
-  if (!form.scrap_reason.trim()) return ElMessage.warning('请填写报废原因')
-  await createScrapRequest(asset.value.asset_id, {
-    applicant: asset.value.dept_name || asset.value.dept || '移动端扫码',
-    estimated_residual_value: form.estimated_residual_value,
-    reason: form.scrap_reason,
-    operator: '移动端扫码'
-  })
-  addLog('扫码报废', form.scrap_reason)
-  ElMessage.success('报废处置登记已提交')
-}
-
-async function submitScanBinding() {
-  const scanRaws = parseScanRawLines(bindingForm.scan_raw)
-  for (const scanRaw of scanRaws) {
-    await bindAssetScanCode(asset.value.asset_id, {
-      ...bindingForm,
-      scan_raw: scanRaw,
-      scan_type: 'qrcode',
-      remark: form.remark || '移动端二维码绑定'
-    })
-  }
-  addLog('二维码绑定', scanRaws.length > 1 ? `已绑定 ${scanRaws.length} 个二维码内容` : '已绑定二维码内容')
-  ElMessage.success(scanRaws.length > 1 ? `已绑定 ${scanRaws.length} 个二维码内容` : '二维码内容已绑定')
-}
-
-function appendBindingRaw(value) {
-  const scanRaws = parseScanRawLines(`${bindingForm.scan_raw}\n${value}`)
-  bindingForm.scan_raw = scanRaws.join('\n')
-}
-
-function parseScanRawLines(value) {
-  return [...new Set((value || '').split(/\r?\n/).map(item => item.trim()).filter(Boolean))]
-}
-
-function addLog(action, remark) {
-  logs.value.unshift({ id: `${Date.now()}-${Math.random()}`, action, asset_id: asset.value.asset_id, asset_name: asset.value.name, remark, time: new Date().toLocaleString('zh-CN', { hour12: false }) })
-  logs.value = logs.value.slice(0, 30)
-  localStorage.setItem('itam_mobile_logs', JSON.stringify(logs.value))
-}
-
-async function clearLogs() {
-  const confirmed = await ElMessageBox.confirm('确认清空移动端今日操作记录？', '提示', { type: 'warning' }).then(() => true).catch(() => false)
-  if (!confirmed) return
-  logs.value = []
-  localStorage.removeItem('itam_mobile_logs')
 }
 
 function statusLabel(value) {
@@ -1022,7 +803,7 @@ function statusType(value) {
   bottom: calc(8px + env(safe-area-inset-bottom));
   z-index: 20;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   padding: 6px 8px;
   border: 1px solid rgba(209, 224, 242, 0.9);
@@ -1095,7 +876,6 @@ function statusType(value) {
 }
 
 .mode-strip::-webkit-scrollbar,
-.quick-codes::-webkit-scrollbar,
 .mobile-bottom-menu::-webkit-scrollbar {
   display: none;
 }
@@ -1575,10 +1355,6 @@ function statusType(value) {
 
   .mode-card {
     flex-basis: 118px;
-  }
-
-  .binding-actions {
-    grid-template-columns: 1fr;
   }
 }
 </style>
