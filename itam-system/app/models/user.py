@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, JSON, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String
 
 from app.core.database import Base
 
@@ -16,6 +16,7 @@ class UserDirectory(Base):
     dept_name = Column(String(128), nullable=True)
     role = Column(String(32), default="user", nullable=False)
     source = Column(String(32), default="local", nullable=False, index=True)
+    identity_provider_id = Column(Integer, ForeignKey("identity_provider_configs.id", ondelete="SET NULL"), nullable=True, index=True)
     status = Column(String(32), default="active", nullable=False)
     password_hash = Column(String(255), nullable=True)
     failed_login_count = Column(Integer, default=0, nullable=False)

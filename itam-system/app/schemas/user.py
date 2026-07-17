@@ -29,6 +29,7 @@ class UserOut(BaseModel):
     dept_name: str | None
     role: str
     source: str
+    identity_provider_id: int | None = None
     status: str
     external_id: str | None
     last_synced_at: datetime | None

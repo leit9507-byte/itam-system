@@ -46,6 +46,7 @@ class SsoService:
                 source="ldap",
                 external_id=f"ldap:{attrs.get('dn') or user_dn}",
             ),
+            identity_provider_id=provider.id,
         )
         return user
 

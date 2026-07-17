@@ -119,7 +119,7 @@ class IdentityService:
         return db.query(UserDirectory).order_by(UserDirectory.created_at.desc()).all()
 
     @staticmethod
-    def upsert_user(db: Session, payload: UserUpsert, commit: bool = True) -> tuple[UserDirectory, bool]:
+    def upsert_user(db: Session, payload: UserUpsert, commit: bool = True, identity_provider_id: int | None = None) -> tuple[UserDirectory, bool]:
         user_id = payload.user_id or payload.external_id or f"U-{uuid4().hex[:10].upper()}"
         user = db.get(UserDirectory, user_id)
         created = False
@@ -137,6 +137,10 @@ class IdentityService:
         user.dept_name = payload.dept_name
         user.role = payload.role
         user.source = payload.source
+        if payload.source == "local":
+            user.identity_provider_id = None
+        elif identity_provider_id is not None:
+            user.identity_provider_id = identity_provider_id
         user.status = payload.status
         user.external_id = payload.external_id
         if payload.password:
@@ -361,16 +365,24 @@ class IdentityService:
         offboarded = 0
         synced: list[UserDirectory] = []
         synced_external_ids = {item.external_id for item in payloads if item.external_id}
-        synced_usernames = {item.username for item in payloads if item.username}
+        synced_usernames = {item.username.casefold() for item in payloads if item.username}
         for payload in payloads:
-            user, was_created = IdentityService.upsert_user(db, payload, commit=False)
+            user, was_created = IdentityService.upsert_user(db, payload, commit=False, identity_provider_id=provider.id if provider else None)
             created += 1 if was_created else 0
             updated += 0 if was_created else 1
             synced.append(user)
         if source == "ldap" and len(payloads) < sync_limit:
-            active_source_users = db.query(UserDirectory).filter(UserDirectory.source == source, UserDirectory.status == "active").all()
+            provider_count = db.query(IdentityProviderConfig).filter(IdentityProviderConfig.provider_type == "ldap").count()
+            active_source_query = db.query(UserDirectory).filter(UserDirectory.source == source, UserDirectory.status == "active")
+            if provider_count == 1:
+                active_source_query = active_source_query.filter(
+                    (UserDirectory.identity_provider_id == provider.id) | UserDirectory.identity_provider_id.is_(None)
+                )
+            else:
+                active_source_query = active_source_query.filter(UserDirectory.identity_provider_id == provider.id)
+            active_source_users = active_source_query.all()
             for user in active_source_users:
-                if user.external_id in synced_external_ids or user.username in synced_usernames:
+                if user.external_id in synced_external_ids or user.username.casefold() in synced_usernames:
                     continue
                 user.status = "resigned"
                 user.last_synced_at = datetime.utcnow()
