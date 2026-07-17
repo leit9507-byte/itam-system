@@ -7,13 +7,13 @@
     <el-menu :default-active="route.path" router class="menu" :collapse="store.collapsed">
       <el-menu-item v-if="canAny(['asset', 'purchase', 'repair', 'audit', 'report'])" index="/dashboard"><el-icon><DataBoard /></el-icon><span>资产总览</span></el-menu-item>
       <el-menu-item v-if="canRead('asset')" index="/todo"><el-icon><Bell /></el-icon><span>待办中心</span></el-menu-item>
+      <el-menu-item v-if="canRead('asset')" index="/inventory"><el-icon><Box /></el-icon><span>配件管理</span></el-menu-item>
+      <el-menu-item v-if="canRead('asset')" index="/software-license"><el-icon><Key /></el-icon><span>软件许可</span></el-menu-item>
+      <el-menu-item v-if="canRead('asset')" index="/stocktake"><el-icon><Search /></el-icon><span>资产盘点</span></el-menu-item>
       <el-sub-menu v-if="assetGroupVisible" index="/asset">
         <template #title><el-icon><Monitor /></el-icon><span>资产运营</span></template>
         <el-menu-item v-if="canRead('asset')" index="/asset/list">资产管理</el-menu-item>
         <el-menu-item v-if="canRead('asset')" index="/checkout">借用中心</el-menu-item>
-        <el-menu-item v-if="canRead('asset')" index="/inventory">配件管理</el-menu-item>
-        <el-menu-item v-if="canRead('asset')" index="/software-license">软件许可</el-menu-item>
-        <el-menu-item v-if="canRead('asset')" index="/stocktake">资产盘点</el-menu-item>
         <el-menu-item v-if="canRead('repair')" index="/repair">维修管理</el-menu-item>
         <el-menu-item v-if="canRead('asset')" index="/scrap">报废处置登记</el-menu-item>
         <el-menu-item v-if="canRead('purchase')" index="/purchase">采购管理</el-menu-item>
@@ -48,7 +48,7 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { Bell, DataBoard, Monitor, Setting, Tools, View } from '@element-plus/icons-vue'
+import { Bell, Box, DataBoard, Key, Monitor, Search, Setting, Tools, View } from '@element-plus/icons-vue'
 import { useAppStore } from '../store'
 
 const route = useRoute()
@@ -112,9 +112,20 @@ function canAny(resources) {
 }
 
 .menu {
+  height: calc(100vh - 68px);
+  overflow-y: auto;
   border-right: 0;
   background: transparent;
   padding: 14px 12px 20px;
+}
+
+.menu::-webkit-scrollbar {
+  width: 4px;
+}
+
+.menu::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.22);
 }
 
 :deep(.el-menu-item) {
