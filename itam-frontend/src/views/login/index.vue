@@ -30,10 +30,13 @@
         <div class="form-head">
           <span>欢迎回来</span>
           <h2>登录系统</h2>
-          <p>使用 LDAP 目录账号登录，移动端扫码作业会自动返回当前入口。</p>
+          <p>支持本地管理员账号和 LDAP 目录账号登录，移动端扫码作业会自动返回当前入口。</p>
         </div>
 
         <el-form :model="form" label-position="top" class="login-form">
+          <el-form-item label="登录方式">
+            <el-segmented v-model="form.provider" :options="providerOptions" class="provider-segment" />
+          </el-form-item>
           <el-form-item label="账号">
             <el-input v-model="form.username" size="large" autocomplete="username" placeholder="请输入账号">
               <template #prefix><el-icon><User /></el-icon></template>
@@ -48,7 +51,7 @@
         </el-form>
 
         <div class="login-foot">
-          <span>仅支持 LDAP / AD 企业目录账号登录。</span>
+          <span>本地账号用于管理员维护，LDAP 用于企业目录账号登录。</span>
         </div>
       </section>
     </section>
@@ -67,7 +70,11 @@ const route = useRoute()
 const router = useRouter()
 const store = useAppStore()
 const loading = ref(false)
-const form = reactive({ provider: 'ldap', username: '', password: '' })
+const form = reactive({ provider: 'local', username: '', password: '' })
+const providerOptions = [
+  { label: '本地账号', value: 'local' },
+  { label: 'LDAP', value: 'ldap' }
+]
 const capabilities = [
   { title: '资产运营', desc: '台账、入库、领用和维修集中处理', icon: Box },
   { title: '流程待办', desc: '入职分配、离职回收和审批统一提醒', icon: Tickets },

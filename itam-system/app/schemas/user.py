@@ -61,7 +61,7 @@ class IdentityProviderOut(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str = ""
-    provider: str = "ldap"
+    provider: str = "local"
 
 
 class LoginResponse(BaseModel):

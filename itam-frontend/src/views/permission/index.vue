@@ -436,6 +436,7 @@
           <el-form :model="loginForm" label-width="100px">
             <el-form-item label="登录方式">
               <el-radio-group v-model="loginForm.provider">
+                <el-radio-button label="local">本地</el-radio-button>
                 <el-radio-button label="ldap">LDAP</el-radio-button>
               </el-radio-group>
             </el-form-item>
@@ -591,7 +592,7 @@ const runtimeProtocol = typeof window !== 'undefined' ? window.location.protocol
 const runtimeHost = typeof window !== 'undefined' ? window.location.host : ''
 const providerForm = reactive(defaultProviderForm())
 const providerConfig = reactive(defaultConfig())
-const loginForm = reactive({ provider: 'ldap', username: '', password: '' })
+const loginForm = reactive({ provider: 'local', username: 'admin', password: 'admin' })
 const accountDialog = reactive({ visible: false, form: defaultLocalUserForm() })
 const userPermissionDialog = reactive({ visible: false, user: null, status: 'active', saving: false })
 const permissionDraft = reactive({})
