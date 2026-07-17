@@ -238,8 +238,22 @@
     </el-dialog>
 
     <el-dialog v-model="batch.visible" :title="batchTitle" width="660px">
-      <el-alert :title="`本次将处理 ${batch.assets.length} 个资产`" type="info" show-icon :closable="false" />
-      <el-form :model="batch.form" label-width="110px" class="batch-form">
+      <el-alert
+        :title="batch.type === 'scrap' ? `本次将提交 ${batch.assets.length} 个资产进入待处置登记` : `本次将处理 ${batch.assets.length} 个资产`"
+        :description="batch.type === 'scrap' ? '此阶段不填写退役时间、审批单号、处置方式、残值或处置说明；后续在报废处置登记中逐台填写。' : ''"
+        :type="batch.type === 'scrap' ? 'warning' : 'info'"
+        show-icon
+        :closable="false"
+      />
+      <el-table v-if="batch.type === 'scrap'" :data="batch.assets" border stripe max-height="300" class="scrap-confirm-table">
+        <el-table-column prop="display_id" label="ID" width="80" />
+        <el-table-column prop="asset_id" label="资产编号" min-width="140" />
+        <el-table-column prop="name" label="资产名称" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="sn" label="序列号" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.sn || '-' }}</template>
+        </el-table-column>
+      </el-table>
+      <el-form v-if="batch.type !== 'scrap'" :model="batch.form" label-width="110px" class="batch-form">
         <template v-if="batch.type === 'inbound'">
           <el-form-item label="入库地址" required>
             <el-select v-model="batch.form.location" filterable clearable style="width: 100%" placeholder="选择入库地址">
@@ -277,15 +291,10 @@
             <el-input v-model="batch.form.remark" type="textarea" :rows="3" placeholder="例如：入职资产分配、临时借用、项目领用" />
           </el-form-item>
         </template>
-        <template v-if="batch.type === 'scrap'">
-          <el-form-item label="申请人/部门"><el-input v-model="batch.form.applicant" /></el-form-item>
-          <el-form-item label="预计残值"><el-input-number v-model="batch.form.estimated_residual_value" :min="0" style="width: 100%" /></el-form-item>
-          <el-form-item label="报废原因"><el-input v-model="batch.form.reason" type="textarea" :rows="4" /></el-form-item>
-        </template>
       </el-form>
       <template #footer>
         <el-button @click="batch.visible = false">取消</el-button>
-        <el-button type="primary" @click="submitBatch">确认执行</el-button>
+        <el-button type="primary" @click="submitBatch">{{ batch.type === 'scrap' ? '确认提交' : '确认执行' }}</el-button>
       </template>
     </el-dialog>
 
@@ -583,9 +592,6 @@ function defaultBatchForm() {
     dept_name: '',
     location: '',
     borrow_due_date: '',
-    applicant: '',
-    reason: '',
-    estimated_residual_value: 0,
     remark: ''
   }
 }
@@ -1061,7 +1067,7 @@ async function submitBatch() {
     try {
       if (batch.type === 'inbound') await inboundAsset(asset.asset_id, batch.form)
       if (batch.type === 'outbound') await outboundAsset(asset.asset_id, batch.form)
-      if (batch.type === 'scrap') await createScrapRequest(asset.asset_id, batch.form)
+      if (batch.type === 'scrap') await createScrapRequest(asset.asset_id, {})
       results.push({ asset_id: asset.asset_id, ok: true })
     } catch (error) {
       results.push({ asset_id: asset.asset_id, ok: false, message: error.userMessage || error?.response?.data?.detail || error.message })
