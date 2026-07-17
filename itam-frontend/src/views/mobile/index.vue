@@ -76,7 +76,7 @@
       <p class="tip">盘点必须先在后台“资产盘点”创建并开启任务，移动端只负责扫码执行任务明细。</p>
     </el-card>
 
-    <el-card v-if="activeSection === 'work' || activeSection === 'stocktake'" shadow="never" class="scan-card mobile-panel">
+    <el-card v-if="['work', 'repair', 'stocktake'].includes(activeSection)" shadow="never" class="scan-card mobile-panel">
       <template #header>
         <div class="card-header">
           <span>{{ currentMode.label }}</span>
@@ -119,7 +119,7 @@
       </div>
     </el-card>
 
-    <el-card v-if="asset && (activeSection === 'work' || activeSection === 'stocktake')" shadow="never" class="asset-card mobile-panel">
+    <el-card v-if="asset && ['work', 'repair', 'stocktake'].includes(activeSection)" shadow="never" class="asset-card mobile-panel">
       <template #header>
         <div class="card-header">
           <span>资产信息</span>
@@ -141,7 +141,7 @@
       </div>
     </el-card>
 
-    <el-card v-if="asset && (activeSection === 'work' || activeSection === 'stocktake')" shadow="never" class="form-card mobile-panel">
+    <el-card v-if="asset && ['work', 'repair', 'stocktake'].includes(activeSection)" shadow="never" class="form-card mobile-panel">
       <template #header>{{ currentMode.formTitle }}</template>
       <el-form label-position="top">
         <template v-if="mode === 'stocktake'">
@@ -198,6 +198,45 @@
           </el-form-item>
         </template>
 
+        <template v-if="mode === 'repair'">
+          <el-form-item label="维修日期">
+            <el-date-picker v-model="form.repair_time" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="维修类型">
+            <el-select v-model="form.repair_type" style="width: 100%">
+              <el-option label="普通维修" value="普通维修" />
+              <el-option label="在保维修" value="在保维修" />
+              <el-option label="内部维修" value="内部维修" />
+              <el-option label="外部付费维修" value="外部付费维修" />
+              <el-option label="返厂维修" value="返厂维修" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="故障类型">
+            <el-select
+              v-model="form.fault_reason"
+              filterable
+              remote
+              clearable
+              allow-create
+              default-first-option
+              reserve-keyword
+              :remote-method="searchFaultTypes"
+              placeholder="搜索或输入故障类型"
+              class="mobile-select" popper-class="mobile-select-popper"
+              style="width: 100%"
+              @visible-change="visible => visible && resetFaultTypeOptions()"
+            >
+              <el-option v-for="item in visibleFaultTypes" :key="item.id || item.name" :label="item.name" :value="item.name" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="维修费用">
+            <el-input-number v-model="form.repair_cost" :min="0" :precision="2" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="维修供应商">
+            <el-input v-model="form.vendor" placeholder="可选" />
+          </el-form-item>
+        </template>
+
         <el-form-item label="备注">
           <el-input v-model="form.remark" type="textarea" :rows="3" placeholder="补充说明" />
         </el-form-item>
@@ -221,8 +260,9 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Box, Camera, CircleCheck, FolderOpened, HomeFilled, Search } from '@element-plus/icons-vue'
+import { Box, Camera, CircleCheck, FolderOpened, HomeFilled, Search, Setting } from '@element-plus/icons-vue'
 import { getAssets, inboundAsset, outboundAsset } from '../../api/asset'
+import { createRepairRecord, getRepairFaultTypes } from '../../api/repair'
 import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
 import { getStocktakeTasks, submitStocktakeItem } from '../../api/stocktake'
@@ -237,9 +277,10 @@ const SCAN_CANCELLED = Symbol('scan-cancelled')
 const modes = [
   { value: 'stocktake', label: '扫码盘点', hint: '执行后台任务', icon: Search, formTitle: '盘点确认', submitText: '提交盘点' },
   { value: 'inbound', label: '扫码入库', hint: '归还/验收入库', icon: Box, formTitle: '入库信息', submitText: '确认入库' },
-  { value: 'outbound', label: '扫码出库', hint: '关联人员或地址', icon: CircleCheck, formTitle: '出库信息', submitText: '确认出库' }
+  { value: 'outbound', label: '扫码出库', hint: '关联人员或地址', icon: CircleCheck, formTitle: '出库信息', submitText: '确认出库' },
+  { value: 'repair', label: '维修登记', hint: '登记设备故障和维修', icon: Setting, formTitle: '维修信息', submitText: '创建维修登记' }
 ]
-const workModes = modes.filter(item => item.value !== 'stocktake')
+const workModes = modes.filter(item => ['inbound', 'outbound'].includes(item.value))
 const outboundTargetOptions = [
   { label: '人员', value: 'user' },
   { label: '地址', value: 'location' }
@@ -253,6 +294,8 @@ const users = ref([])
 const filteredUsers = ref([])
 const locations = ref([])
 const visibleLocations = ref([])
+const faultTypes = ref([])
+const visibleFaultTypes = ref([])
 const todos = ref([])
 const todoLoading = ref(false)
 const todoAssetActionsRef = ref(null)
@@ -275,13 +318,15 @@ const currentStocktakeItem = computed(() => {
 })
 const stocktakeProgress = computed(() => (selectedTask.value?.total ? Math.round((Number(selectedTask.value.checked || 0) / Number(selectedTask.value.total || 0)) * 100) : 0))
 const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
+const activeFaultTypes = computed(() => faultTypes.value.filter(item => item.enabled !== '停用'))
 const mobileTodos = computed(() => todos.value.slice(0, 5))
 const currentSectionTitle = computed(() => {
   if (activeSection.value === 'work') return currentMode.value.label
-  return ({ todo: '待办处理', stocktake: '资产盘点' })[activeSection.value] || '出入库'
+  return ({ todo: '待办处理', repair: '维修登记', stocktake: '资产盘点' })[activeSection.value] || '出入库'
 })
 const sectionSubtitle = computed(() => {
   if (activeSection.value === 'todo') return '处理入职分配、离职回收和审批待办。'
+  if (activeSection.value === 'repair') return '扫码选择故障设备并登记维修。'
   if (activeSection.value === 'stocktake') return '选择后台盘点任务后，现场扫码确认资产。'
   return `${currentMode.value.hint}，扫码后按表单确认提交。`
 })
@@ -301,18 +346,22 @@ const showScanRuntimeHint = computed(() => scanRuntimeError.value || !scanRuntim
 const sectionMenus = computed(() => [
   { value: 'todo', label: '待办', count: todos.value.length, icon: HomeFilled },
   { value: 'work', label: '出入库', icon: Box },
+  { value: 'repair', label: '维修登记', icon: Setting },
   { value: 'stocktake', label: '资产盘点', icon: FolderOpened }
 ])
 
 onMounted(async () => {
-  const [userRows, locationRows] = await Promise.all([
+  const [userRows, locationRows, faultRows] = await Promise.all([
     getUsers().catch(() => []),
-    getLocations().catch(() => [])
+    getLocations().catch(() => []),
+    getRepairFaultTypes().catch(() => [])
   ])
   users.value = userRows
   locations.value = locationRows
+  faultTypes.value = faultRows
   filteredUsers.value = users.value.slice(0, 20)
   resetLocationOptions()
+  resetFaultTypeOptions()
   await Promise.all([loadStocktakeTasks(), loadTodos()])
 })
 
@@ -326,6 +375,11 @@ function defaultForm() {
     dept_id: '',
     dept_name: '',
     outboundTarget: 'user',
+    repair_time: new Date().toISOString().slice(0, 10),
+    repair_type: '普通维修',
+    fault_reason: '',
+    repair_cost: 0,
+    vendor: '',
     remark: ''
   }
 }
@@ -361,7 +415,11 @@ function selectSection(value) {
   activeSection.value = value
   if (value === 'stocktake') {
     mode.value = 'stocktake'
+  } else if (value === 'repair') {
+    mode.value = 'repair'
   } else if (value === 'work' && mode.value === 'stocktake') {
+    mode.value = 'inbound'
+  } else if (value === 'work' && mode.value === 'repair') {
     mode.value = 'inbound'
   }
 }
@@ -551,6 +609,17 @@ function searchLocations(query = '') {
     .slice(0, 30)
 }
 
+function resetFaultTypeOptions() {
+  visibleFaultTypes.value = activeFaultTypes.value.slice(0, 30)
+}
+
+function searchFaultTypes(query = '') {
+  const keyword = query.trim().toLowerCase()
+  visibleFaultTypes.value = activeFaultTypes.value
+    .filter(item => !keyword || [item.name, item.description].join(' ').toLowerCase().includes(keyword))
+    .slice(0, 30)
+}
+
 function selectUser(userId) {
   const user = users.value.find(item => item.user_id === userId)
   form.owner_name = user?.display_name || ''
@@ -585,6 +654,7 @@ async function submitWork() {
     if (mode.value === 'stocktake') await submitStocktake()
     if (mode.value === 'inbound') await submitInbound()
     if (mode.value === 'outbound') await submitOutbound()
+    if (mode.value === 'repair') await submitRepair()
     resetAsset()
   } finally {
     submitting.value = false
@@ -657,6 +727,19 @@ async function submitOutbound() {
     remark: form.remark || '移动端扫码出库'
   })
   ElMessage.success('出库成功')
+}
+
+async function submitRepair() {
+  if (!form.fault_reason) return ElMessage.warning('请选择故障类型')
+  await createRepairRecord(asset.value, {
+    repair_time: form.repair_time,
+    repair_type: form.repair_type,
+    fault_reason: form.fault_reason,
+    repair_cost: form.repair_cost,
+    vendor: form.vendor,
+    remark: form.remark || '移动端维修登记'
+  })
+  ElMessage.success('维修登记已创建')
 }
 
 function statusLabel(value) {
@@ -803,7 +886,7 @@ function statusType(value) {
   bottom: calc(8px + env(safe-area-inset-bottom));
   z-index: 20;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
   padding: 6px 8px;
   border: 1px solid rgba(209, 224, 242, 0.9);
