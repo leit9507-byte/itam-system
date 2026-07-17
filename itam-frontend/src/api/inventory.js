@@ -69,12 +69,57 @@ export async function getInventoryLedger(id) {
   }))
 }
 
+export function getInventoryAssignees() {
+  return request.get('/inventory/assignees')
+}
+
+export async function getLicenseSeats(id, params = {}) {
+  const result = await request.get(`/inventory/items/${id}/license-seats`, { params })
+  return {
+    ...result,
+    list: (result?.list || []).map(row => ({ ...row, status_label: licenseSeatStatusLabel(row.status), assigned_at_text: formatDateTime(row.assigned_at), returned_at_text: formatDateTime(row.returned_at) }))
+  }
+}
+
+export function createLicenseSeats(id, payload) {
+  return request.post(`/inventory/items/${id}/license-seats`, payload)
+}
+
+export function assignLicenseSeat(seatId, payload) {
+  return request.post(`/inventory/license-seats/${seatId}/assign`, payload)
+}
+
+export function returnLicenseSeat(seatId, remark = '') {
+  return request.post(`/inventory/license-seats/${seatId}/return`, { remark })
+}
+
+export async function getLicenseSeatHistory(seatId) {
+  const rows = await request.get(`/inventory/license-seats/${seatId}/history`)
+  return (rows || []).map(row => ({ ...row, action_label: licenseSeatActionLabel(row.action), created_at_text: formatDateTime(row.created_at) }))
+}
+
+export async function getComponentInstallations(id, params = {}) {
+  const result = await request.get(`/inventory/items/${id}/installations`, { params })
+  return {
+    ...result,
+    list: (result?.list || []).map(row => ({ ...row, installed_at_text: formatDateTime(row.installed_at), updated_at_text: formatDateTime(row.updated_at) }))
+  }
+}
+
 export function typeLabel(value) {
   return inventoryTypes.find(item => item.value === value)?.label || value || '-'
 }
 
 export function actionLabel(value) {
   return inventoryActions.find(item => item.value === value)?.label || value || '-'
+}
+
+export function licenseSeatStatusLabel(value) {
+  return { available: '可用', assigned: '已分配', recovered: '已回收', disabled: '已停用' }[value] || value || '-'
+}
+
+export function licenseSeatActionLabel(value) {
+  return { assign: '分配', return: '回收', enable: '恢复', disable: '停用' }[value] || value || '-'
 }
 
 function normalizeItem(payload) {

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 
 from app.core.database import Base
 
@@ -46,3 +46,52 @@ class InventoryLedger(Base):
     operator = Column(String(64), nullable=False, default="system")
     remark = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class InventoryLicenseSeat(Base):
+    __tablename__ = "inventory_license_seats"
+    __table_args__ = (UniqueConstraint("item_id", "seat_code", name="uq_inventory_license_seat_code"),)
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    item_id = Column(Integer, ForeignKey("inventory_items.id"), nullable=False, index=True)
+    seat_code = Column(String(128), nullable=False, index=True)
+    status = Column(String(32), nullable=False, default="available", index=True)
+    assignee_user_id = Column(String(64), nullable=True, index=True)
+    assignee_name = Column(String(128), nullable=True)
+    dept_id = Column(String(64), nullable=True, index=True)
+    asset_id = Column(String(64), ForeignKey("assets.asset_id"), nullable=True, index=True)
+    assigned_at = Column(DateTime, nullable=True)
+    returned_at = Column(DateTime, nullable=True)
+    remark = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class InventoryLicenseSeatHistory(Base):
+    __tablename__ = "inventory_license_seat_history"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    seat_id = Column(Integer, ForeignKey("inventory_license_seats.id"), nullable=False, index=True)
+    action = Column(String(32), nullable=False, index=True)
+    assignee_user_id = Column(String(64), nullable=True, index=True)
+    assignee_name = Column(String(128), nullable=True)
+    dept_id = Column(String(64), nullable=True, index=True)
+    asset_id = Column(String(64), ForeignKey("assets.asset_id"), nullable=True, index=True)
+    operator = Column(String(64), nullable=False, default="system")
+    remark = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class InventoryComponentInstallation(Base):
+    __tablename__ = "inventory_component_installations"
+    __table_args__ = (UniqueConstraint("item_id", "asset_id", name="uq_inventory_component_asset"),)
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    item_id = Column(Integer, ForeignKey("inventory_items.id"), nullable=False, index=True)
+    asset_id = Column(String(64), ForeignKey("assets.asset_id"), nullable=False, index=True)
+    quantity = Column(Integer, nullable=False, default=1)
+    dept_id = Column(String(64), nullable=True, index=True)
+    installed_by = Column(String(64), nullable=False, default="system")
+    installed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    remark = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

@@ -3,7 +3,7 @@ from app.models.audit_log import AssetChangeLog, OperationAuditLog
 from app.models.audit_response import AuditResponse
 from app.models.audit_rule import AuditRule
 from app.models.checkout import AssetCheckout
-from app.models.inventory import InventoryItem, InventoryLedger
+from app.models.inventory import InventoryComponentInstallation, InventoryItem, InventoryLedger, InventoryLicenseSeat, InventoryLicenseSeatHistory
 from app.models.lifecycle import Lifecycle
 from app.models.notification import NotificationSetting
 from app.models.file import AssetAttachment
@@ -23,6 +23,11 @@ __all__ = [
     "AuditResponse",
     "AuditRule",
     "AssetCheckout",
+    "InventoryItem",
+    "InventoryLedger",
+    "InventoryLicenseSeat",
+    "InventoryLicenseSeatHistory",
+    "InventoryComponentInstallation",
     "Lifecycle",
     "NotificationSetting",
     "AssetAttachment",
