@@ -111,13 +111,20 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="disposeDialog.visible" title="报废处置登记" width="620px">
+    <el-dialog v-model="disposeDialog.visible" :title="disposeDialog.row ? `报废处置登记 / ${disposeDialog.row.asset_id}` : '报废处置登记'" width="660px">
       <el-alert
-        :title="disposeDialog.row ? `${disposeDialog.row.asset_id} 将进入已处置终态` : '确认处置'"
+        title="本次只登记当前这一台资产"
+        :description="disposeDialog.row ? `${disposeDialog.row.asset_id} / ${disposeDialog.row.asset_name || '-'}；确认后该资产将进入已处置终态。` : ''"
         type="warning"
         show-icon
         :closable="false"
       />
+      <el-descriptions v-if="disposeDialog.row" :column="2" border class="dispose-asset-summary">
+        <el-descriptions-item label="资产编号">{{ disposeDialog.row.asset_id }}</el-descriptions-item>
+        <el-descriptions-item label="序列号">{{ disposeDialog.row.sn || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="资产名称">{{ disposeDialog.row.asset_name || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="登记单号">{{ disposeDialog.row.request_no || '-' }}</el-descriptions-item>
+      </el-descriptions>
       <el-form :model="disposeDialog.form" label-width="110px" class="dispose-form">
         <el-form-item label="退役时间" required>
           <el-date-picker v-model="disposeDialog.form.retirement_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
@@ -126,12 +133,8 @@
           <el-input v-model="disposeDialog.form.retirement_approval_no" placeholder="填写退役/报废审批单号" />
         </el-form-item>
         <el-form-item label="实际处置方式" required>
-          <el-radio-group v-model="disposeDialog.form.disposal_method" class="disposal-method-group">
-            <el-radio-button label="报废">报废</el-radio-button>
-            <el-radio-button label="变卖">变卖</el-radio-button>
-            <el-radio-button label="员工领用">员工领用</el-radio-button>
-          </el-radio-group>
-          <div class="form-tip">请选择资产实际完成的处置结果，不能在提交报废时预先确定。</div>
+          <el-segmented v-model="disposeDialog.form.disposal_method" :options="disposalMethodOptions" class="disposal-method-segment" />
+          <div class="form-tip">当前选择仅作用于上方这一台资产；其他资产需要分别登记。</div>
         </el-form-item>
         <el-form-item v-if="disposeDialog.form.disposal_method === '员工领用'" label="领用员工" required>
           <el-select
@@ -190,6 +193,11 @@ const disposeDialog = reactive({
   }
 })
 const SCRAP_SUMMARY_LIMIT = 500
+const disposalMethodOptions = [
+  { label: '报废', value: '报废' },
+  { label: '变卖', value: '变卖' },
+  { label: '员工领用', value: '员工领用' }
+]
 
 const totalResidual = computed(() => allRequests.value.reduce((sum, item) => sum + Number(item.estimated_residual_value || 0), 0))
 const pendingDisposalCount = computed(() => allRequests.value.filter(item => ['待处置', '审批中', '已通过'].includes(item.status)).length)
@@ -252,7 +260,7 @@ function openDispose(row) {
   disposeDialog.form.final_residual_value = row.estimated_residual_value || 0
   disposeDialog.form.disposal_method = row.status === '已处置' ? normalizeDisposeMethod(row.disposal_method) : ''
   disposeDialog.form.retirement_date = row.retirement_date || todayText()
-  disposeDialog.form.retirement_approval_no = row.retirement_approval_no || row.request_no || ''
+  disposeDialog.form.retirement_approval_no = row.retirement_approval_no || ''
   disposeDialog.form.dispose_recipient_user_id = row.dispose_recipient_user_id || ''
   disposeDialog.form.dispose_recipient_name = row.dispose_recipient_name || ''
   disposeDialog.form.disposal_remark = row.disposal_remark || ''
@@ -341,15 +349,21 @@ function statusType(status) {
   margin-top: 16px;
 }
 
-.disposal-method-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.dispose-asset-summary {
+  margin-top: 16px;
 }
 
-.disposal-method-group :deep(.el-radio-button__inner) {
-  border-radius: 8px;
-  border-left: var(--el-border);
+.disposal-method-segment {
+  width: 100%;
+}
+
+.disposal-method-segment :deep(.el-segmented__group) {
+  width: 100%;
+}
+
+.disposal-method-segment :deep(.el-segmented__item) {
+  flex: 1;
+  min-height: 40px;
 }
 
 .form-tip {
