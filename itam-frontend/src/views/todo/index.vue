@@ -74,14 +74,6 @@
         <el-form-item label="申请人/部门">
           <el-input v-model="scrapDialog.form.applicant" />
         </el-form-item>
-        <el-form-item label="处置方式">
-          <el-select v-model="scrapDialog.form.disposal_method" style="width: 100%">
-            <el-option label="环保回收" value="环保回收" />
-            <el-option label="供应商回收" value="供应商回收" />
-            <el-option label="内部拆件" value="内部拆件" />
-            <el-option label="销毁处理" value="销毁处理" />
-          </el-select>
-        </el-form-item>
         <el-form-item label="预计残值">
           <el-input-number v-model="scrapDialog.form.estimated_residual_value" :min="0" :precision="2" style="width: 100%" />
         </el-form-item>
@@ -121,7 +113,7 @@ const purchaseAcceptanceRef = ref(null)
 const scrapDialog = reactive({
   visible: false,
   todo: null,
-  form: { applicant: '资产管理员', disposal_method: '环保回收', estimated_residual_value: 0, reason: '' }
+  form: { applicant: '资产管理员', estimated_residual_value: 0, reason: '' }
 })
 
 const typeOptions = [
@@ -202,7 +194,6 @@ function openScrapDialog(row) {
   scrapDialog.todo = row
   Object.assign(scrapDialog.form, {
     applicant: row.owner || '资产管理员',
-    disposal_method: '环保回收',
     estimated_residual_value: 0,
     reason: ''
   })

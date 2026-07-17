@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">报废处置登记</h2>
-        <p class="page-subtitle">登记资产退役时间、处理手段、退役审批单号和最终处置结果</p>
+        <p class="page-subtitle">资产实际完成处置后，登记退役时间、处置方式、审批单号和处理结果</p>
       </div>
       <el-button @click="load">刷新</el-button>
     </div>
@@ -77,7 +77,9 @@
         <el-table-column prop="reason" label="报废原因" min-width="220" show-overflow-tooltip />
         <el-table-column prop="retirement_date" label="退役时间" width="120" />
         <el-table-column prop="retirement_approval_no" label="退役审批单号" width="150" show-overflow-tooltip />
-        <el-table-column prop="disposal_method" label="处理手段" width="120" />
+        <el-table-column label="实际处置方式" width="130">
+          <template #default="{ row }">{{ row.disposal_method || '未登记' }}</template>
+        </el-table-column>
         <el-table-column label="报废领走人" width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.dispose_recipient_name || row.dispose_recipient_user_id || '-' }}</template>
         </el-table-column>
@@ -120,15 +122,16 @@
         <el-form-item label="退役时间" required>
           <el-date-picker v-model="disposeDialog.form.retirement_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="退役审批单号">
+        <el-form-item label="退役审批单号" required>
           <el-input v-model="disposeDialog.form.retirement_approval_no" placeholder="填写退役/报废审批单号" />
         </el-form-item>
-        <el-form-item label="处理手段">
+        <el-form-item label="实际处置方式" required>
           <el-radio-group v-model="disposeDialog.form.disposal_method" class="disposal-method-group">
             <el-radio-button label="报废">报废</el-radio-button>
             <el-radio-button label="变卖">变卖</el-radio-button>
             <el-radio-button label="员工领用">员工领用</el-radio-button>
           </el-radio-group>
+          <div class="form-tip">请选择资产实际完成的处置结果，不能在提交报废时预先确定。</div>
         </el-form-item>
         <el-form-item v-if="disposeDialog.form.disposal_method === '员工领用'" label="领用员工" required>
           <el-select
@@ -150,7 +153,7 @@
         <el-form-item label="实际残值">
           <el-input-number v-model="disposeDialog.form.final_residual_value" :min="0" :precision="2" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="处置说明">
+        <el-form-item label="处置说明" required>
           <el-input v-model="disposeDialog.form.disposal_remark" type="textarea" :rows="4" :placeholder="disposeRemarkPlaceholder" />
         </el-form-item>
       </el-form>
@@ -178,7 +181,7 @@ const disposeDialog = reactive({
   row: null,
   form: {
     final_residual_value: 0,
-    disposal_method: '报废',
+    disposal_method: '',
     retirement_date: '',
     retirement_approval_no: '',
     dispose_recipient_user_id: '',
@@ -247,7 +250,7 @@ async function resetFilters() {
 function openDispose(row) {
   disposeDialog.row = row
   disposeDialog.form.final_residual_value = row.estimated_residual_value || 0
-  disposeDialog.form.disposal_method = normalizeDisposeMethod(row.disposal_method)
+  disposeDialog.form.disposal_method = row.status === '已处置' ? normalizeDisposeMethod(row.disposal_method) : ''
   disposeDialog.form.retirement_date = row.retirement_date || todayText()
   disposeDialog.form.retirement_approval_no = row.retirement_approval_no || row.request_no || ''
   disposeDialog.form.dispose_recipient_user_id = row.dispose_recipient_user_id || ''
@@ -259,12 +262,15 @@ function openDispose(row) {
 async function dispose() {
   if (!disposeDialog.row) return
   if (!disposeDialog.form.retirement_date) return ElMessage.warning('请选择退役时间')
+  if (!disposeDialog.form.retirement_approval_no.trim()) return ElMessage.warning('请填写退役审批单号')
+  if (!disposeDialog.form.disposal_method) return ElMessage.warning('请选择实际处置方式')
   if (disposeDialog.form.disposal_method === '员工领用' && !disposeDialog.form.dispose_recipient_user_id) {
     ElMessage.warning('请选择报废领走员工')
     return
   }
+  if (!disposeDialog.form.disposal_remark.trim()) return ElMessage.warning('请填写实际处置说明')
   const recipientText = disposeDialog.form.disposal_method === '员工领用' ? `，报废领走人：${disposeDialog.form.dispose_recipient_name || disposeDialog.form.dispose_recipient_user_id}` : ''
-  await ElMessageBox.confirm(`确认登记 ${disposeDialog.row.asset_id} 的报废处置？退役时间：${disposeDialog.form.retirement_date}，处理手段：${disposeDialog.form.disposal_method}${recipientText}。登记后资产进入已处置终态。`, '确认登记', { type: 'warning' })
+  await ElMessageBox.confirm(`确认登记 ${disposeDialog.row.asset_id} 的报废处置？退役时间：${disposeDialog.form.retirement_date}，实际处置方式：${disposeDialog.form.disposal_method}${recipientText}。登记后资产进入已处置终态。`, '确认登记', { type: 'warning' })
   await disposeScrapRequest(disposeDialog.row.id, disposeDialog.form)
   disposeDialog.visible = false
   ElMessage.success('报废资产已处置归档')
@@ -344,6 +350,14 @@ function statusType(status) {
 .disposal-method-group :deep(.el-radio-button__inner) {
   border-radius: 8px;
   border-left: var(--el-border);
+}
+
+.form-tip {
+  width: 100%;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .pagination-bar {

@@ -28,7 +28,7 @@ class ScrapService:
             "转卖": "变卖",
         }
         method = aliases.get(method, method)
-        return method if method in ScrapService.DISPOSAL_METHODS else "报废"
+        return method if method in ScrapService.DISPOSAL_METHODS else ""
 
     @staticmethod
     def list_requests(
@@ -92,7 +92,7 @@ class ScrapService:
             purchase_supplier_name=asset.purchase_supplier_name,
             applicant=payload.get("applicant") or asset.dept_id or operator,
             reason=payload.get("reason") or "",
-            disposal_method=payload.get("disposal_method") or "环保回收",
+            disposal_method=None,
             retirement_date=payload.get("retirement_date"),
             retirement_approval_no=payload.get("retirement_approval_no") or "",
             estimated_residual_value=float(payload.get("estimated_residual_value") or 0),
@@ -115,7 +115,6 @@ class ScrapService:
                 new_owner=request.applicant or "-",
                 location=asset.location,
                 extra={
-                    "disposal_method": request.disposal_method or "",
                     "retirement_date": request.retirement_date.isoformat() if request.retirement_date else "",
                     "retirement_approval_no": request.retirement_approval_no or "",
                     "estimated_residual_value": request.estimated_residual_value or 0,
@@ -246,7 +245,15 @@ class ScrapService:
         if asset and asset.status not in {"pending_scrap", "scrapped", "ready_scrap"}:
             raise ValueError("资产不是待报废或已报废状态，不能登记处置")
 
-        disposal_method = ScrapService.normalize_disposal_method(payload.get("disposal_method") or request.disposal_method)
+        disposal_method = ScrapService.normalize_disposal_method(payload.get("disposal_method"))
+        if not disposal_method:
+            raise ValueError("请选择实际处置方式：报废、变卖或员工领用")
+        retirement_approval_no = (payload.get("retirement_approval_no") or "").strip()
+        if not retirement_approval_no:
+            raise ValueError("请填写退役审批单号")
+        disposal_remark = (payload.get("disposal_remark") or "").strip()
+        if not disposal_remark:
+            raise ValueError("请填写实际处置说明")
         recipient_user_id = (payload.get("dispose_recipient_user_id") or "").strip()
         recipient_name = (payload.get("dispose_recipient_name") or "").strip()
         if disposal_method == "员工领用":
@@ -269,9 +276,9 @@ class ScrapService:
         request.status = "已处置"
         request.disposal_method = disposal_method
         request.retirement_date = payload.get("retirement_date") or request.retirement_date or datetime.utcnow()
-        request.retirement_approval_no = payload.get("retirement_approval_no") or request.retirement_approval_no or ""
+        request.retirement_approval_no = retirement_approval_no
         request.final_residual_value = float(payload.get("final_residual_value") or request.estimated_residual_value or 0)
-        request.disposal_remark = payload.get("disposal_remark") or ""
+        request.disposal_remark = disposal_remark
         request.dispose_recipient_user_id = recipient_user_id or None
         request.dispose_recipient_name = recipient_name or None
         request.disposed_by = operator

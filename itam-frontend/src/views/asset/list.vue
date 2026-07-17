@@ -279,14 +279,6 @@
         </template>
         <template v-if="batch.type === 'scrap'">
           <el-form-item label="申请人/部门"><el-input v-model="batch.form.applicant" /></el-form-item>
-          <el-form-item label="处置方式">
-            <el-select v-model="batch.form.disposal_method" style="width: 100%">
-              <el-option label="环保回收" value="环保回收" />
-              <el-option label="供应商回收" value="供应商回收" />
-              <el-option label="内部拆件" value="内部拆件" />
-              <el-option label="销毁处理" value="销毁处理" />
-            </el-select>
-          </el-form-item>
           <el-form-item label="预计残值"><el-input-number v-model="batch.form.estimated_residual_value" :min="0" style="width: 100%" /></el-form-item>
           <el-form-item label="报废原因"><el-input v-model="batch.form.reason" type="textarea" :rows="4" /></el-form-item>
         </template>
@@ -593,7 +585,6 @@ function defaultBatchForm() {
     borrow_due_date: '',
     applicant: '',
     reason: '',
-    disposal_method: '环保回收',
     estimated_residual_value: 0,
     remark: ''
   }

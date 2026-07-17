@@ -242,14 +242,6 @@
         </template>
 
         <template v-if="mode === 'scrap'">
-          <el-form-item label="处置方式">
-            <el-select v-model="form.disposal_method" style="width: 100%">
-              <el-option label="环保回收" value="环保回收" />
-              <el-option label="供应商回收" value="供应商回收" />
-              <el-option label="内部拆件" value="内部拆件" />
-              <el-option label="销毁处理" value="销毁处理" />
-            </el-select>
-          </el-form-item>
           <el-form-item label="预计残值">
             <el-input-number v-model="form.estimated_residual_value" :min="0" :precision="2" style="width: 100%" />
           </el-form-item>
@@ -442,7 +434,6 @@ function defaultForm() {
     fault_reason: '',
     repair_cost: 0,
     vendor: '',
-    disposal_method: '环保回收',
     estimated_residual_value: 0,
     scrap_reason: '',
     remark: ''
@@ -843,7 +834,6 @@ async function submitScrap() {
   if (!form.scrap_reason.trim()) return ElMessage.warning('请填写报废原因')
   await createScrapRequest(asset.value.asset_id, {
     applicant: asset.value.dept_name || asset.value.dept || '移动端扫码',
-    disposal_method: form.disposal_method,
     estimated_residual_value: form.estimated_residual_value,
     reason: form.scrap_reason,
     operator: '移动端扫码'
