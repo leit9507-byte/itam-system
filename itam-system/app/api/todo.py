@@ -207,23 +207,26 @@ def build_borrow_due_todos(assets: list[Asset]) -> list[dict]:
     return rows
 
 
-def build_repair_todos(repairs: list[RepairRecord]) -> list[dict]:
+def build_repair_todos(repairs: list[dict | RepairRecord]) -> list[dict]:
+    def value(item, field):
+        return item.get(field) if isinstance(item, dict) else getattr(item, field, None)
+
     return [{
-        "id": f"repair-{item.id or item.repair_no}",
+        "id": f"repair-{value(item, 'id') or value(item, 'repair_no')}",
         "type": "repair_followup",
         "type_label": "维修跟进",
-        "title": f"{item.asset_id} 维修中待跟进",
-        "description": f"{item.fault_reason or '未填写故障原因'} / {item.vendor or '未填写维修商'}",
-        "owner": item.operator or "资产管理员",
+        "title": f"{value(item, 'asset_id')} 维修中待跟进",
+        "description": f"{value(item, 'fault_reason') or '未填写故障原因'} / {value(item, 'vendor') or '未填写维修商'}",
+        "owner": value(item, "operator") or "资产管理员",
         "priority": "low",
         "status": "维修中",
-        "created_at": item.repair_time or item.created_at,
-        "repair_id": item.id,
-        "repair_no": item.repair_no,
-        "asset_id": item.asset_id,
+        "created_at": value(item, "repair_time") or value(item, "created_at"),
+        "repair_id": value(item, "id"),
+        "repair_no": value(item, "repair_no"),
+        "asset_id": value(item, "asset_id"),
         "target_path": "/repair",
-        "target_query": {"todo": "repair_followup", "repair_no": item.repair_no},
-    } for item in repairs if item.status == "维修中"]
+        "target_query": {"todo": "repair_followup", "repair_no": value(item, "repair_no")},
+    } for item in repairs if value(item, "status") == "维修中"]
 
 
 def build_inactive_user_map(users: list[UserDirectory]) -> dict[str, UserDirectory]:
