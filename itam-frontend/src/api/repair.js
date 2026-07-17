@@ -80,6 +80,8 @@ export async function getRepairDashboard(filters = {}) {
     avgCost: rows.length ? Math.round(totalCost / rows.length) : 0,
     topFaults: groupCount(rows, 'fault_reason').slice(0, 10),
     topModels: groupCount(rows, 'asset_model').slice(0, 10),
+    ageTrend: buildAgeTrend(rows),
+    ageTrendPeak: buildAgeTrendPeak(rows),
     costTrend: buildCostTrend(rows)
   }
 }
@@ -94,6 +96,7 @@ function mapRepair(row) {
     sn: row.sn || '',
     category: row.category || '',
     asset_model: row.asset_model || '',
+    purchase_date: formatDate(row.purchase_date),
     owner: row.owner || '',
     dept: row.dept || '',
     repair_time: formatDate(row.repair_time),
@@ -145,6 +148,46 @@ function buildCostTrend(rows) {
       cost: monthRows.reduce((sum, item) => sum + Number(item.repair_cost || 0), 0)
     }
   })
+}
+
+function buildAgeTrend(rows) {
+  const buckets = [
+    { key: '0-1', name: '0-1年', min: 0, max: 1 },
+    { key: '1-2', name: '1-2年', min: 1, max: 2 },
+    { key: '2-3', name: '2-3年', min: 2, max: 3 },
+    { key: '3-4', name: '3-4年', min: 3, max: 4 },
+    { key: '4-5', name: '4-5年', min: 4, max: 5 },
+    { key: '5+', name: '5年以上', min: 5, max: Infinity },
+    { key: 'unknown', name: '未知', min: null, max: null }
+  ].map(item => ({ ...item, value: 0, cost: 0 }))
+  rows.forEach(row => {
+    const age = repairAssetAge(row)
+    const bucket = age == null ? buckets[buckets.length - 1] : buckets.find(item => item.min != null && age >= item.min && age < item.max)
+    if (!bucket) return
+    bucket.value += 1
+    bucket.cost += Number(row.repair_cost || 0)
+  })
+  return buckets.filter(item => item.value > 0 || item.key !== 'unknown').map(item => ({
+    name: item.name,
+    value: item.value,
+    cost: item.cost,
+    avg_cost: item.value ? Math.round(item.cost / item.value) : 0
+  }))
+}
+
+function buildAgeTrendPeak(rows) {
+  const trend = buildAgeTrend(rows).filter(item => item.name !== '未知')
+  if (!trend.length) return ''
+  const peak = trend.reduce((best, item) => (item.value > best.value ? item : best), trend[0])
+  return peak.value ? `${peak.name}故障最多：${peak.value} 次` : ''
+}
+
+function repairAssetAge(row) {
+  if (!row.purchase_date) return null
+  const purchase = new Date(row.purchase_date)
+  const repair = new Date(row.repair_time || row.created_at)
+  if (Number.isNaN(purchase.getTime()) || Number.isNaN(repair.getTime()) || repair < purchase) return null
+  return (repair.getTime() - purchase.getTime()) / (365.25 * 24 * 60 * 60 * 1000)
 }
 
 function inDateRange(value, dateRange) {

@@ -42,6 +42,15 @@
         <template #header>维修型号 TOP10</template>
         <div ref="modelRef" class="chart" />
       </el-card>
+      <el-card shadow="never" class="wide-chart">
+        <template #header>
+          <div class="card-header">
+            <span>故障年限趋势</span>
+            <el-tag v-if="dashboard.ageTrendPeak" type="warning" effect="light">{{ dashboard.ageTrendPeak }}</el-tag>
+          </div>
+        </template>
+        <div ref="ageTrendRef" class="chart" />
+      </el-card>
     </section>
 
     <el-card shadow="never">
@@ -177,11 +186,12 @@ const records = ref([])
 const trendRef = ref(null)
 const faultRef = ref(null)
 const modelRef = ref(null)
+const ageTrendRef = ref(null)
 const charts = []
 const faultTypes = ref([])
 const filters = reactive({ keyword: '', status: '', dateRange: defaultDateRange(), sortMode: 'latest' })
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
-const dashboard = reactive({ total: 0, inProgress: 0, completed: 0, totalCost: 0, avgCost: 0, topFaults: [], topModels: [], costTrend: [] })
+const dashboard = reactive({ total: 0, inProgress: 0, completed: 0, totalCost: 0, avgCost: 0, topFaults: [], topModels: [], ageTrend: [], ageTrendPeak: '', costTrend: [] })
 const faultTypeDialog = reactive({ visible: false, form: defaultFaultTypeForm() })
 const finishDialog = reactive({ visible: false, row: null, form: defaultFinishForm() })
 
@@ -252,7 +262,30 @@ function renderCharts() {
     series: [{ name: '维修次数', type: 'bar', data: dashboard.topModels.map(item => item.value), itemStyle: { color: '#2563eb', borderRadius: [0, 4, 4, 0] } }]
   })
 
-  charts.push(trend, fault, model)
+  const ageTrend = echarts.init(ageTrendRef.value)
+  ageTrend.setOption({
+    tooltip: {
+      trigger: 'axis',
+      formatter(params) {
+        const count = params.find(item => item.seriesName === '故障次数')?.value || 0
+        const cost = params.find(item => item.seriesName === '平均维修费用')?.value || 0
+        return `${params[0]?.axisValue || ''}<br/>故障次数：${count}<br/>平均维修费用：¥${Number(cost).toLocaleString()}`
+      }
+    },
+    legend: { top: 0 },
+    grid: { left: 56, right: 54, top: 48, bottom: 34 },
+    xAxis: { type: 'category', data: dashboard.ageTrend.map(item => item.name) },
+    yAxis: [
+      { type: 'value', name: '次数' },
+      { type: 'value', name: '费用' }
+    ],
+    series: [
+      { name: '故障次数', type: 'bar', data: dashboard.ageTrend.map(item => item.value), itemStyle: { color: '#f97316', borderRadius: [4, 4, 0, 0] } },
+      { name: '平均维修费用', type: 'line', yAxisIndex: 1, smooth: true, data: dashboard.ageTrend.map(item => item.avg_cost), itemStyle: { color: '#0f766e' } }
+    ]
+  })
+
+  charts.push(trend, fault, model, ageTrend)
 }
 
 function isRepairClosed(row) {
@@ -359,6 +392,10 @@ function defaultDateRange() {
 .chart {
   width: 100%;
   height: 320px;
+}
+
+.wide-chart {
+  grid-column: 1 / -1;
 }
 
 .pagination-bar {
