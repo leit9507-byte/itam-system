@@ -8,9 +8,11 @@ from app.models.asset import Asset
 from app.models.scrap import ScrapRequest
 from app.models.user import UserDirectory
 from app.services.audit_log_service import AuditLogService
+from app.services.asset_service import AssetService
 from app.services.asset_residual_service import AssetResidualService
 from app.services.lifecycle_service import LifecycleService
 from app.services.notification_service import NotificationService
+from app.services.number_service import NumberService
 
 
 class ScrapService:
@@ -72,10 +74,8 @@ class ScrapService:
         return query.filter(False)
 
     @staticmethod
-    def create_request(db: Session, asset_id: str, payload: dict, operator: str = "资产管理员") -> ScrapRequest:
-        asset = db.get(Asset, asset_id)
-        if not asset:
-            raise ValueError("asset not found")
+    def create_request(db: Session, asset_id: str, payload: dict, operator: str = "资产管理员", user_context: dict | None = None) -> ScrapRequest:
+        asset = AssetService.get_scoped_asset(db, asset_id, user_context)
         existed = db.query(ScrapRequest).filter(ScrapRequest.asset_id == asset_id, ScrapRequest.status.in_(["待处置", "审批中", "已通过"])).first()
         if existed:
             return existed
@@ -104,6 +104,7 @@ class ScrapService:
             status="待处置",
         )
         from_status = asset.status
+        AssetService.validate_transition(from_status, "pending_scrap")
         asset.status = "pending_scrap"
         db.add(request)
         LifecycleService.record(
@@ -145,103 +146,15 @@ class ScrapService:
         return request
 
     @staticmethod
-    def approve(db: Session, request_id: int, approver: str) -> ScrapRequest:
-        request = db.get(ScrapRequest, request_id)
-        if not request:
-            raise ValueError("scrap request not found")
-        asset = db.get(Asset, request.asset_id)
-        request.status = "已通过"
-        request.approver = approver
-        request.approved_at = datetime.utcnow()
-        if asset:
-            from_status = asset.status
-            asset.status = "scrapped"
-            LifecycleService.record(
-                db,
-                asset.asset_id,
-                "SCRAP_APPROVE",
-                from_status,
-                "scrapped",
-                approver,
-                LifecycleService.structured_remark(
-                    reason=request.reason or "报废登记确认",
-                    object=f"报废单 {request.request_no}",
-                    previous_owner=asset.owner_user_id or "-",
-                    new_owner=approver,
-                    location=asset.location,
-                    extra={"approved_at": request.approved_at.isoformat() if request.approved_at else ""},
-                ),
-            )
-        AuditLogService.record_operation(db, "scrap", "approve", approver, "scrap_request", request.request_no, f"报废登记确认 {request.asset_id}")
-        db.commit()
-        db.refresh(request)
-        NotificationService.send_event(
-            db,
-            "scrap",
-            "报废登记已确认",
-            [
-                f"报废单号：{request.request_no}",
-                f"资产编号：{request.asset_id}",
-                f"资产名称：{request.asset_name or '-'}",
-                f"审批人：{approver}",
-                f"处理结果：资产已标记为已报废",
-            ],
-        )
-        return request
-
-    @staticmethod
-    def reject(db: Session, request_id: int, approver: str) -> ScrapRequest:
-        request = db.get(ScrapRequest, request_id)
-        if not request:
-            raise ValueError("scrap request not found")
-        asset = db.get(Asset, request.asset_id)
-        request.status = "已驳回"
-        request.approver = approver
-        request.approved_at = datetime.utcnow()
-        if asset:
-            from_status = asset.status
-            asset.status = "idle"
-            LifecycleService.record(
-                db,
-                asset.asset_id,
-                "SCRAP_REJECT",
-                from_status,
-                "idle",
-                approver,
-                LifecycleService.structured_remark(
-                    reason=request.reason or "报废登记取消",
-                    object=f"报废单 {request.request_no}",
-                    previous_owner=asset.owner_user_id or "-",
-                    new_owner=approver,
-                    location=asset.location,
-                    extra={"approved_at": request.approved_at.isoformat() if request.approved_at else ""},
-                ),
-            )
-        AuditLogService.record_operation(db, "scrap", "reject", approver, "scrap_request", request.request_no, f"报废登记取消 {request.asset_id}")
-        db.commit()
-        db.refresh(request)
-        NotificationService.send_event(
-            db,
-            "scrap",
-            "报废登记已取消",
-            [
-                f"报废单号：{request.request_no}",
-                f"资产编号：{request.asset_id}",
-                f"资产名称：{request.asset_name or '-'}",
-                f"审批人：{approver}",
-                f"处理结果：资产恢复为闲置",
-            ],
-        )
-        return request
-
-    @staticmethod
-    def dispose(db: Session, request_id: int, payload: dict, operator: str) -> ScrapRequest:
-        request = db.get(ScrapRequest, request_id)
+    def dispose(db: Session, request_id: int, payload: dict, operator: str, user_context: dict | None = None) -> ScrapRequest:
+        request = ScrapService.apply_data_scope(
+            db.query(ScrapRequest).filter(ScrapRequest.id == request_id), user_context
+        ).first()
         if not request:
             raise ValueError("scrap request not found")
         if request.status not in {"待处置", "审批中", "已通过", "已处置"}:
             raise ValueError("只有待处置的报废单可以登记处置")
-        asset = db.get(Asset, request.asset_id)
+        asset = AssetService.get_scoped_asset(db, request.asset_id, user_context)
         if asset and asset.status == "disposed":
             request.status = "已处置"
             db.commit()
@@ -282,7 +195,10 @@ class ScrapService:
         request.disposal_method = disposal_method
         request.retirement_date = payload.get("retirement_date") or request.retirement_date or datetime.utcnow()
         request.retirement_approval_no = retirement_approval_no
-        request.final_residual_value = float(payload.get("final_residual_value") or request.estimated_residual_value or 0)
+        final_residual_value = payload.get("final_residual_value")
+        request.final_residual_value = float(
+            request.estimated_residual_value or 0 if final_residual_value is None else final_residual_value
+        )
         request.disposal_remark = disposal_remark
         request.dispose_recipient_user_id = recipient_user_id or None
         request.dispose_recipient_name = recipient_name or None
@@ -290,6 +206,7 @@ class ScrapService:
         request.disposed_at = datetime.utcnow()
         if asset:
             from_status = asset.status
+            AssetService.validate_transition(from_status, "disposed")
             asset.status = "disposed"
             recipient_label = request.dispose_recipient_name or request.dispose_recipient_user_id or "-"
             dispose_reason = request.disposal_remark or request.disposal_method or "报废资产已完成处置归档"
@@ -350,4 +267,5 @@ class ScrapService:
 
     @staticmethod
     def generate_no(db: Session) -> str:
-        return f"SC-{datetime.utcnow().year}-{db.query(ScrapRequest).count() + 1:04d}"
+        year = datetime.utcnow().year
+        return NumberService.next(db, f"scrap:{year}", f"SC-{year}-", 4)

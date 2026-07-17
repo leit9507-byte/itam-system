@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.security import user_context_from_request
+from app.core.security import can_view_all_data, is_department_manager, scoped_dept_id, scoped_user_identities, user_context_from_request
 from app.models.asset import Asset
 from app.models.purchase import Purchase
 from app.models.repair import RepairRecord
@@ -35,7 +35,21 @@ def list_todos(request: Request, db: Session = Depends(get_db)):
     scraps = scrap_result["list"]
     repairs = repair_result["list"]
     assets = asset_query.order_by(Asset.created_at.desc()).limit(TODO_SOURCE_LIMIT).all()
-    users = db.query(UserDirectory).all()
+    user_query = db.query(UserDirectory)
+    if not can_view_all_data(user_context):
+        dept_id = scoped_dept_id(user_context)
+        identities = scoped_user_identities(user_context)
+        if is_department_manager(user_context) and dept_id:
+            user_query = user_query.filter(
+                (UserDirectory.dept_id == dept_id) | (UserDirectory.dept_name == dept_id)
+            )
+        elif identities:
+            user_query = user_query.filter(
+                (UserDirectory.user_id.in_(identities)) | (UserDirectory.username.in_(identities))
+            )
+        else:
+            user_query = user_query.filter(False)
+    users = user_query.all()
     inactive_user_map = build_inactive_user_map(users)
     assigned_user_ids = build_assigned_user_ids(assets)
 

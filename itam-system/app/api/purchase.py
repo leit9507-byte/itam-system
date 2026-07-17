@@ -32,14 +32,14 @@ def list_purchases(
 
 
 @router.post("/create", response_model=PurchaseOut)
-def create_purchase(payload: PurchaseCreate, db: Session = Depends(get_db)):
-    return PurchaseService.create_purchase(db, payload)
+def create_purchase(payload: PurchaseCreate, request: Request, db: Session = Depends(get_db)):
+    return PurchaseService.create_purchase(db, payload, operator_from_request(request), user_context_from_request(request))
 
 
 @router.post("/receive")
 def receive_purchase(request: Request, purchase_no: str, payload: PurchaseReceive | None = None, db: Session = Depends(get_db)):
     try:
-        result = PurchaseService.receive_purchase(db, purchase_no, operator_from_request(request))
+        result = PurchaseService.receive_purchase(db, purchase_no, operator_from_request(request), user_context_from_request(request))
         return {
             "purchase": PurchaseOut.model_validate(result["purchase"]),
             "assets": [AssetOut.model_validate(asset) for asset in result["assets"]],
@@ -51,7 +51,7 @@ def receive_purchase(request: Request, purchase_no: str, payload: PurchaseReceiv
 @router.post("/accept")
 def accept_purchase(purchase_no: str, payload: PurchaseAcceptanceReceive, request: Request, db: Session = Depends(get_db)):
     try:
-        result = PurchaseService.accept_purchase(db, purchase_no, payload.model_copy(update={"operator": operator_from_request(request)}))
+        result = PurchaseService.accept_purchase(db, purchase_no, payload.model_copy(update={"operator": operator_from_request(request)}), user_context_from_request(request))
         return {
             "purchase": PurchaseOut.model_validate(result["purchase"]),
             "assets": [AssetOut.model_validate(asset) for asset in result["assets"]],

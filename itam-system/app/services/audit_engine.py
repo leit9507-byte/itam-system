@@ -14,12 +14,20 @@ class AuditEngine:
     def __init__(self, db: Session):
         self.db = db
 
-    def run(self, users: list[dict] | None = None) -> dict:
-        assets = self.db.query(Asset).all()
+    def run(self, users: list[dict] | None = None, asset_ids: set[str] | None = None) -> dict:
+        asset_query = self.db.query(Asset)
+        if asset_ids is not None:
+            asset_query = asset_query.filter(Asset.asset_id.in_(asset_ids)) if asset_ids else asset_query.filter(False)
+        assets = asset_query.all()
         asset_map = {asset.asset_id: asset for asset in assets}
         user_map = {user.user_id: user for user in self.db.query(UserDirectory).all()}
-        responses = {item.violation_key: item for item in self.db.query(AuditResponse).all()}
+        response_query = self.db.query(AuditResponse)
+        if asset_ids is not None:
+            response_query = response_query.filter(AuditResponse.asset_id.in_(asset_ids)) if asset_ids else response_query.filter(False)
+        responses = {item.violation_key: item for item in response_query.all()}
         violations = RuleEngine(self.db).run()
+        if asset_ids is not None:
+            violations = [item for item in violations if item.get("asset_id") in asset_ids]
         enriched = [self._enrich_violation(item, asset_map, user_map, responses) for item in violations]
         risk_score = min(
             100,

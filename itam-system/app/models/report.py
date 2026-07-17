@@ -20,4 +20,5 @@ class AuditReportArchive(Base):
     pdf_path = Column(String(512), nullable=True)
     xlsx_path = Column(String(512), nullable=True)
     created_by = Column(String(128), nullable=True)
+    scope_key = Column(String(160), nullable=False, default="global", index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)

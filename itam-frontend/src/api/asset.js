@@ -316,14 +316,6 @@ export async function getScrapRequests(params = {}) {
   return { list: rows.map(mapScrapRequest), total }
 }
 
-export async function approveScrapRequest(requestId, approver = '资产负责人') {
-  return mapScrapRequest(await request.post(`/scrap/${requestId}/approve`, { approver }))
-}
-
-export async function rejectScrapRequest(requestId, approver = '资产负责人') {
-  return mapScrapRequest(await request.post(`/scrap/${requestId}/reject`, { approver }))
-}
-
 export async function disposeScrapRequest(requestId, payload = {}) {
   return mapScrapRequest(await request.post(`/scrap/${requestId}/dispose`, {
     final_residual_value: Number(payload.final_residual_value || 0),

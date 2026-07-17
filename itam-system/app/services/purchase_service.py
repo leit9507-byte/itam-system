@@ -48,7 +48,13 @@ class PurchaseService:
         return query.filter(False)
 
     @staticmethod
-    def create_purchase(db: Session, payload: PurchaseCreate) -> Purchase:
+    def create_purchase(db: Session, payload: PurchaseCreate, operator: str = "system", user_context: dict | None = None) -> Purchase:
+        if not can_view_all_data(user_context):
+            dept_id = scoped_dept_id(user_context)
+            if not is_department_manager(user_context) or not dept_id:
+                raise ValueError("purchase creation is not allowed for the current data scope")
+            if any((item.dept_id or "") != dept_id for item in payload.items):
+                raise ValueError("purchase items must belong to the current department")
         purchase = Purchase(
             purchase_no=payload.purchase_no,
             company=AssetService.normalize_company(payload.company),
@@ -80,7 +86,7 @@ class PurchaseService:
                 )
             )
 
-        AuditLogService.record_operation(db, "purchase", "create", "system", "purchase", purchase.purchase_no, f"创建采购单 {purchase.purchase_no}，进入验收", payload.model_dump())
+        AuditLogService.record_operation(db, "purchase", "create", operator, "purchase", purchase.purchase_no, f"创建采购单 {purchase.purchase_no}，进入验收", payload.model_dump())
         db.commit()
         db.refresh(purchase)
         NotificationService.send_event(
@@ -98,8 +104,10 @@ class PurchaseService:
         return purchase
 
     @staticmethod
-    def receive_purchase(db: Session, purchase_no: str, operator: str = "system") -> dict:
-        purchase = db.query(Purchase).filter(Purchase.purchase_no == purchase_no).first()
+    def receive_purchase(db: Session, purchase_no: str, operator: str = "system", user_context: dict | None = None) -> dict:
+        purchase = PurchaseService.apply_data_scope(
+            db.query(Purchase).filter(Purchase.purchase_no == purchase_no), user_context
+        ).first()
         if not purchase:
             raise ValueError("purchase not found")
         if purchase.status == "received":
@@ -163,23 +171,41 @@ class PurchaseService:
         return {"purchase": purchase, "assets": created_assets}
 
     @staticmethod
-    def accept_purchase(db: Session, purchase_no: str, payload: PurchaseAcceptanceReceive) -> dict:
-        purchase = db.query(Purchase).filter(Purchase.purchase_no == purchase_no).first()
+    def accept_purchase(db: Session, purchase_no: str, payload: PurchaseAcceptanceReceive, user_context: dict | None = None) -> dict:
+        purchase = PurchaseService.apply_data_scope(
+            db.query(Purchase).filter(Purchase.purchase_no == purchase_no), user_context
+        ).first()
         if not purchase:
             raise ValueError("purchase not found")
         if purchase.status == "received":
             return {"purchase": purchase, "assets": []}
 
         item_map = {item.id: item for item in purchase.items}
+        if not payload.acceptances:
+            raise ValueError("acceptance list cannot be empty")
+        accepted_counts: dict[int, int] = {}
+        for acceptance in payload.acceptances:
+            if acceptance.item_id in accepted_counts:
+                raise ValueError(f"duplicate acceptance item: {acceptance.item_id}")
+            accepted_counts[acceptance.item_id] = len(acceptance.assets)
+        unknown_ids = set(accepted_counts) - set(item_map)
+        if unknown_ids:
+            raise ValueError(f"purchase item not found: {min(unknown_ids)}")
+        missing_ids = set(item_map) - set(accepted_counts)
+        if missing_ids:
+            raise ValueError(f"purchase item acceptance missing: {min(missing_ids)}")
+        for item_id, item in item_map.items():
+            if accepted_counts[item_id] != item.quantity:
+                raise ValueError(
+                    f"accepted asset count must equal purchase quantity for item {item_id}: "
+                    f"expected {item.quantity}, got {accepted_counts[item_id]}"
+                )
         created_assets: list[Asset] = []
         default_purchase_date = datetime.utcnow()
         for acceptance in payload.acceptances:
             item = item_map.get(acceptance.item_id)
             if not item:
                 raise ValueError(f"purchase item not found: {acceptance.item_id}")
-
-            if len(acceptance.assets) > item.quantity:
-                raise ValueError(f"accepted asset count exceeds quantity for item {item.id}")
 
             for accepted in acceptance.assets:
                 asset_id = AssetService.normalize_blank(accepted.asset_id) or AssetService.generate_asset_id(db)
@@ -302,4 +328,7 @@ class PurchaseService:
             config["spec"] = item.spec
         if item.retirement_years:
             config["retirement_years"] = item.retirement_years
+        config["purchase_item_id"] = item.id
+        if item.purchase:
+            config["purchase_no"] = item.purchase.purchase_no
         return config

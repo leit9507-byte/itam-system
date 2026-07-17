@@ -6,6 +6,7 @@ from app.models.checkout import AssetCheckout
 from app.models.inventory import InventoryComponentInstallation, InventoryItem, InventoryLedger, InventoryLicenseSeat, InventoryLicenseSeatHistory
 from app.models.lifecycle import Lifecycle
 from app.models.notification import NotificationSetting
+from app.models.number_sequence import NumberSequence
 from app.models.file import AssetAttachment
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.repair import RepairFaultType, RepairRecord
@@ -30,6 +31,7 @@ __all__ = [
     "InventoryComponentInstallation",
     "Lifecycle",
     "NotificationSetting",
+    "NumberSequence",
     "AssetAttachment",
     "Purchase",
     "PurchaseItem",

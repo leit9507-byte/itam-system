@@ -18,16 +18,19 @@ from app.models.audit_response import AuditResponse
 from app.models.audit_log import AssetChangeLog
 from app.models.checkout import AssetCheckout
 from app.models.file import AssetAttachment
+from app.models.inventory import InventoryComponentInstallation, InventoryLedger, InventoryLicenseSeat, InventoryLicenseSeatHistory
 from app.models.lifecycle import Lifecycle
 from app.models.repair import RepairRecord
+from app.models.scan_binding import AssetScanBinding
 from app.models.scrap import ScrapRequest
-from app.models.stocktake import StocktakeItem
+from app.models.stocktake import StocktakeItem, StocktakeScanLog
 from app.models.user import UserDirectory
 from app.schemas.asset import AssetBatchCheckinCreate, AssetBatchCheckoutCreate, AssetBatchImport, AssetCheckinCreate, AssetCheckoutCreate, AssetCreate, AssetImportRow, AssetTextImport, AssetUpdate
 from app.services.audit_log_service import AuditLogService
 from app.services.asset_residual_service import AssetResidualService
 from app.services.lifecycle_service import LifecycleService
 from app.services.notification_service import NotificationService
+from app.services.number_service import NumberService
 from app.services.supplier_service import SupplierService
 
 
@@ -43,6 +46,23 @@ class AssetService:
     TERMINAL_STATUSES = {"scrapped", "disposed"}
     CHECKOUT_ALLOWED_FROM = {"in_stock", "idle"}
     CHECKIN_ALLOWED_FROM = {"in_use", "borrowed", "out_stock", "repair"}
+    VALID_STATUSES = {
+        "pending_purchase", "pending_acceptance", "in_stock", "idle", "in_use",
+        "borrowed", "out_stock", "repair", "ready_scrap", "pending_scrap",
+        "scrapped", "disposed",
+    }
+    STATUS_TRANSITIONS = {
+        "in_stock": {"idle", "in_use", "borrowed", "out_stock", "repair", "ready_scrap", "pending_scrap"},
+        "idle": {"in_stock", "in_use", "borrowed", "out_stock", "repair", "ready_scrap", "pending_scrap"},
+        "in_use": {"in_stock", "repair", "ready_scrap", "pending_scrap"},
+        "borrowed": {"in_stock", "repair", "ready_scrap", "pending_scrap"},
+        "out_stock": {"in_stock", "repair", "ready_scrap", "pending_scrap"},
+        "repair": {"in_stock", "ready_scrap", "pending_scrap"},
+        "ready_scrap": {"in_stock", "scrapped"},
+        "pending_scrap": {"ready_scrap", "scrapped", "disposed"},
+        "scrapped": {"disposed"},
+        "disposed": set(),
+    }
     IMPORT_TEMPLATE_HEADERS = [
         "asset_id",
         "asset_no",
@@ -123,6 +143,8 @@ class AssetService:
     @staticmethod
     def validate_status_owner(asset: Asset, *, status_changed: bool = True) -> None:
         status = asset.status
+        if status not in AssetService.VALID_STATUSES:
+            raise AssetValidationError(f"unsupported asset status: {status}")
         has_owner = bool(AssetService.normalize_blank(asset.owner_user_id))
         has_location = bool(AssetService.normalize_blank(asset.location))
         if status_changed and status in AssetService.WORKFLOW_STATUSES:
@@ -165,8 +187,7 @@ class AssetService:
 
     @staticmethod
     def generate_asset_id(db: Session, prefix: str = "ITAM") -> str:
-        count = db.query(Asset).count() + 1
-        return f"{prefix}-{count:06d}"
+        return NumberService.next(db, f"asset:{prefix}", f"{prefix}-", 6)
 
     @staticmethod
     def create_asset(db: Session, payload: AssetCreate, operator: str = "system") -> Asset:
@@ -198,6 +219,7 @@ class AssetService:
             remark=payload.remark,
         )
         AssetService.apply_warranty_expire(asset)
+        AssetService.validate_status_owner(asset, status_changed=False)
         SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
         db.add(asset)
         db.flush()
@@ -664,11 +686,7 @@ class AssetService:
 
     @staticmethod
     def get_asset(db: Session, asset_id: str, user_context: dict | None = None) -> dict:
-        query = db.query(Asset).filter(Asset.asset_id == asset_id)
-        query = AssetService.apply_data_scope(query, user_context)
-        asset = query.first()
-        if not asset:
-            raise ValueError("asset not found")
+        asset = AssetService.get_scoped_asset(db, asset_id, user_context)
         user = AssetService.users_by_identity(db).get(asset.owner_user_id or "")
         row = AssetService.to_out(asset, user)
         row["display_id"] = AssetService.asset_display_id(db, asset)
@@ -720,7 +738,7 @@ class AssetService:
     def apply_data_scope(query, user_context: dict | None):
         user_context = user_context or {}
         role = (user_context.get("role") or "").lower()
-        if role in {"admin", "auditor"}:
+        if role in {"admin", "auditor", "asset_manager"}:
             return query
         dept_id = user_context.get("dept_id") or user_context.get("dept_name")
         user_id = user_context.get("user_id")
@@ -733,51 +751,59 @@ class AssetService:
         return query.filter(False)
 
     @staticmethod
-    def asset_summary(db: Session) -> dict:
+    def get_scoped_asset(db: Session, asset_id: str, user_context: dict | None = None) -> Asset:
+        asset = AssetService.apply_data_scope(
+            db.query(Asset).filter(Asset.asset_id == asset_id), user_context
+        ).first()
+        if not asset:
+            raise ValueError("asset not found")
+        return asset
+
+    @staticmethod
+    def asset_summary(db: Session, user_context: dict | None = None) -> dict:
         now = datetime.utcnow()
         current_month = datetime(now.year, now.month, 1)
         previous_month = datetime(now.year - 1, 12, 1) if now.month == 1 else datetime(now.year, now.month - 1, 1)
 
-        total = db.query(func.count(Asset.asset_id)).scalar() or 0
-        total_value = db.query(func.coalesce(func.sum(Asset.purchase_price), 0)).scalar() or 0
+        scoped = AssetService.apply_data_scope(db.query(Asset), user_context)
+        scoped_ids = scoped.with_entities(Asset.asset_id)
+        total = scoped.count()
+        total_value = scoped.with_entities(func.coalesce(func.sum(Asset.purchase_price), 0)).scalar() or 0
         managed_filter = or_(Asset.status.is_(None), ~Asset.status.in_(["scrapped", "disposed"]))
-        managed_total = db.query(func.count(Asset.asset_id)).filter(managed_filter).scalar() or 0
-        managed_total_value = db.query(func.coalesce(func.sum(Asset.purchase_price), 0)).filter(managed_filter).scalar() or 0
-        current_month_count = db.query(func.count(Asset.asset_id)).filter(Asset.created_at >= current_month).scalar() or 0
+        managed_total = scoped.filter(managed_filter).count()
+        managed_total_value = scoped.filter(managed_filter).with_entities(func.coalesce(func.sum(Asset.purchase_price), 0)).scalar() or 0
+        current_month_count = scoped.filter(Asset.created_at >= current_month).count()
         previous_month_count = (
-            db.query(func.count(Asset.asset_id))
+            scoped
             .filter(Asset.created_at >= previous_month, Asset.created_at < current_month)
-            .scalar()
-            or 0
+            .count()
         )
         current_month_managed_count = (
-            db.query(func.count(Asset.asset_id))
+            scoped
             .filter(managed_filter, Asset.created_at >= current_month)
-            .scalar()
-            or 0
+            .count()
         )
         previous_month_managed_count = (
-            db.query(func.count(Asset.asset_id))
+            scoped
             .filter(managed_filter, Asset.created_at >= previous_month, Asset.created_at < current_month)
-            .scalar()
-            or 0
+            .count()
         )
 
         status_counts = {
             status or "unknown": count
-            for status, count in db.query(Asset.status, func.count(Asset.asset_id)).group_by(Asset.status).all()
+            for status, count in db.query(Asset.status, func.count(Asset.asset_id)).filter(Asset.asset_id.in_(scoped_ids)).group_by(Asset.status).all()
         }
         category_counts = {
             category or "其他": count
-            for category, count in db.query(Asset.category, func.count(Asset.asset_id)).group_by(Asset.category).all()
+            for category, count in db.query(Asset.category, func.count(Asset.asset_id)).filter(Asset.asset_id.in_(scoped_ids)).group_by(Asset.category).all()
         }
         managed_status_counts = {
             status or "unknown": count
-            for status, count in db.query(Asset.status, func.count(Asset.asset_id)).filter(managed_filter).group_by(Asset.status).all()
+            for status, count in db.query(Asset.status, func.count(Asset.asset_id)).filter(Asset.asset_id.in_(scoped_ids), managed_filter).group_by(Asset.status).all()
         }
         managed_category_counts = {
             category or "其他": count
-            for category, count in db.query(Asset.category, func.count(Asset.asset_id)).filter(managed_filter).group_by(Asset.category).all()
+            for category, count in db.query(Asset.category, func.count(Asset.asset_id)).filter(Asset.asset_id.in_(scoped_ids), managed_filter).group_by(Asset.category).all()
         }
         return {
             "total": total,
@@ -795,12 +821,12 @@ class AssetService:
         }
 
     @staticmethod
-    def update_asset(db: Session, asset_id: str, payload: AssetUpdate, operator: str = "system") -> Asset:
-        asset = db.get(Asset, asset_id)
-        if not asset:
-            raise ValueError("asset not found")
+    def update_asset(db: Session, asset_id: str, payload: AssetUpdate, operator: str = "system", user_context: dict | None = None) -> Asset:
+        asset = AssetService.get_scoped_asset(db, asset_id, user_context)
 
         data = payload.model_dump(exclude_unset=True)
+        if "status" in data and data["status"] != asset.status:
+            raise AssetValidationError("asset status must be changed through checkout, checkin, repair, or scrap workflow")
         if asset.status in AssetService.TERMINAL_STATUSES and any(key in data for key in {"status", "owner_user_id", "dept_id", "location"}):
             raise AssetValidationError("已报废/已处置资产不能再修改状态、责任人、部门或位置")
         new_asset_id = AssetService.normalize_blank(data.pop("asset_id", None))
@@ -862,7 +888,8 @@ class AssetService:
             )
 
     @staticmethod
-    def list_asset_changes(db: Session, asset_id: str, limit: int = 200) -> list[dict]:
+    def list_asset_changes(db: Session, asset_id: str, limit: int = 200, user_context: dict | None = None) -> list[dict]:
+        AssetService.get_scoped_asset(db, asset_id, user_context)
         rows = (
             db.query(AssetChangeLog)
             .filter(AssetChangeLog.asset_id == asset_id)
@@ -903,6 +930,14 @@ class AssetService:
             db.query(RepairRecord).filter(RepairRecord.asset_id == old_asset_id).update({RepairRecord.asset_id: new_asset_id}, synchronize_session=False)
             db.query(ScrapRequest).filter(ScrapRequest.asset_id == old_asset_id).update({ScrapRequest.asset_id: new_asset_id}, synchronize_session=False)
             db.query(StocktakeItem).filter(StocktakeItem.asset_id == old_asset_id).update({StocktakeItem.asset_id: new_asset_id}, synchronize_session=False)
+            db.query(StocktakeScanLog).filter(StocktakeScanLog.asset_id == old_asset_id).update({StocktakeScanLog.asset_id: new_asset_id}, synchronize_session=False)
+            db.query(AssetCheckout).filter(AssetCheckout.asset_id == old_asset_id).update({AssetCheckout.asset_id: new_asset_id}, synchronize_session=False)
+            db.query(AssetScanBinding).filter(AssetScanBinding.asset_id == old_asset_id).update({AssetScanBinding.asset_id: new_asset_id}, synchronize_session=False)
+            db.query(InventoryLedger).filter(InventoryLedger.asset_id == old_asset_id).update({InventoryLedger.asset_id: new_asset_id}, synchronize_session=False)
+            db.query(InventoryLicenseSeat).filter(InventoryLicenseSeat.asset_id == old_asset_id).update({InventoryLicenseSeat.asset_id: new_asset_id}, synchronize_session=False)
+            db.query(InventoryLicenseSeatHistory).filter(InventoryLicenseSeatHistory.asset_id == old_asset_id).update({InventoryLicenseSeatHistory.asset_id: new_asset_id}, synchronize_session=False)
+            db.query(InventoryComponentInstallation).filter(InventoryComponentInstallation.asset_id == old_asset_id).update({InventoryComponentInstallation.asset_id: new_asset_id}, synchronize_session=False)
+            db.query(AssetChangeLog).filter(AssetChangeLog.asset_id == old_asset_id).update({AssetChangeLog.asset_id: new_asset_id}, synchronize_session=False)
             for response in db.query(AuditResponse).filter(AuditResponse.asset_id == old_asset_id).all():
                 response.asset_id = new_asset_id
                 response.violation_key = response.violation_key.replace(old_asset_id, new_asset_id, 1)
@@ -937,12 +972,12 @@ class AssetService:
         location: str | None = None,
         borrow_due_date: str | None = None,
         remark: str | None = None,
+        user_context: dict | None = None,
     ) -> Asset:
-        asset = db.get(Asset, asset_id)
-        if not asset:
-            raise ValueError("asset not found")
+        asset = AssetService.get_scoped_asset(db, asset_id, user_context)
 
         from_status = asset.status
+        AssetService.validate_transition(from_status, to_status)
         if from_status in AssetService.TERMINAL_STATUSES:
             raise AssetValidationError("已报废/已处置资产不能再做状态流转")
         previous_owner_user_id = asset.owner_user_id
@@ -986,10 +1021,8 @@ class AssetService:
         return AssetService.to_out(asset, user)
 
     @staticmethod
-    def checkout_asset(db: Session, asset_id: str, payload: AssetCheckoutCreate, operator: str = "system") -> Asset:
-        asset = db.get(Asset, asset_id)
-        if not asset:
-            raise ValueError("asset not found")
+    def checkout_asset(db: Session, asset_id: str, payload: AssetCheckoutCreate, operator: str = "system", user_context: dict | None = None) -> Asset:
+        asset = AssetService.get_scoped_asset(db, asset_id, user_context)
         AssetService.ensure_asset_operable(asset, "领用/出库")
         if asset.status not in AssetService.CHECKOUT_ALLOWED_FROM:
             raise AssetValidationError(f"当前状态为 {AssetService.status_label(asset.status)}，不能重复领用/出库；请先归还入库后再出库")
@@ -1010,13 +1043,12 @@ class AssetService:
             payload.location,
             payload.due_date,
             payload.remark,
+            user_context,
         )
 
     @staticmethod
-    def checkin_asset(db: Session, asset_id: str, payload: AssetCheckinCreate, operator: str = "system") -> Asset:
-        asset = db.get(Asset, asset_id)
-        if not asset:
-            raise ValueError("asset not found")
+    def checkin_asset(db: Session, asset_id: str, payload: AssetCheckinCreate, operator: str = "system", user_context: dict | None = None) -> Asset:
+        asset = AssetService.get_scoped_asset(db, asset_id, user_context)
         AssetService.ensure_asset_operable(asset, "归还/入库")
         if asset.status not in AssetService.CHECKIN_ALLOWED_FROM:
             raise AssetValidationError(f"当前状态为 {AssetService.status_label(asset.status)}，不能重复入库；只有在用、借出、已出库或维修中的资产可以入库")
@@ -1030,7 +1062,17 @@ class AssetService:
             payload.location,
             None,
             payload.remark or "资产归还入库",
+            user_context=user_context,
         )
+
+    @staticmethod
+    def validate_transition(from_status: str | None, to_status: str) -> None:
+        if to_status not in AssetService.VALID_STATUSES:
+            raise AssetValidationError(f"unsupported asset status: {to_status}")
+        if from_status == to_status:
+            return
+        if to_status not in AssetService.STATUS_TRANSITIONS.get(from_status or "", set()):
+            raise AssetValidationError(f"invalid asset status transition: {from_status or '-'} -> {to_status}")
 
     @staticmethod
     def apply_borrow_due_date(asset: Asset, to_status: str, borrow_due_date: str | None) -> None:
@@ -1120,7 +1162,8 @@ class AssetService:
         checkout.checkin_remark = AssetService.join_notes(checkout.checkin_remark, remark)
 
     @staticmethod
-    def list_checkouts(db: Session, asset_id: str, limit: int = 200) -> list[dict]:
+    def list_checkouts(db: Session, asset_id: str, limit: int = 200, user_context: dict | None = None) -> list[dict]:
+        AssetService.get_scoped_asset(db, asset_id, user_context)
         rows = (
             db.query(AssetCheckout)
             .filter(AssetCheckout.asset_id == asset_id)
@@ -1229,24 +1272,24 @@ class AssetService:
         }
 
     @staticmethod
-    def batch_checkout_assets(db: Session, payload: AssetBatchCheckoutCreate, operator: str = "system") -> dict:
-        return AssetService.batch_checkout_action(db, payload.asset_ids, "checkout", payload, operator)
+    def batch_checkout_assets(db: Session, payload: AssetBatchCheckoutCreate, operator: str = "system", user_context: dict | None = None) -> dict:
+        return AssetService.batch_checkout_action(db, payload.asset_ids, "checkout", payload, operator, user_context)
 
     @staticmethod
-    def batch_checkin_assets(db: Session, payload: AssetBatchCheckinCreate, operator: str = "system") -> dict:
-        return AssetService.batch_checkout_action(db, payload.asset_ids, "checkin", payload, operator)
+    def batch_checkin_assets(db: Session, payload: AssetBatchCheckinCreate, operator: str = "system", user_context: dict | None = None) -> dict:
+        return AssetService.batch_checkout_action(db, payload.asset_ids, "checkin", payload, operator, user_context)
 
     @staticmethod
-    def batch_checkout_action(db: Session, asset_ids: list[str], action: str, payload: AssetCheckoutCreate | AssetCheckinCreate, operator: str) -> dict:
+    def batch_checkout_action(db: Session, asset_ids: list[str], action: str, payload: AssetCheckoutCreate | AssetCheckinCreate, operator: str, user_context: dict | None = None) -> dict:
         rows: list[dict] = []
         errors: list[dict] = []
         clean_ids = [AssetService.normalize_blank(asset_id) for asset_id in asset_ids if AssetService.normalize_blank(asset_id)]
         for asset_id in dict.fromkeys(clean_ids):
             try:
                 if action == "checkout":
-                    asset = AssetService.checkout_asset(db, asset_id, payload, operator)
+                    asset = AssetService.checkout_asset(db, asset_id, payload, operator, user_context)
                 else:
-                    asset = AssetService.checkin_asset(db, asset_id, payload, operator)
+                    asset = AssetService.checkin_asset(db, asset_id, payload, operator, user_context)
                 rows.append(asset)
             except (AssetValidationError, ValueError) as exc:
                 # 失败条目在校验前可能已修改 ORM 对象，必须回滚，否则残留变更会随下一条的 commit 一起提交

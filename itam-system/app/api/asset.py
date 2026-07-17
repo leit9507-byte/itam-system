@@ -39,8 +39,8 @@ def list_assets(
 
 
 @router.get("/summary")
-def asset_summary(db: Session = Depends(get_db)):
-    return AssetService.asset_summary(db)
+def asset_summary(request: Request, db: Session = Depends(get_db)):
+    return AssetService.asset_summary(db, user_context_from_request(request))
 
 
 @router.get("/checkouts/list")
@@ -87,28 +87,28 @@ def get_asset(asset_id: str, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/checkouts/batch-checkout")
 def batch_checkout_assets(payload: AssetBatchCheckoutCreate, request: Request, db: Session = Depends(get_db)):
-    return AssetService.batch_checkout_assets(db, payload, operator_from_request(request))
+    return AssetService.batch_checkout_assets(db, payload, operator_from_request(request), user_context_from_request(request))
 
 
 @router.post("/checkouts/batch-checkin")
 def batch_checkin_assets(payload: AssetBatchCheckinCreate, request: Request, db: Session = Depends(get_db)):
-    return AssetService.batch_checkin_assets(db, payload, operator_from_request(request))
+    return AssetService.batch_checkin_assets(db, payload, operator_from_request(request), user_context_from_request(request))
 
 
 @router.get("/{asset_id}/changes")
-def asset_changes(asset_id: str, limit: int = 200, db: Session = Depends(get_db)):
-    return AssetService.list_asset_changes(db, asset_id, limit)
+def asset_changes(asset_id: str, request: Request, limit: int = 200, db: Session = Depends(get_db)):
+    return AssetService.list_asset_changes(db, asset_id, limit, user_context_from_request(request))
 
 
 @router.get("/{asset_id}/checkouts", response_model=list[AssetCheckoutOut])
-def asset_checkouts(asset_id: str, limit: int = 200, db: Session = Depends(get_db)):
-    return AssetService.list_checkouts(db, asset_id, limit)
+def asset_checkouts(asset_id: str, request: Request, limit: int = 200, db: Session = Depends(get_db)):
+    return AssetService.list_checkouts(db, asset_id, limit, user_context_from_request(request))
 
 
 @router.put("/{asset_id}", response_model=AssetOut)
 def update_asset(asset_id: str, payload: AssetUpdate, request: Request, db: Session = Depends(get_db)):
     try:
-        return AssetService.update_asset(db, asset_id, payload, operator_from_request(request))
+        return AssetService.update_asset(db, asset_id, payload, operator_from_request(request), user_context_from_request(request))
     except AssetValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
@@ -180,6 +180,7 @@ def change_asset_status(asset_id: str, payload: AssetStatusChange, request: Requ
             payload.location,
             payload.borrow_due_date,
             payload.remark,
+            user_context_from_request(request),
         )
     except AssetValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -190,7 +191,7 @@ def change_asset_status(asset_id: str, payload: AssetStatusChange, request: Requ
 @router.post("/{asset_id}/checkout", response_model=AssetOut)
 def checkout_asset(asset_id: str, payload: AssetCheckoutCreate, request: Request, db: Session = Depends(get_db)):
     try:
-        return AssetService.checkout_asset(db, asset_id, payload, operator_from_request(request))
+        return AssetService.checkout_asset(db, asset_id, payload, operator_from_request(request), user_context_from_request(request))
     except AssetValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
@@ -200,7 +201,7 @@ def checkout_asset(asset_id: str, payload: AssetCheckoutCreate, request: Request
 @router.post("/{asset_id}/checkin", response_model=AssetOut)
 def checkin_asset(asset_id: str, payload: AssetCheckinCreate, request: Request, db: Session = Depends(get_db)):
     try:
-        return AssetService.checkin_asset(db, asset_id, payload, operator_from_request(request))
+        return AssetService.checkin_asset(db, asset_id, payload, operator_from_request(request), user_context_from_request(request))
     except AssetValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:

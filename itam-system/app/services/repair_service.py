@@ -8,8 +8,10 @@ from app.models.asset import Asset
 from app.models.repair import RepairFaultType, RepairRecord
 from app.schemas.repair import RepairCreate, RepairFinish
 from app.services.audit_log_service import AuditLogService
+from app.services.asset_service import AssetService
 from app.services.lifecycle_service import LifecycleService
 from app.services.notification_service import NotificationService
+from app.services.number_service import NumberService
 
 
 class RepairService:
@@ -125,12 +127,21 @@ class RepairService:
         return query.filter(False)
 
     @staticmethod
-    def create_record(db: Session, payload: RepairCreate) -> dict:
-        asset = db.get(Asset, payload.asset_id)
+    def create_record(db: Session, payload: RepairCreate, user_context: dict | None = None) -> dict:
+        asset = RepairService.apply_data_scope(
+            db.query(Asset).filter(Asset.asset_id == payload.asset_id), user_context
+        ).with_for_update().first()
         if not asset:
             raise ValueError("asset not found")
         if asset.status in {"scrapped", "disposed"}:
             raise ValueError("已报废/已处置资产不能创建维修单")
+        active = db.query(RepairRecord).filter(
+            RepairRecord.asset_id == payload.asset_id,
+            RepairRecord.finish_time.is_(None),
+        ).first()
+        if active:
+            raise ValueError(f"asset already has an active repair record: {active.repair_no}")
+        AssetService.validate_transition(asset.status, "repair")
         record = RepairRecord(
             repair_no=RepairService.generate_repair_no(db),
             asset_id=payload.asset_id,
@@ -168,11 +179,16 @@ class RepairService:
         return RepairService.to_dict(record, asset)
 
     @staticmethod
-    def finish_record(db: Session, record_id: int, payload: RepairFinish) -> dict:
-        record = db.get(RepairRecord, record_id)
+    def finish_record(db: Session, record_id: int, payload: RepairFinish, user_context: dict | None = None) -> dict:
+        record = RepairService.apply_data_scope(
+            db.query(RepairRecord).join(Asset, Asset.asset_id == RepairRecord.asset_id).filter(RepairRecord.id == record_id),
+            user_context,
+        ).with_for_update().first()
         if not record:
             raise ValueError("repair record not found")
-        asset = db.get(Asset, record.asset_id)
+        if record.finish_time is not None:
+            raise ValueError("repair record already finished")
+        asset = db.query(Asset).filter(Asset.asset_id == record.asset_id).with_for_update().first()
         record.status = "已完成"
         record.repair_result = payload.repair_result or "已修好"
         if record.repair_result == "未修好":
@@ -186,6 +202,9 @@ class RepairService:
             if asset.status in {"scrapped", "disposed"}:
                 raise ValueError("已报废/已处置资产不能变更维修状态")
             from_status = asset.status
+            if from_status != "repair":
+                raise ValueError(f"asset is not in repair status: {from_status}")
+            AssetService.validate_transition(from_status, payload.next_status)
             asset.status = payload.next_status
             LifecycleService.record(db, asset.asset_id, "REPAIR_FINISH", from_status, payload.next_status, payload.operator)
         AuditLogService.record_operation(db, "repair", "finish", payload.operator, "repair", record.repair_no, f"维修处理 {record.asset_id}：{record.repair_result}", payload.model_dump())
@@ -212,8 +231,7 @@ class RepairService:
     @staticmethod
     def generate_repair_no(db: Session) -> str:
         year = datetime.utcnow().year
-        count = db.query(RepairRecord).count() + 1
-        return f"RP-{year}-{count:04d}"
+        return NumberService.next(db, f"repair:{year}", f"RP-{year}-", 4)
 
     @staticmethod
     def to_dict(record: RepairRecord, asset: Asset | None = None, fault_device_count: int = 1) -> dict:

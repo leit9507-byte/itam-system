@@ -22,10 +22,6 @@ class ScrapPayload(BaseModel):
     operator: str = "资产管理员"
 
 
-class ScrapApprovePayload(BaseModel):
-    approver: str = "资产负责人"
-
-
 class ScrapDisposePayload(BaseModel):
     final_residual_value: float = 0
     disposal_method: str | None = None
@@ -64,31 +60,15 @@ def list_scrap_requests(
 @router.post("/{asset_id}/create")
 def create_scrap_request(asset_id: str, payload: ScrapPayload, request: Request, db: Session = Depends(get_db)):
     try:
-        row = ScrapService.create_request(db, asset_id, payload.model_dump(), operator_from_request(request))
+        row = ScrapService.create_request(db, asset_id, payload.model_dump(), operator_from_request(request), user_context_from_request(request))
         return row
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/{request_id}/approve")
-def approve_scrap_request(request_id: int, payload: ScrapApprovePayload, request: Request, db: Session = Depends(get_db)):
-    try:
-        return ScrapService.approve(db, request_id, operator_from_request(request))
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-@router.post("/{request_id}/reject")
-def reject_scrap_request(request_id: int, payload: ScrapApprovePayload, request: Request, db: Session = Depends(get_db)):
-    try:
-        return ScrapService.reject(db, request_id, operator_from_request(request))
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
 @router.post("/{request_id}/dispose")
 def dispose_scrap_request(request_id: int, payload: ScrapDisposePayload, request: Request, db: Session = Depends(get_db)):
     try:
-        return ScrapService.dispose(db, request_id, payload.model_dump(), operator_from_request(request))
+        return ScrapService.dispose(db, request_id, payload.model_dump(), operator_from_request(request), user_context_from_request(request))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -11,6 +11,7 @@ from app.models.stocktake import StocktakeItem, StocktakeScanLog, StocktakeTask
 from app.services.audit_log_service import AuditLogService
 from app.services.asset_service import AssetService
 from app.services.notification_service import NotificationService
+from app.services.number_service import NumberService
 
 
 router = APIRouter(prefix="/stocktake", tags=["Stocktake"])
@@ -65,7 +66,8 @@ def list_tasks(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/tasks")
 def create_task(payload: StocktakeTaskCreate, request: Request, db: Session = Depends(get_db)):
-    task_id = f"ST-{datetime.utcnow().year}-{db.query(StocktakeTask).count() + 1:03d}"
+    year = datetime.utcnow().year
+    task_id = NumberService.next(db, f"stocktake:{year}", f"ST-{year}-", 3)
     targets = normalize_targets(payload.target, payload.targets)
     task = StocktakeTask(
         id=task_id,
@@ -125,7 +127,7 @@ def submit_item(task_id: str, asset_id: str, payload: StocktakeItemSubmit, reque
     ensure_task_accepts_items(task, visible_asset_ids)
     item.actual_location = payload.actual_location or ""
     item.result = payload.result
-    item.checker = payload.checker or task.owner
+    item.checker = operator_from_request(request)
     item.checked_at = datetime.utcnow()
     item.remark = payload.remark or ""
     item.review_status = "无需复核" if item.result == "正常" else "待复核"
@@ -146,7 +148,7 @@ def report_exception(task_id: str, asset_id: str, payload: StocktakeExceptionSub
     ensure_task_accepts_items(task, visible_asset_ids)
     item.actual_location = payload.actual_location or ""
     item.result = payload.result if payload.result in {"盘盈", "盘亏", "位置不符", "状态不符"} else "位置不符"
-    item.checker = payload.reporter or task.owner
+    item.checker = operator_from_request(request)
     item.checked_at = datetime.utcnow()
     item.remark = payload.remark or "异常上报，等待复核"
     item.review_status = "待复核"
@@ -172,7 +174,7 @@ def review_exception(task_id: str, asset_id: str, payload: StocktakeReviewSubmit
     else:
         item.review_status = payload.review_status if payload.review_status in {"已确认", "已驳回", "待复核"} else "已确认"
     item.review_note = payload.review_note or ""
-    item.reviewed_by = payload.reviewer or task.owner or "资产管理员"
+    item.reviewed_by = operator_from_request(request)
     item.reviewed_at = datetime.utcnow()
     AuditLogService.record_operation(db, "stocktake", "exception_review", item.reviewed_by, "stocktake_item", item.asset_id, f"{task.id} 复核 {item.asset_id}: {item.review_status}", item.review_note)
     db.commit()
@@ -187,7 +189,7 @@ def finish_task(task_id: str, request: Request, db: Session = Depends(get_db)):
         if item.result == "未盘":
             item.result = "盘亏"
             item.actual_location = ""
-            item.checker = task.owner or "资产管理员"
+            item.checker = operator_from_request(request)
             item.checked_at = datetime.utcnow()
             item.remark = item.remark or "完成盘点时未扫描确认，自动标记为盘亏"
             item.review_status = "待复核"

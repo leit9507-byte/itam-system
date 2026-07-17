@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from reportlab.lib import colors
@@ -16,10 +16,13 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.security import operator_from_request, user_context_from_request
+from app.models.asset import Asset
 from app.models.audit_response import AuditResponse
 from app.models.audit_rule import AuditRule
 from app.reports.generator import AuditReportGenerator
 from app.services.audit_engine import AuditEngine
+from app.services.asset_service import AssetService
 from app.services.notification_service import NotificationService
 
 
@@ -241,13 +244,20 @@ def save_audit_rules(payload: list[AuditRulePayload], db: Session = Depends(get_
 
 
 @router.get("/responses")
-def list_audit_responses(db: Session = Depends(get_db)):
-    rows = db.query(AuditResponse).order_by(AuditResponse.updated_at.desc()).all()
+def list_audit_responses(request: Request, db: Session = Depends(get_db)):
+    asset_ids = AssetService.apply_data_scope(db.query(Asset), user_context_from_request(request)).with_entities(Asset.asset_id)
+    rows = db.query(AuditResponse).filter(AuditResponse.asset_id.in_(asset_ids)).order_by(AuditResponse.updated_at.desc()).all()
     return [serialize_response(row) for row in rows]
 
 
 @router.post("/responses")
-def save_audit_response(payload: AuditResponsePayload, db: Session = Depends(get_db)):
+def save_audit_response(payload: AuditResponsePayload, request: Request, db: Session = Depends(get_db)):
+    if not payload.asset_id:
+        raise HTTPException(status_code=400, detail="asset_id is required for scoped audit responses")
+    try:
+        AssetService.get_scoped_asset(db, payload.asset_id, user_context_from_request(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="asset not found") from exc
     row = db.query(AuditResponse).filter(AuditResponse.violation_key == payload.violation_key).first()
     if not row:
         row = AuditResponse(violation_key=payload.violation_key)
@@ -257,16 +267,20 @@ def save_audit_response(payload: AuditResponsePayload, db: Session = Depends(get
     row.audit_scope = payload.audit_scope
     row.decision = payload.decision
     row.reason = payload.reason or ""
-    row.responder = payload.responder or ""
+    row.responder = operator_from_request(request)
     db.commit()
     db.refresh(row)
     return serialize_response(row)
 
 
 @router.post("/run")
-def run_audit(payload: AuditRunRequest | None = None, db: Session = Depends(get_db)):
+def run_audit(request: Request, payload: AuditRunRequest | None = None, db: Session = Depends(get_db)):
     global last_report_path, last_report_pdf_path
-    result = AuditEngine(db).run(users=payload.users if payload else [])
+    asset_ids = set(
+        row[0]
+        for row in AssetService.apply_data_scope(db.query(Asset), user_context_from_request(request)).with_entities(Asset.asset_id).all()
+    )
+    result = AuditEngine(db).run(users=payload.users if payload else [], asset_ids=asset_ids)
     last_report_path = AuditReportGenerator().generate(result)
     last_report_pdf_path = None
     violations = result.get("violations") or []

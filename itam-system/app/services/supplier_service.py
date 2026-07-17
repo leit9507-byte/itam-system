@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.models.asset import Asset
 from app.models.purchase import Purchase
 from app.models.supplier import Supplier
+from app.services.number_service import NumberService
 from app.schemas.supplier import SupplierSave
 
 
@@ -159,5 +160,4 @@ class SupplierService:
 
     @staticmethod
     def generate_supplier_no(db: Session) -> str:
-        count = db.query(Supplier).count() + 1
-        return f"SUP-{count:04d}"
+        return NumberService.next(db, "supplier", "SUP-", 4)

@@ -121,7 +121,7 @@ def user_context_from_request(request: Request) -> dict:
 
 def can_view_all_data(user_context: dict | None) -> bool:
     role = ((user_context or {}).get("role") or "").lower()
-    return role in {"admin", "auditor"}
+    return role in {"admin", "auditor", "asset_manager"}
 
 
 def is_department_manager(user_context: dict | None) -> bool:

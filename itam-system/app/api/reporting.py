@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.security import operator_from_request, user_context_from_request
+from app.core.security import can_view_all_data, scoped_dept_id, scoped_user_identities, operator_from_request, user_context_from_request
 from app.models.asset import Asset
 from app.models.checkout import AssetCheckout
 from app.models.repair import RepairRecord
@@ -24,6 +24,7 @@ from app.models.stocktake import StocktakeItem, StocktakeTask
 from app.models.user import UserDirectory
 from app.services.asset_service import AssetService
 from app.services.asset_residual_service import AssetResidualService
+from app.services.number_service import NumberService
 from app.services.audit_engine import AuditEngine
 from app.reports.generator import AuditReportGenerator
 
@@ -49,10 +50,10 @@ def audit_report_out(row: AuditReportArchive) -> dict:
 
 
 @router.get("/audit-reports")
-def list_audit_report_archives(page: int = 1, page_size: int = 50, db: Session = Depends(get_db)):
+def list_audit_report_archives(request: Request, page: int = 1, page_size: int = 50, db: Session = Depends(get_db)):
     clean_page = max(page, 1)
     clean_page_size = min(max(page_size, 1), 200)
-    query = db.query(AuditReportArchive).order_by(AuditReportArchive.created_at.desc(), AuditReportArchive.id.desc())
+    query = scoped_audit_archives_query(db, request).order_by(AuditReportArchive.created_at.desc(), AuditReportArchive.id.desc())
     total = query.count()
     rows = query.offset((clean_page - 1) * clean_page_size).limit(clean_page_size).all()
     return {"list": [audit_report_out(row) for row in rows], "total": total, "page": clean_page, "page_size": clean_page_size}
@@ -60,8 +61,10 @@ def list_audit_report_archives(page: int = 1, page_size: int = 50, db: Session =
 
 @router.post("/audit-reports")
 def create_audit_report_archive(request: Request, db: Session = Depends(get_db)):
-    result = AuditEngine(db).run()
-    report_no = f"AR-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    asset_ids = set(scoped_asset_id_query(db, request))
+    result = AuditEngine(db).run(asset_ids=asset_ids)
+    year = datetime.utcnow().year
+    report_no = NumberService.next(db, f"audit_report:{year}", f"AR-{year}-", 6)
     output_dir = Path(get_settings().upload_dir) / "reports" / "audit-archives"
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -90,6 +93,7 @@ def create_audit_report_archive(request: Request, db: Session = Depends(get_db))
         pdf_path=str(pdf_path),
         xlsx_path=str(xlsx_path),
         created_by=operator_from_request(request),
+        scope_key=report_scope_key(user_context_from_request(request)),
     )
     db.add(row)
     db.commit()
@@ -98,8 +102,8 @@ def create_audit_report_archive(request: Request, db: Session = Depends(get_db))
 
 
 @router.get("/audit-reports/{report_no}/html")
-def get_archived_audit_report_html(report_no: str, db: Session = Depends(get_db)):
-    row = get_audit_report_archive(db, report_no)
+def get_archived_audit_report_html(report_no: str, request: Request, db: Session = Depends(get_db)):
+    row = get_audit_report_archive(db, report_no, request)
     path = Path(row.html_path)
     if not path.exists():
         raise HTTPException(status_code=404, detail="report file not found")
@@ -107,8 +111,8 @@ def get_archived_audit_report_html(report_no: str, db: Session = Depends(get_db)
 
 
 @router.get("/audit-reports/{report_no}/pdf")
-def download_archived_audit_report_pdf(report_no: str, db: Session = Depends(get_db)):
-    row = get_audit_report_archive(db, report_no)
+def download_archived_audit_report_pdf(report_no: str, request: Request, db: Session = Depends(get_db)):
+    row = get_audit_report_archive(db, report_no, request)
     path = Path(row.pdf_path or "")
     if not path.exists():
         raise HTTPException(status_code=404, detail="report pdf not found")
@@ -116,16 +120,16 @@ def download_archived_audit_report_pdf(report_no: str, db: Session = Depends(get
 
 
 @router.get("/audit-reports/{report_no}/xlsx")
-def download_archived_audit_report_xlsx(report_no: str, db: Session = Depends(get_db)):
-    row = get_audit_report_archive(db, report_no)
+def download_archived_audit_report_xlsx(report_no: str, request: Request, db: Session = Depends(get_db)):
+    row = get_audit_report_archive(db, report_no, request)
     path = Path(row.xlsx_path or "")
     if not path.exists():
         raise HTTPException(status_code=404, detail="report excel not found")
     return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=f"{report_no}.xlsx")
 
 
-def get_audit_report_archive(db: Session, report_no: str) -> AuditReportArchive:
-    row = db.query(AuditReportArchive).filter(AuditReportArchive.report_no == report_no).first()
+def get_audit_report_archive(db: Session, report_no: str, request: Request) -> AuditReportArchive:
+    row = scoped_audit_archives_query(db, request).filter(AuditReportArchive.report_no == report_no).first()
     if not row:
         raise HTTPException(status_code=404, detail="report not found")
     return row
@@ -289,8 +293,8 @@ def export_scrap_disposal_ledger_csv(request: Request, db: Session = Depends(get
 
 
 @router.get("/audit-report.xlsx")
-def export_audit_report_excel(db: Session = Depends(get_db)):
-    result = AuditEngine(db).run()
+def export_audit_report_excel(request: Request, db: Session = Depends(get_db)):
+    result = AuditEngine(db).run(asset_ids=set(scoped_asset_id_query(db, request)))
     workbook = Workbook()
     build_audit_summary_sheet(workbook.active, result)
     build_audit_violations_sheet(workbook.create_sheet("风险明细"), result.get("violations") or [])
@@ -410,6 +414,23 @@ def report_analytics(request: Request, db: Session = Depends(get_db)):
 
 def scoped_assets_query(db: Session, request: Request):
     return AssetService.apply_data_scope(db.query(Asset), user_context_from_request(request))
+
+
+def report_scope_key(user_context: dict | None) -> str:
+    if can_view_all_data(user_context):
+        return "global"
+    dept_id = scoped_dept_id(user_context)
+    role = ((user_context or {}).get("role") or "").lower()
+    if role in {"dept_manager", "department_manager", "manager"} and dept_id:
+        return f"dept:{dept_id}"
+    identities = scoped_user_identities(user_context)
+    return f"user:{identities[0]}" if identities else "none"
+
+
+def scoped_audit_archives_query(db: Session, request: Request):
+    query = db.query(AuditReportArchive)
+    context = user_context_from_request(request)
+    return query if can_view_all_data(context) else query.filter(AuditReportArchive.scope_key == report_scope_key(context))
 
 
 def scoped_asset_id_query(db: Session, request: Request) -> list[str]:
