@@ -14,7 +14,16 @@
       </div>
       <div class="hero-stats">
         <span><strong>{{ todos.length }}</strong>待办</span>
+        <span v-if="pendingJobs.length"><strong>{{ pendingJobs.length }}</strong>待提交</span>
       </div>
+    </section>
+
+    <section class="field-status" :class="[fieldStatus.tone, { online: isOnline }]">
+      <div>
+        <strong>{{ fieldStatus.title }}</strong>
+        <span>{{ fieldStatus.detail }}</span>
+      </div>
+      <el-button v-if="pendingJobs.length" text type="primary" :loading="queueRetrying" @click="retryPendingJobs">重试</el-button>
     </section>
 
     <el-card v-if="activeSection === 'todo'" shadow="never" class="todo-card mobile-panel">
@@ -116,6 +125,29 @@
           show-icon
           :closable="false"
         />
+        <div v-if="scanFeedback.visible" class="scan-feedback" :class="scanFeedback.tone">
+          <strong>{{ scanFeedback.title }}</strong>
+          <span>{{ scanFeedback.detail }}</span>
+        </div>
+      </div>
+    </el-card>
+
+    <el-card v-if="pendingJobs.length" shadow="never" class="queue-card mobile-panel">
+      <template #header>
+        <div class="card-header">
+          <span>待提交队列</span>
+          <el-tag :type="isOnline ? 'warning' : 'info'">{{ isOnline ? '等待重试' : '离线保存' }}</el-tag>
+        </div>
+      </template>
+      <div class="queue-list">
+        <div v-for="job in pendingJobs" :key="job.id" class="queue-row">
+          <div>
+            <strong>{{ job.action_label }} / {{ job.asset_id }}</strong>
+            <small>{{ job.asset_name || '-' }} · {{ job.created_at }}</small>
+            <small v-if="job.last_error">上次失败：{{ job.last_error }}</small>
+          </div>
+          <button type="button" @click="retryOneJob(job)">重试</button>
+        </div>
       </div>
     </el-card>
 
@@ -257,9 +289,9 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
 import { Box, Camera, CircleCheck, FolderOpened, HomeFilled, Search, Setting } from '@element-plus/icons-vue'
 import { getAssets, inboundAsset, outboundAsset } from '../../api/asset'
 import { createRepairRecord, getRepairFaultTypes } from '../../api/repair'
@@ -274,6 +306,7 @@ import { feishuRuntimeStatus, getLastFeishuScanError, isFeishuClient, scanByFeis
 
 const router = useRouter()
 const SCAN_CANCELLED = Symbol('scan-cancelled')
+const QUEUE_STORAGE_KEY = 'itam_mobile_pending_jobs'
 const modes = [
   { value: 'stocktake', label: '扫码盘点', hint: '执行后台任务', icon: Search, formTitle: '盘点确认', submitText: '提交盘点' },
   { value: 'inbound', label: '扫码入库', hint: '归还/验收入库', icon: Box, formTitle: '入库信息', submitText: '确认入库' },
@@ -303,6 +336,11 @@ const stocktakeTasks = ref([])
 const visibleStocktakeTasks = ref([])
 const scanRuntimeStatus = ref(feishuRuntimeStatus())
 const scanRuntimeError = ref('')
+const isOnline = ref(navigator.onLine)
+const pendingJobs = ref(loadPendingJobs())
+const queueRetrying = ref(false)
+const lastScan = reactive({ mode: '', code: '', at: 0 })
+const scanFeedback = reactive({ visible: false, tone: 'info', title: '等待扫码', detail: '请扫描或输入资产编号。' })
 const showMobileAppbar = computed(() => !scanRuntimeStatus.value.isFeishu)
 const form = reactive(defaultForm())
 
@@ -349,8 +387,22 @@ const sectionMenus = computed(() => [
   { value: 'repair', label: '维修登记', icon: Setting },
   { value: 'stocktake', label: '资产盘点', icon: FolderOpened }
 ])
+const fieldStatus = computed(() => {
+  if (!isOnline.value) {
+    return {
+      tone: 'warning',
+      title: '当前离线',
+      detail: pendingJobs.value.length ? `已保存 ${pendingJobs.value.length} 条待提交，联网后自动重试。` : '可以继续扫码，提交动作会先保存到本机。'
+    }
+  }
+  if (queueRetrying.value) return { tone: 'info', title: '正在补偿提交', detail: `正在处理 ${pendingJobs.value.length} 条待提交记录。` }
+  if (pendingJobs.value.length) return { tone: 'warning', title: '存在待提交', detail: `${pendingJobs.value.length} 条现场操作尚未同步，请点击重试或等待自动提交。` }
+  return { tone: 'success', title: '在线作业', detail: '扫码和提交会实时同步到系统。' }
+})
 
 onMounted(async () => {
+  window.addEventListener('online', handleOnline)
+  window.addEventListener('offline', handleOffline)
   const [userRows, locationRows, faultRows] = await Promise.all([
     getUsers().catch(() => []),
     getLocations().catch(() => []),
@@ -363,6 +415,12 @@ onMounted(async () => {
   resetLocationOptions()
   resetFaultTypeOptions()
   await Promise.all([loadStocktakeTasks(), loadTodos()])
+  if (isOnline.value && pendingJobs.value.length) retryPendingJobs()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('online', handleOnline)
+  window.removeEventListener('offline', handleOffline)
 })
 
 function defaultForm() {
@@ -522,12 +580,18 @@ async function scanByBrowser() {
 
 function handleScanResult(value) {
   assetCode.value = parseAssetCode(value)
+  const duplicate = lastScan.mode === mode.value && lastScan.code === assetCode.value && Date.now() - lastScan.at < 10000
+  lastScan.mode = mode.value
+  lastScan.code = assetCode.value
+  lastScan.at = Date.now()
+  if (duplicate) setScanFeedback('warning', '重复扫码', `${assetCode.value} 刚刚已经扫描过，可直接确认提交。`)
   loadAsset()
 }
 
 async function loadAsset() {
   const code = parseAssetCode(assetCode.value)
   if (!code) return ElMessage.warning('请先扫码或输入资产编号')
+  setScanFeedback('info', '正在识别', `正在解析 ${code}。`)
   const resolvedAsset = await resolveAssetFromScan(assetCode.value)
   const candidates = assetCodeCandidates(assetCode.value)
   if (mode.value === 'stocktake') {
@@ -537,17 +601,24 @@ async function loadAsset() {
       : selectedTask.value.items.find(item => assetCodeMatches(item, assetCode.value))
     if (!taskItem) {
       asset.value = null
+      setScanFeedback('danger', '不在任务内', `${code} 不属于当前盘点任务，请核对任务或标签。`)
       return ElMessage.error('该资产不在当前盘点任务范围内')
     }
     asset.value = taskItemToAsset(taskItem)
     form.location = taskItem.book_location || ''
     form.stocktake_result = '正常'
+    setScanFeedback(
+      taskItem.checked_at ? 'warning' : 'success',
+      taskItem.checked_at ? '重复盘点' : '已识别资产',
+      taskItem.checked_at ? `${taskItem.asset_id} 已在 ${taskItem.checked_at} 登记。` : `${taskItem.asset_id} 可提交盘点确认。`
+    )
     ElMessage[taskItem.checked_at ? 'info' : 'success'](taskItem.checked_at ? '该资产已登记，可重新扫码确认' : '已读取盘点资产')
     return
   }
   if (resolvedAsset) {
     asset.value = resolvedAsset
     form.location = resolvedAsset.location || resolvedAsset.warehouse || ''
+    setScanFeedback('success', '已识别资产', `${resolvedAsset.asset_id} 已通过二维码绑定识别。`)
     ElMessage.success('已通过二维码内容识别资产')
     return
   }
@@ -559,10 +630,12 @@ async function loadAsset() {
   }
   if (!found) {
     asset.value = null
+    setScanFeedback('danger', '未找到资产', `${code} 未匹配到资产，请检查二维码内容或资产编号。`)
     return ElMessage.error('未找到资产')
   }
   asset.value = found
   form.location = found.location || found.warehouse || ''
+  setScanFeedback('success', '已识别资产', `${found.asset_id} 已读取，可继续处理。`)
   ElMessage.success('已读取资产信息')
 }
 
@@ -649,29 +722,102 @@ async function copyAssetId() {
 
 async function submitWork() {
   if (!asset.value) return ElMessage.warning('请先扫码选择资产')
+  const job = buildSubmitJob()
+  if (!job) return
+  if (!isOnline.value) {
+    enqueueJob(job, '当前离线，已保存到待提交队列')
+    resetAsset()
+    return
+  }
   submitting.value = true
   try {
-    if (mode.value === 'stocktake') await submitStocktake()
-    if (mode.value === 'inbound') await submitInbound()
-    if (mode.value === 'outbound') await submitOutbound()
-    if (mode.value === 'repair') await submitRepair()
+    await runSubmitJob(job)
+    setScanFeedback('success', '提交成功', `${job.action_label} 已同步：${job.asset_id}`)
     resetAsset()
+  } catch (error) {
+    if (shouldQueueError(error)) {
+      enqueueJob(job, error?.message || '网络异常，已保存到待提交队列')
+      resetAsset()
+      return
+    }
+    setScanFeedback('danger', '提交失败', error?.message || '请检查表单后重试。')
+    throw error
   } finally {
     submitting.value = false
   }
 }
 
-async function submitStocktake() {
-  if (selectedTask.value && !OPEN_STOCKTAKE_STATUSES.includes(selectedTask.value.status)) return ElMessage.warning('移动端只能执行已开启的盘点任务')
-  if (!selectedTask.value) return ElMessage.warning('请先选择盘点任务')
-  if (!currentStocktakeItem.value) return ElMessage.error('该资产不在当前盘点任务范围内')
-  const saved = await submitStocktakeItem(selectedTask.value.id, asset.value.asset_id, {
-    actual_location: currentStocktakeItem.value.book_location || '',
+function buildSubmitJob() {
+  if (mode.value === 'stocktake') {
+    if (selectedTask.value && !OPEN_STOCKTAKE_STATUSES.includes(selectedTask.value.status)) {
+      setScanFeedback('warning', '任务未开启', '移动端只能执行已开启的盘点任务。')
+      ElMessage.warning('移动端只能执行已开启的盘点任务')
+      return null
+    }
+    if (!selectedTask.value) {
+      ElMessage.warning('请先选择盘点任务')
+      return null
+    }
+    if (!currentStocktakeItem.value) {
+      setScanFeedback('danger', '不在任务内', '该资产不在当前盘点任务范围内。')
+      ElMessage.error('该资产不在当前盘点任务范围内')
+      return null
+    }
+  }
+  if (mode.value === 'inbound' && !INBOUND_ALLOWED_STATUSES.includes(asset.value?.status)) {
+    setScanFeedback('warning', '状态不允许', `当前状态为 ${statusLabel(asset.value?.status)}，不能重复入库。`)
+    ElMessage.warning(`当前状态为 ${statusLabel(asset.value?.status)}，不能重复入库`)
+    return null
+  }
+  if (mode.value === 'outbound') {
+    if (!OUTBOUND_ALLOWED_STATUSES.includes(asset.value?.status)) {
+      setScanFeedback('warning', '状态不允许', `当前状态为 ${statusLabel(asset.value?.status)}，不能重复出库。`)
+      ElMessage.warning(`当前状态为 ${statusLabel(asset.value?.status)}，不能重复出库；请先归还入库后再出库`)
+      return null
+    }
+    if (form.outboundTarget === 'user' && !form.owner_user_id) {
+      ElMessage.warning('请选择领用人')
+      return null
+    }
+    if (form.outboundTarget === 'location' && !form.location) {
+      ElMessage.warning('请选择出库地址')
+      return null
+    }
+  }
+  if (mode.value === 'repair' && !form.fault_reason) {
+    ElMessage.warning('请选择故障类型')
+    return null
+  }
+  return {
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    mode: mode.value,
+    action_label: currentMode.value.label,
+    asset_id: asset.value.asset_id,
+    asset_name: asset.value.name,
+    asset_snapshot: { ...asset.value },
+    asset_code: assetCode.value,
+    form: { ...form, book_location: currentStocktakeItem.value?.book_location || form.location || '' },
+    created_at: new Date().toLocaleString('zh-CN', { hour12: false }),
+    attempts: 0,
+    last_error: ''
+  }
+}
+
+async function runSubmitJob(job) {
+  if (job.mode === 'stocktake') return submitStocktakeJob(job)
+  if (job.mode === 'inbound') return submitInboundJob(job)
+  if (job.mode === 'outbound') return submitOutboundJob(job)
+  if (job.mode === 'repair') return submitRepairJob(job)
+}
+
+async function submitStocktakeJob(job) {
+  const saved = await submitStocktakeItem(job.form.task_id, job.asset_id, {
+    actual_location: job.form.book_location || '',
     result: '正常',
     checker: '移动端扫码',
-    remark: form.remark,
-    scan_raw: assetCode.value,
-    parsed_code: parseAssetCode(assetCode.value),
+    remark: job.form.remark,
+    scan_raw: job.asset_code,
+    parsed_code: parseAssetCode(job.asset_code),
     client_source: isFeishuClient() ? 'feishu_mobile' : 'mobile_browser'
   })
   applyStocktakeItem(saved)
@@ -703,47 +849,131 @@ function applyStocktakeItem(saved) {
   else if (task.status === '待开始') task.status = '进行中'
 }
 
-async function submitInbound() {
-  if (!INBOUND_ALLOWED_STATUSES.includes(asset.value?.status)) {
-    return ElMessage.warning(`当前状态为 ${statusLabel(asset.value?.status)}，不能重复入库`)
-  }
-  await inboundAsset(asset.value.asset_id, { warehouse: form.location, location: form.location, remark: form.remark || '移动端扫码入库' })
+async function submitInboundJob(job) {
+  await inboundAsset(job.asset_id, { warehouse: job.form.location, location: job.form.location, remark: job.form.remark || '移动端扫码入库' })
   ElMessage.success('入库成功')
 }
 
-async function submitOutbound() {
-  if (!OUTBOUND_ALLOWED_STATUSES.includes(asset.value?.status)) {
-    return ElMessage.warning(`当前状态为 ${statusLabel(asset.value?.status)}，不能重复出库；请先归还入库后再出库`)
-  }
-  if (form.outboundTarget === 'user' && !form.owner_user_id) return ElMessage.warning('请选择领用人')
-  if (form.outboundTarget === 'location' && !form.location) return ElMessage.warning('请选择出库地址')
-  await outboundAsset(asset.value.asset_id, {
-    outboundTarget: form.outboundTarget,
-    owner_user_id: form.owner_user_id,
-    owner_name: form.owner_name,
-    dept_id: form.dept_id,
-    dept_name: form.dept_name,
-    location: form.location,
-    remark: form.remark || '移动端扫码出库'
+async function submitOutboundJob(job) {
+  await outboundAsset(job.asset_id, {
+    outboundTarget: job.form.outboundTarget,
+    owner_user_id: job.form.owner_user_id,
+    owner_name: job.form.owner_name,
+    dept_id: job.form.dept_id,
+    dept_name: job.form.dept_name,
+    location: job.form.location,
+    remark: job.form.remark || '移动端扫码出库'
   })
   ElMessage.success('出库成功')
 }
 
-async function submitRepair() {
-  if (!form.fault_reason) return ElMessage.warning('请选择故障类型')
-  await createRepairRecord(asset.value, {
-    repair_time: form.repair_time,
-    repair_type: form.repair_type,
-    fault_reason: form.fault_reason,
-    repair_cost: form.repair_cost,
-    vendor: form.vendor,
-    remark: form.remark || '移动端维修登记'
+async function submitRepairJob(job) {
+  await createRepairRecord(job.asset_snapshot, {
+    repair_time: job.form.repair_time,
+    repair_type: job.form.repair_type,
+    fault_reason: job.form.fault_reason,
+    repair_cost: job.form.repair_cost,
+    vendor: job.form.vendor,
+    remark: job.form.remark || '移动端维修登记'
   })
   ElMessage.success('维修登记已创建')
 }
 
 function statusLabel(value) {
   return ({ pending_purchase: '待采购', pending_acceptance: '待验收', in_stock: '在库', in_use: '在用', idle: '闲置', borrowed: '借出', repair: '维修中', out_stock: '已出库', ready_scrap: '待报废', pending_scrap: '待处置登记', scrapped: '已报废' })[value] || value
+}
+
+function setScanFeedback(tone, title, detail) {
+  Object.assign(scanFeedback, { visible: true, tone, title, detail })
+}
+
+function loadPendingJobs() {
+  try {
+    const rows = JSON.parse(localStorage.getItem(QUEUE_STORAGE_KEY) || '[]')
+    return Array.isArray(rows) ? rows : []
+  } catch {
+    return []
+  }
+}
+
+function savePendingJobs() {
+  localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(pendingJobs.value))
+}
+
+function enqueueJob(job, reason) {
+  const exists = pendingJobs.value.some(item => item.mode === job.mode && item.asset_id === job.asset_id && item.asset_code === job.asset_code && item.form.task_id === job.form.task_id)
+  if (!exists) {
+    pendingJobs.value.unshift({ ...job, last_error: reason || '', attempts: Number(job.attempts || 0) })
+    savePendingJobs()
+  }
+  setScanFeedback('warning', '已进入待提交队列', `${job.action_label} / ${job.asset_id} 将在网络恢复后自动提交。`)
+  ElMessage.warning(reason || '网络异常，已保存到待提交队列')
+}
+
+function shouldQueueError(error) {
+  if (!navigator.onLine) return true
+  if (!error?.response) return true
+  return [0, 408, 429, 500, 502, 503, 504].includes(Number(error.response.status))
+}
+
+function handleOnline() {
+  isOnline.value = true
+  if (pendingJobs.value.length) retryPendingJobs()
+}
+
+function handleOffline() {
+  isOnline.value = false
+  setScanFeedback('warning', '网络已断开', '后续提交会先保存到本机待提交队列。')
+}
+
+async function retryPendingJobs() {
+  if (!isOnline.value || queueRetrying.value || !pendingJobs.value.length) return
+  queueRetrying.value = true
+  const remaining = []
+  for (let index = 0; index < pendingJobs.value.length; index += 1) {
+    const job = pendingJobs.value[index]
+    try {
+      await runSubmitJob(job)
+    } catch (error) {
+      remaining.push({
+        ...job,
+        attempts: Number(job.attempts || 0) + 1,
+        last_error: error?.message || '提交失败'
+      })
+      if (shouldQueueError(error)) {
+        remaining.push(...pendingJobs.value.slice(index + 1))
+        break
+      }
+    }
+  }
+  const completed = pendingJobs.value.length - remaining.length
+  pendingJobs.value = remaining
+  savePendingJobs()
+  queueRetrying.value = false
+  if (completed) {
+    setScanFeedback('success', '补偿提交完成', `已同步 ${completed} 条现场操作。`)
+    ElMessage.success(`已补偿提交 ${completed} 条`)
+  } else if (pendingJobs.value.length) {
+    setScanFeedback('warning', '补偿提交失败', pendingJobs.value[0].last_error || '请稍后重试。')
+  }
+}
+
+async function retryOneJob(job) {
+  if (!isOnline.value) return ElMessage.warning('当前离线，联网后再重试')
+  queueRetrying.value = true
+  try {
+    await runSubmitJob(job)
+    pendingJobs.value = pendingJobs.value.filter(item => item.id !== job.id)
+    savePendingJobs()
+    setScanFeedback('success', '补偿提交完成', `${job.action_label} / ${job.asset_id} 已同步。`)
+  } catch (error) {
+    job.attempts = Number(job.attempts || 0) + 1
+    job.last_error = error?.message || '提交失败'
+    savePendingJobs()
+    setScanFeedback('warning', '补偿提交失败', job.last_error)
+  } finally {
+    queueRetrying.value = false
+  }
 }
 
 function statusType(value) {
@@ -877,6 +1107,59 @@ function statusType(value) {
   color: #1764e8;
   font-size: 16px;
   line-height: 1.1;
+}
+
+.field-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: #eff6ff;
+  color: #475569;
+  box-shadow: 0 8px 18px rgba(40, 83, 130, 0.06);
+}
+
+.field-status > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.field-status strong {
+  color: #172033;
+  font-size: 14px;
+}
+
+.field-status span {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-status.success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.field-status.warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.field-status.info {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.field-status.danger {
+  border-color: #fecaca;
+  background: #fff1f2;
 }
 
 .mobile-bottom-menu {
@@ -1112,6 +1395,38 @@ function statusType(value) {
   line-height: 1.35;
 }
 
+.scan-feedback {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.scan-feedback strong {
+  color: #172033;
+  font-size: 14px;
+}
+
+.scan-feedback.success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.scan-feedback.warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.scan-feedback.danger {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
 .todo-actions {
   display: flex;
   align-items: center;
@@ -1125,6 +1440,55 @@ function statusType(value) {
 .mobile-panel {
   overflow: hidden;
   background: #ffffff;
+}
+
+.queue-list {
+  display: grid;
+  gap: 10px;
+}
+
+.queue-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 54px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #e6eef8;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.queue-row div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.queue-row strong,
+.queue-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-row strong {
+  color: #172033;
+  font-size: 13px;
+}
+
+.queue-row small {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.queue-row button {
+  min-height: 36px;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #1764e8;
+  font-weight: 800;
 }
 
 .task-progress {
