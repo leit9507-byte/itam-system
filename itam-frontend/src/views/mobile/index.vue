@@ -158,7 +158,7 @@
       </div>
     </el-card>
 
-    <el-dialog v-if="asset" v-model="assetDialogVisible" title="资产信息" width="92%" class="mobile-asset-dialog" append-to-body>
+    <el-dialog v-if="asset" v-model="assetDialogVisible" :title="currentMode.formTitle" width="92%" class="mobile-asset-dialog" append-to-body>
       <div class="asset-main">
         <div>
           <strong>{{ asset.name }}</strong>
@@ -173,11 +173,9 @@
         <span>SN：{{ asset.sn || '-' }}</span>
         <span>采购审批单号：{{ asset.purchase_approval_no || '-' }}</span>
       </div>
-    </el-dialog>
 
-    <el-card v-if="asset && ['work', 'repair', 'stocktake'].includes(activeSection)" shadow="never" class="form-card mobile-panel">
-      <template #header>{{ currentMode.formTitle }}</template>
-      <el-form label-position="top">
+      <div v-if="['work', 'repair', 'stocktake'].includes(activeSection)" class="mobile-dialog-form">
+        <el-form label-position="top">
         <template v-if="mode === 'stocktake'">
           <el-form-item label="盘点任务">
             <el-input :model-value="selectedTask ? `${selectedTask.name} (${selectedTask.id})` : '未选择任务'" disabled />
@@ -274,11 +272,12 @@
         <el-form-item label="备注">
           <el-input v-model="form.remark" type="textarea" :rows="3" placeholder="补充说明" />
         </el-form-item>
-      </el-form>
-      <div class="sticky-submit">
-        <el-button type="primary" size="large" class="submit-btn" :loading="submitting" @click="submitWork">{{ currentMode.submitText }}</el-button>
+        </el-form>
+        <div class="sticky-submit">
+          <el-button type="primary" size="large" class="submit-btn" :loading="submitting" @click="submitWork">{{ currentMode.submitText }}</el-button>
+        </div>
       </div>
-    </el-card>
+    </el-dialog>
 
     <nav class="mobile-bottom-menu" aria-label="移动端菜单">
       <button v-for="item in sectionMenus" :key="item.value" type="button" class="bottom-menu-item" :class="{ active: activeSection === item.value }" @click="selectSection(item.value)">
@@ -1677,6 +1676,14 @@ function statusType(value) {
 
 .mobile-asset-dialog :deep(.el-dialog__body) {
   padding-top: 4px;
+  max-height: 72vh;
+  overflow-y: auto;
+}
+
+.mobile-dialog-form {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #edf2f7;
 }
 
 .asset-main strong {
