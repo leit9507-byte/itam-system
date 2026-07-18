@@ -36,8 +36,8 @@
           </div>
         </div>
       </template>
-      <div v-if="mobileTodos.length" class="mobile-todo-list">
-        <button v-for="item in mobileTodos" :key="item.id" type="button" class="mobile-todo-row" @click="goTodo(item)">
+      <div v-if="todos.length" class="mobile-todo-list">
+        <button v-for="item in todos" :key="item.id" type="button" class="mobile-todo-row" @click="goTodo(item)">
           <span class="todo-priority" :class="item.priority">{{ priorityLabel(item.priority) }}</span>
           <span class="todo-content">
             <strong>{{ item.title }}</strong>
@@ -158,18 +158,13 @@
       </div>
     </el-card>
 
-    <el-card v-if="asset && ['work', 'repair', 'stocktake'].includes(activeSection)" shadow="never" class="asset-card mobile-panel">
-      <template #header>
-        <div class="card-header">
-          <span>资产信息</span>
-          <el-tag :type="statusType(asset.status)">{{ statusLabel(asset.status) }}</el-tag>
-        </div>
-      </template>
+    <el-dialog v-if="asset" v-model="assetDialogVisible" title="资产信息" width="92%" class="mobile-asset-dialog" append-to-body>
       <div class="asset-main">
         <div>
           <strong>{{ asset.name }}</strong>
           <span>{{ asset.asset_id }}</span>
         </div>
+        <el-tag :type="statusType(asset.status)">{{ statusLabel(asset.status) }}</el-tag>
         <el-button text type="primary" @click="copyAssetId">复制</el-button>
       </div>
       <div class="asset-meta">
@@ -178,7 +173,7 @@
         <span>SN：{{ asset.sn || '-' }}</span>
         <span>采购审批单号：{{ asset.purchase_approval_no || '-' }}</span>
       </div>
-    </el-card>
+    </el-dialog>
 
     <el-card v-if="asset && ['work', 'repair', 'stocktake'].includes(activeSection)" shadow="never" class="form-card mobile-panel">
       <template #header>{{ currentMode.formTitle }}</template>
@@ -344,6 +339,7 @@ const visibleStocktakeTasks = ref([])
 const scanRuntimeStatus = ref(feishuRuntimeStatus())
 const scanRuntimeError = ref('')
 const scanInfoDialogVisible = ref(false)
+const assetDialogVisible = ref(false)
 const isOnline = ref(navigator.onLine)
 const pendingJobs = ref(loadPendingJobs())
 const queueRetrying = ref(false)
@@ -365,7 +361,6 @@ const currentStocktakeItem = computed(() => {
 const stocktakeProgress = computed(() => (selectedTask.value?.total ? Math.round((Number(selectedTask.value.checked || 0) / Number(selectedTask.value.total || 0)) * 100) : 0))
 const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
 const activeFaultTypes = computed(() => faultTypes.value.filter(item => item.enabled !== '停用'))
-const mobileTodos = computed(() => todos.value.slice(0, 5))
 const currentSectionTitle = computed(() => {
   if (activeSection.value === 'work') return currentMode.value.label
   return ({ todo: '待办处理', repair: '维修登记', stocktake: '资产盘点' })[activeSection.value] || '出入库'
@@ -610,10 +605,12 @@ async function loadAsset() {
       : selectedTask.value.items.find(item => assetCodeMatches(item, assetCode.value))
     if (!taskItem) {
       asset.value = null
+      assetDialogVisible.value = false
       setScanFeedback('danger', '不在任务内', `${code} 不属于当前盘点任务，请核对任务或标签。`)
       return ElMessage.error('该资产不在当前盘点任务范围内')
     }
     asset.value = taskItemToAsset(taskItem)
+    assetDialogVisible.value = true
     form.location = taskItem.book_location || ''
     form.stocktake_result = '正常'
     setScanFeedback(
@@ -626,6 +623,7 @@ async function loadAsset() {
   }
   if (resolvedAsset) {
     asset.value = resolvedAsset
+    assetDialogVisible.value = true
     form.location = resolvedAsset.location || resolvedAsset.warehouse || ''
     setScanFeedback('success', '已识别资产', `${resolvedAsset.asset_id} 已通过二维码绑定识别。`)
     ElMessage.success('已通过二维码内容识别资产')
@@ -639,10 +637,12 @@ async function loadAsset() {
   }
   if (!found) {
     asset.value = null
+    assetDialogVisible.value = false
     setScanFeedback('danger', '未找到资产', `${code} 未匹配到资产，请检查二维码内容或资产编号。`)
     return ElMessage.error('未找到资产')
   }
   asset.value = found
+  assetDialogVisible.value = true
   form.location = found.location || found.warehouse || ''
   setScanFeedback('success', '已识别资产', `${found.asset_id} 已读取，可继续处理。`)
   ElMessage.success('已读取资产信息')
@@ -660,6 +660,7 @@ async function resolveAssetFromScan(value) {
 function resetAsset() {
   asset.value = null
   assetCode.value = ''
+  assetDialogVisible.value = false
 }
 
 function searchUsers(query = '') {
@@ -1665,8 +1666,17 @@ function statusType(value) {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 10px;
+}
+
+.mobile-asset-dialog :deep(.el-dialog) {
+  border-radius: 16px;
+}
+
+.mobile-asset-dialog :deep(.el-dialog__body) {
+  padding-top: 4px;
 }
 
 .asset-main strong {
