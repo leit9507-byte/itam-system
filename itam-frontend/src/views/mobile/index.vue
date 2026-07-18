@@ -104,11 +104,15 @@
             placeholder="扫码识别或输入资产编号"
             @keyup.enter="loadAsset"
           />
-          <div class="scan-action-column">
-            <el-button type="primary" class="scan-query-btn" @click="loadAsset">查询</el-button>
-            <el-button class="scan-reset-btn" @click="resetAsset">重新选择</el-button>
-          </div>
+          <el-button type="primary" class="scan-query-btn" @click="loadAsset">查询</el-button>
+          <el-button class="scan-reset-btn" @click="resetAsset">重选</el-button>
+          <button type="button" class="scan-info-btn" aria-label="扫码信息" @click="scanInfoDialogVisible = true">i</button>
         </div>
+      </div>
+    </el-card>
+
+    <el-dialog v-model="scanInfoDialogVisible" title="扫码信息" width="92%" class="mobile-scan-dialog" append-to-body>
+      <div class="scan-dialog-content">
         <el-alert
           v-if="showScanRuntimeHint"
           class="scan-runtime-alert"
@@ -131,8 +135,9 @@
           <strong>{{ scanFeedback.title }}</strong>
           <span>{{ scanFeedback.detail }}</span>
         </div>
+        <el-empty v-if="!showScanRuntimeHint && !scanRuntimeError && !scanFeedback.visible" description="暂无扫码信息" :image-size="56" />
       </div>
-    </el-card>
+    </el-dialog>
 
     <el-card v-if="pendingJobs.length" shadow="never" class="queue-card mobile-panel">
       <template #header>
@@ -338,6 +343,7 @@ const stocktakeTasks = ref([])
 const visibleStocktakeTasks = ref([])
 const scanRuntimeStatus = ref(feishuRuntimeStatus())
 const scanRuntimeError = ref('')
+const scanInfoDialogVisible = ref(false)
 const isOnline = ref(navigator.onLine)
 const pendingJobs = ref(loadPendingJobs())
 const queueRetrying = ref(false)
@@ -1331,12 +1337,12 @@ function statusType(value) {
 
 .scan-searchbar {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) 72px;
+  grid-template-columns: 38px minmax(0, 1fr) 50px 40px 28px;
   align-items: center;
   gap: 6px;
-  min-height: 74px;
+  min-height: 42px;
   padding: 4px;
-  border-radius: 18px;
+  border-radius: 999px;
   background: #f7f9fc;
 }
 
@@ -1369,25 +1375,16 @@ function statusType(value) {
   font-size: 14px;
 }
 
-.scan-action-column {
-  display: grid;
-  gap: 4px;
-}
-
-.scan-action-column .el-button + .el-button {
-  margin-left: 0;
-}
-
 .scan-query-btn,
 .scan-reset-btn {
   width: 100%;
-  min-height: 31px;
+  min-height: 34px;
   margin: 0;
   border: 0;
   border-radius: 999px;
-  padding: 0 8px;
+  padding: 0 6px;
   font-weight: 800;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .scan-query-btn {
@@ -1409,6 +1406,36 @@ function statusType(value) {
 .scan-reset-btn:focus {
   background: #eff6ff;
   color: #2563eb;
+}
+
+.scan-info-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: #eaf2ff;
+  color: #3b82f6;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.scan-info-btn:active {
+  background: #dbeafe;
+}
+
+.scan-dialog-content {
+  display: grid;
+  gap: 10px;
+}
+
+.mobile-scan-dialog :deep(.el-dialog) {
+  border-radius: 16px;
+}
+
+.mobile-scan-dialog :deep(.el-dialog__body) {
+  padding-top: 4px;
 }
 
 .scan-runtime-alert {
