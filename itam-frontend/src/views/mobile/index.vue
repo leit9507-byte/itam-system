@@ -18,7 +18,7 @@
       </div>
     </section>
 
-    <section class="field-status" :class="[fieldStatus.tone, { online: isOnline }]">
+    <section v-if="showFieldStatus" class="field-status" :class="[fieldStatus.tone, { online: isOnline }]">
       <div>
         <strong>{{ fieldStatus.title }}</strong>
         <span>{{ fieldStatus.detail }}</span>
@@ -399,6 +399,7 @@ const fieldStatus = computed(() => {
   if (pendingJobs.value.length) return { tone: 'warning', title: '存在待提交', detail: `${pendingJobs.value.length} 条现场操作尚未同步，请点击重试或等待自动提交。` }
   return { tone: 'success', title: '在线作业', detail: '扫码和提交会实时同步到系统。' }
 })
+const showFieldStatus = computed(() => !isOnline.value || queueRetrying.value || pendingJobs.value.length > 0)
 
 onMounted(async () => {
   window.addEventListener('online', handleOnline)
