@@ -1,122 +1,15 @@
 import { createApp } from 'vue'
-import {
-  ElAlert,
-  ElAside,
-  ElAvatar,
-  ElButton,
-  ElCard,
-  ElCheckbox,
-  ElCol,
-  ElContainer,
-  ElDatePicker,
-  ElDescriptions,
-  ElDescriptionsItem,
-  ElDialog,
-  ElDivider,
-  ElDrawer,
-  ElDropdown,
-  ElDropdownItem,
-  ElDropdownMenu,
-  ElEmpty,
-  ElForm,
-  ElFormItem,
-  ElHeader,
-  ElIcon,
-  ElInput,
-  ElInputNumber,
-  ElLink,
-  ElLoading,
-  ElMain,
-  ElMenu,
-  ElMenuItem,
-  ElOption,
-  ElPagination,
-  ElPopover,
-  ElProgress,
-  ElRadioButton,
-  ElRadioGroup,
-  ElResult,
-  ElRow,
-  ElSegmented,
-  ElSelect,
-  ElSpace,
-  ElStatistic,
-  ElStep,
-  ElSteps,
-  ElSubMenu,
-  ElSwitch,
-  ElTable,
-  ElTableColumn,
-  ElTabPane,
-  ElTabs,
-  ElTag,
-  ElTimeline,
-  ElTimelineItem,
-  ElUpload
-} from 'element-plus'
-import 'element-plus/dist/index.css'
+import { ElLoading } from 'element-plus/es/components/loading/index'
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-loading.css'
+import 'element-plus/theme-chalk/el-message.css'
+import 'element-plus/theme-chalk/el-message-box.css'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import './styles.css'
 
 const app = createApp(App)
-const elementComponents = [
-  ElAlert,
-  ElAside,
-  ElAvatar,
-  ElButton,
-  ElCard,
-  ElCheckbox,
-  ElCol,
-  ElContainer,
-  ElDatePicker,
-  ElDescriptions,
-  ElDescriptionsItem,
-  ElDialog,
-  ElDivider,
-  ElDrawer,
-  ElDropdown,
-  ElDropdownItem,
-  ElDropdownMenu,
-  ElEmpty,
-  ElForm,
-  ElFormItem,
-  ElHeader,
-  ElIcon,
-  ElInput,
-  ElInputNumber,
-  ElLink,
-  ElMain,
-  ElMenu,
-  ElMenuItem,
-  ElOption,
-  ElPagination,
-  ElPopover,
-  ElProgress,
-  ElRadioButton,
-  ElRadioGroup,
-  ElResult,
-  ElRow,
-  ElSegmented,
-  ElSelect,
-  ElSpace,
-  ElStatistic,
-  ElStep,
-  ElSteps,
-  ElSubMenu,
-  ElSwitch,
-  ElTable,
-  ElTableColumn,
-  ElTabPane,
-  ElTabs,
-  ElTag,
-  ElTimeline,
-  ElTimelineItem,
-  ElUpload
-]
-
-elementComponents.forEach(component => app.use(component))
 
 app.use(createPinia())
 app.use(router)

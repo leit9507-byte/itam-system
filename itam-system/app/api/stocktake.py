@@ -1,7 +1,8 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
@@ -224,6 +225,45 @@ def list_scan_logs(task_id: str, request: Request, db: Session = Depends(get_db)
         }
         for row in rows
     ]
+
+
+@router.get("/tasks/{task_id}/items")
+def list_task_items(
+    task_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    keyword: str | None = None,
+    result: str | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+):
+    task, visible_asset_ids = get_scoped_task(db, task_id, request)
+    query = db.query(StocktakeItem).filter(
+        StocktakeItem.task_id == task.id,
+        StocktakeItem.asset_id.in_(visible_asset_ids),
+    )
+    if keyword:
+        pattern = f"%{keyword.strip()}%"
+        query = query.filter(
+            or_(
+                StocktakeItem.asset_id.ilike(pattern),
+                StocktakeItem.name.ilike(pattern),
+                StocktakeItem.sn.ilike(pattern),
+                StocktakeItem.book_location.ilike(pattern),
+                StocktakeItem.actual_location.ilike(pattern),
+                StocktakeItem.remark.ilike(pattern),
+            )
+        )
+    if result:
+        query = query.filter(StocktakeItem.result == result)
+    total = query.count()
+    rows = (
+        query.order_by(StocktakeItem.asset_id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return {"list": [serialize_item(item) for item in rows], "total": total, "page": page, "page_size": page_size}
 
 
 def scoped_assets(db: Session, scope: str, target: str | list[str] | None, user_context: dict | None = None, include_scrapped: bool = False):

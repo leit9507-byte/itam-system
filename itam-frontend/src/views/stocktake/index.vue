@@ -173,8 +173,8 @@
 
     <el-dialog v-model="detailDialog" :title="currentTask ? `盘点明细：${currentTask.name}` : '盘点明细'" width="1180px">
       <div class="detail-toolbar">
-        <el-input v-model="itemFilters.keyword" clearable placeholder="搜索资产编号/名称/序列号/位置" style="width: 280px" />
-        <el-select v-model="itemFilters.result" clearable placeholder="盘点结果" style="width: 140px">
+        <el-input v-model="itemFilters.keyword" clearable placeholder="搜索资产编号/名称/序列号/位置" style="width: 280px" @keyup.enter="refreshTaskItems" />
+        <el-select v-model="itemFilters.result" clearable placeholder="盘点结果" style="width: 140px" @change="refreshTaskItems">
           <el-option label="未盘" value="未盘" />
           <el-option label="正常" value="正常" />
           <el-option label="盘盈" value="盘盈" />
@@ -182,6 +182,7 @@
           <el-option label="位置不符" value="位置不符" />
           <el-option label="状态不符" value="状态不符" />
         </el-select>
+        <el-button @click="refreshTaskItems">查询</el-button>
         <el-button @click="resetItemFilters">重置</el-button>
       </div>
       <div class="quick-register">
@@ -189,7 +190,7 @@
         <el-button type="primary" :loading="savingItem" @click="registerQuickItem">扫码确认</el-button>
         <span class="scan-tip">扫描确认后，系统按账面位置登记实盘位置；未扫描项目在完成盘点时自动记为盘亏。</span>
       </div>
-      <el-table :data="pagedTaskItems" border stripe row-key="asset_id">
+      <el-table v-loading="itemLoading" :data="taskItems" border stripe row-key="asset_id">
         <el-table-column prop="asset_id" label="资产ID" width="120" />
         <el-table-column prop="name" label="资产名称" min-width="160" />
         <el-table-column prop="sn" label="序列号" width="140" />
@@ -228,8 +229,10 @@
           v-model:current-page="itemPagination.page"
           v-model:page-size="itemPagination.pageSize"
           :page-sizes="[10, 20, 50, 100]"
-          :total="filteredTaskItems.length"
+          :total="itemPagination.total"
           layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleItemSizeChange"
+          @current-change="loadTaskItems"
         />
       </div>
     </el-dialog>
@@ -237,13 +240,15 @@
 </template>
 
 <script setup>
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import echarts from '../../utils/echarts'
 import {
   createStocktakeTask,
   buildStocktakeDashboard,
   finishStocktakeTask,
+  getStocktakeTaskItems,
   getStocktakeTasks,
   reportStocktakeException,
   reviewStocktakeItem,
@@ -254,7 +259,7 @@ import { assetStatuses, getAssets } from '../../api/asset'
 import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
 import { resolveScanBinding } from '../../api/scanBinding'
-import { assetCodeMatches, parseAssetCode } from '../../utils/assetCode'
+import { parseAssetCode } from '../../utils/assetCode'
 
 const tasks = ref([])
 const loading = ref(false)
@@ -262,6 +267,8 @@ const savingAssetId = ref('')
 const createDialog = ref(false)
 const detailDialog = ref(false)
 const currentTask = ref(null)
+const taskItems = ref([])
+const itemLoading = ref(false)
 const selectedTaskId = ref('')
 const dateRange = ref(defaultDateRange())
 const resultRef = ref(null)
@@ -270,7 +277,7 @@ const charts = []
 const form = reactive(defaultForm())
 const taskPagination = reactive({ page: 1, pageSize: 10 })
 const abnormalPagination = reactive({ page: 1, pageSize: 10 })
-const itemPagination = reactive({ page: 1, pageSize: 10 })
+const itemPagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const itemFilters = reactive({ keyword: '', result: '' })
 const quickForm = reactive({ code: '' })
 const scopeSource = reactive({ departments: [], locations: [] })
@@ -282,21 +289,11 @@ const dashboard = reactive({
   scopeDistribution: [],
   abnormalItems: []
 })
-const currentTaskItems = computed(() => currentTask.value?.items || [])
 const selectedTask = computed(() => tasks.value.find(task => task.id === selectedTaskId.value) || null)
 const dashboardTasks = computed(() => selectedTask.value ? [selectedTask.value] : [])
 const savingItem = computed(() => Boolean(savingAssetId.value))
 const pagedTasks = computed(() => paginate(tasks.value, taskPagination))
 const pagedAbnormalItems = computed(() => paginate(dashboard.abnormalItems, abnormalPagination))
-const filteredTaskItems = computed(() => {
-  const keyword = itemFilters.keyword.trim().toLowerCase()
-  return currentTaskItems.value.filter(item => {
-    const hitKeyword = !keyword || [item.asset_id, item.name, item.sn, item.book_location, item.actual_location, item.remark].join(' ').toLowerCase().includes(keyword)
-    const hitResult = !itemFilters.result || item.result === itemFilters.result
-    return hitKeyword && hitResult
-  })
-})
-const pagedTaskItems = computed(() => paginate(filteredTaskItems.value, itemPagination))
 const targetOptions = computed(() => {
   if (form.scope === '部门') return scopeSource.departments
   if (form.scope === '仓库') return scopeSource.locations
@@ -428,6 +425,7 @@ function openDetail(row) {
   resetItemFilters()
   quickForm.code = ''
   detailDialog.value = true
+  loadTaskItems()
 }
 
 async function confirmScannedItem(row) {
@@ -454,11 +452,8 @@ async function registerQuickItem() {
   if (!code) return ElMessage.warning('请扫码或输入资产编号 / 序列号')
   if (!currentTask.value) return
   const resolvedAsset = await resolveAssetFromScan(quickForm.code)
-  const row = resolvedAsset
-    ? currentTaskItems.value.find(item => item.asset_id === resolvedAsset.asset_id)
-    : currentTaskItems.value.find(item => assetCodeMatches(item, quickForm.code))
-  if (!row) return ElMessage.error('该资产不在当前盘点任务范围内')
-  await confirmScannedItem(row)
+  const targetCode = resolvedAsset?.asset_id || code
+  await confirmScannedItem({ asset_id: targetCode, book_location: resolvedAsset?.location || '' })
   quickForm.code = ''
 }
 
@@ -487,6 +482,7 @@ async function reportLocationException(row) {
     client_source: 'desktop'
   })
   applySavedItem(currentTask.value.id, saved)
+  await loadTaskItems()
   ElMessage.success('异常已上报，等待复核')
 }
 
@@ -503,6 +499,7 @@ async function reviewItem(row, status) {
     review_note: note
   })
   applySavedItem(currentTask.value.id, saved)
+  await loadTaskItems()
   ElMessage.success(`复核已${status === '已确认' ? '确认' : '驳回'}`)
 }
 
@@ -514,6 +511,8 @@ function applySavedItem(taskId, saved) {
   task.checked = task.items.filter(row => row.result !== '未盘').length
   task.abnormal = task.items.filter(row => ['盘盈', '盘亏', '位置不符', '状态不符'].includes(row.result)).length
   if (task.status !== '已完成' && task.total && task.checked === task.total) task.status = '待确认'
+  const visibleItem = taskItems.value.find(row => row.asset_id === saved.asset_id)
+  if (visibleItem) Object.assign(visibleItem, saved)
   currentTask.value = task
   refreshDashboard()
   renderCharts()
@@ -556,6 +555,34 @@ function resetItemFilters() {
   itemFilters.keyword = ''
   itemFilters.result = ''
   itemPagination.page = 1
+  if (detailDialog.value) loadTaskItems()
+}
+
+async function loadTaskItems() {
+  if (!currentTask.value?.id) return
+  itemLoading.value = true
+  try {
+    const result = await getStocktakeTaskItems(currentTask.value.id, {
+      keyword: itemFilters.keyword.trim(),
+      result: itemFilters.result,
+      page: itemPagination.page,
+      page_size: itemPagination.pageSize
+    })
+    taskItems.value = result.list || []
+    itemPagination.total = result.total || 0
+  } finally {
+    itemLoading.value = false
+  }
+}
+
+function refreshTaskItems() {
+  itemPagination.page = 1
+  loadTaskItems()
+}
+
+function handleItemSizeChange() {
+  itemPagination.page = 1
+  loadTaskItems()
 }
 
 async function finish(row) {

@@ -70,6 +70,17 @@ export function getStocktakeScanLogs(taskId) {
   return request.get(`/stocktake/tasks/${taskId}/scan-logs`)
 }
 
+export function getStocktakeTaskItems(taskId, params = {}) {
+  return request.get(`/stocktake/tasks/${taskId}/items`, {
+    params: {
+      keyword: params.keyword || undefined,
+      result: params.result || undefined,
+      page: params.page || undefined,
+      page_size: params.page_size ?? params.pageSize ?? undefined
+    }
+  })
+}
+
 export function finishStocktakeTask(taskId) {
   return request.post(`/stocktake/tasks/${taskId}/finish`)
 }

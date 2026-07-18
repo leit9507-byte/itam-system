@@ -19,5 +19,8 @@
     "vue": "^3.4.29",
     "vue-router": "^4.4.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "unplugin-auto-import": "^21.0.0",
+    "unplugin-vue-components": "^32.1.0"
+  }
 }
