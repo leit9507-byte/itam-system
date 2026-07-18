@@ -65,6 +65,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    allowedHosts: ['it.forevernine.net'],
     watch: {
       // Windows/macOS 的 Docker 挂载不传递文件变更事件，容器内需轮询才能热更新
       usePolling: process.env.CHOKIDAR_USEPOLLING === 'true',
