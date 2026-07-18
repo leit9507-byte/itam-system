@@ -89,7 +89,6 @@
       <template #header>
         <div class="card-header">
           <span>{{ currentMode.label }}</span>
-          <el-button text type="primary" @click="resetAsset">重新选择</el-button>
         </div>
       </template>
 
@@ -105,7 +104,10 @@
             placeholder="扫码识别或输入资产编号"
             @keyup.enter="loadAsset"
           />
-          <el-button type="primary" class="scan-query-btn" @click="loadAsset">查询</el-button>
+          <div class="scan-action-column">
+            <el-button type="primary" class="scan-query-btn" @click="loadAsset">查询</el-button>
+            <el-button class="scan-reset-btn" @click="resetAsset">重新选择</el-button>
+          </div>
         </div>
         <el-alert
           v-if="showScanRuntimeHint"
@@ -1329,12 +1331,12 @@ function statusType(value) {
 
 .scan-searchbar {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) 64px;
+  grid-template-columns: 38px minmax(0, 1fr) 72px;
   align-items: center;
   gap: 6px;
-  min-height: 42px;
+  min-height: 74px;
   padding: 4px;
-  border-radius: 999px;
+  border-radius: 18px;
   background: #f7f9fc;
 }
 
@@ -1367,18 +1369,46 @@ function statusType(value) {
   font-size: 14px;
 }
 
-.scan-query-btn {
-  min-height: 34px;
+.scan-action-column {
+  display: grid;
+  gap: 4px;
+}
+
+.scan-action-column .el-button + .el-button {
+  margin-left: 0;
+}
+
+.scan-query-btn,
+.scan-reset-btn {
+  width: 100%;
+  min-height: 31px;
   margin: 0;
   border: 0;
   border-radius: 999px;
-  background: #f6a4a4;
+  padding: 0 8px;
   font-weight: 800;
+  font-size: 13px;
+}
+
+.scan-query-btn {
+  background: #f6a4a4;
 }
 
 .scan-query-btn:hover,
 .scan-query-btn:focus {
   background: #ef8f8f;
+}
+
+.scan-reset-btn {
+  background: #fff;
+  color: #3b82f6;
+  box-shadow: inset 0 0 0 1px #bfdbfe;
+}
+
+.scan-reset-btn:hover,
+.scan-reset-btn:focus {
+  background: #eff6ff;
+  color: #2563eb;
 }
 
 .scan-runtime-alert {
