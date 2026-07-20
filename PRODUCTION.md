@@ -52,6 +52,7 @@ Production uses:
 - MySQL without public port exposure
 - Backend behind frontend `/backend`
 - Persistent Docker volumes for MySQL, uploads, reports, backups, and `/app/runtime`
+- Alembic migrations run before backend startup through `scripts/prod-init-db.sh`
 
 Runtime database configuration is stored under `/app/runtime` in the backend container and is persisted by `backend_runtime_prod`.
 
@@ -72,11 +73,12 @@ Connection pool defaults:
 - `DB_POOL_TIMEOUT=30`
 - `DB_CONNECT_TIMEOUT=10`
 
-If the database is changed from the admin backend page, restart the backend, run migration, then run initialization:
+If the database is changed from the admin backend page, stop the backend, run migration, then run initialization:
 
 ```bash
-docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production restart backend
-docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production exec -T backend alembic upgrade head
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production stop backend
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production run --rm backend alembic upgrade head
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production up -d backend
 ./scripts/prod-init-db.sh
 ```
 
@@ -86,6 +88,12 @@ Run Alembic for every release:
 
 ```bash
 docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production exec -T backend alembic upgrade head
+```
+
+If the backend is not running yet, use the one-off migration command:
+
+```bash
+docker compose -p itam-prod -f docker-compose.prod.yml --env-file .env.production run --rm backend alembic upgrade head
 ```
 
 Check current revision:

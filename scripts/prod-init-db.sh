@@ -24,14 +24,14 @@ if [[ -z "${INIT_DATABASE_TOKEN:-}" ]]; then
   exit 1
 fi
 
-echo "Starting MySQL and backend..."
-docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d mysql backend
+echo "Starting MySQL..."
+docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d mysql
 
 echo "Running Alembic migrations..."
-docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T backend alembic upgrade head
+docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" run --rm backend alembic upgrade head
 
-echo "Restarting backend so runtime database config is reloaded..."
-docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" restart backend
+echo "Starting backend..."
+docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d backend
 
 echo "Waiting for backend..."
 for attempt in {1..30}; do
