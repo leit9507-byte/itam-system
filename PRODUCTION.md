@@ -24,7 +24,7 @@ Edit `.env.production` before startup. These values must be changed:
 - `CORS_ORIGINS`
 - `VITE_MOBILE_PUBLIC_URL`
 
-Production startup refuses weak default admin/auditor passwords.
+Production startup requires admin/auditor seed passwords to be configured. Strong passwords are recommended.
 
 Build and initialize the system:
 

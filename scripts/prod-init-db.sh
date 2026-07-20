@@ -50,6 +50,7 @@ docker compose -p "$PROJECT_NAME" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec
 import json
 import os
 import urllib.request
+import urllib.error
 
 url = os.getenv('INIT_URL', '$INIT_URL')
 token = os.getenv('INIT_DATABASE_TOKEN')
@@ -60,8 +61,12 @@ request = urllib.request.Request(
     headers={'Content-Type': 'application/json', 'X-Init-Token': token},
     method='POST',
 )
-with urllib.request.urlopen(request, timeout=60) as response:
-    print(response.read().decode())
+try:
+    with urllib.request.urlopen(request, timeout=60) as response:
+        print(response.read().decode())
+except urllib.error.HTTPError as exc:
+    print(exc.read().decode())
+    raise
 "
 
 echo "Database initialization complete."
