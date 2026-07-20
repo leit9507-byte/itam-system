@@ -280,7 +280,7 @@ $scrapDisposed = Invoke-ItamApi -Method POST -Path "/scrap/$($scrap.id)/dispose"
 }
 Assert-Equal $scrapDisposed.status $StatusDisposed "Scrap disposed status"
 $asset = Get-AssetById $assetId
-Assert-Equal $asset.status "disposed" "Asset status after disposal registration"
+Assert-Equal $asset.status "scrapped" "Asset remains scrapped after disposal registration"
 
 Write-Step "Audit report: run audit and download HTML"
 $audit = Invoke-ItamApi -Method POST -Path "/audit/run" -Body @{ users = @() }

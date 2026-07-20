@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { getCurrentPermissions } from '../api/user'
 
 const savedUser = localStorage.getItem('itam_user')
+const savedReadableResources = localStorage.getItem('itam_readable_resources')
 
 const guestUser = {
   name: '未登录用户',
@@ -15,8 +16,8 @@ export const useAppStore = defineStore('app', {
     collapsed: false,
     user: savedUser ? JSON.parse(savedUser) : guestUser,
     token: localStorage.getItem('itam_token') || '',
-    readableResources: [],
-    permissionsLoaded: false
+    readableResources: savedReadableResources ? JSON.parse(savedReadableResources) : [],
+    permissionsLoaded: Boolean(savedReadableResources)
   }),
   getters: {
     isAuthenticated: state => Boolean(state.token),
@@ -31,6 +32,11 @@ export const useAppStore = defineStore('app', {
       const rawUser = localStorage.getItem('itam_user')
       this.token = token
       this.user = rawUser ? JSON.parse(rawUser) : { ...guestUser }
+      if (!token) {
+        this.readableResources = []
+        this.permissionsLoaded = false
+        localStorage.removeItem('itam_readable_resources')
+      }
     },
     toggleSidebar() {
       this.collapsed = !this.collapsed
@@ -54,13 +60,16 @@ export const useAppStore = defineStore('app', {
       if (this.user.role === 'admin') {
         this.readableResources = ['asset', 'purchase', 'repair', 'supplier', 'catalog', 'audit', 'identity', 'rbac', 'file', 'report', 'ops']
         this.permissionsLoaded = true
+        localStorage.setItem('itam_readable_resources', JSON.stringify(this.readableResources))
         return
       }
       try {
         const result = await getCurrentPermissions()
         this.readableResources = Array.isArray(result?.resources) ? result.resources : []
+        localStorage.setItem('itam_readable_resources', JSON.stringify(this.readableResources))
       } catch {
         this.readableResources = []
+        localStorage.removeItem('itam_readable_resources')
       } finally {
         this.permissionsLoaded = true
       }
@@ -72,6 +81,7 @@ export const useAppStore = defineStore('app', {
       this.permissionsLoaded = false
       localStorage.removeItem('itam_token')
       localStorage.removeItem('itam_user')
+      localStorage.removeItem('itam_readable_resources')
     }
   }
 })

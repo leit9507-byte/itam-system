@@ -6,6 +6,13 @@
       <span class="appbar-icon" aria-hidden="true"></span>
     </header>
 
+    <section v-if="!store.isAuthenticated" class="mobile-auth-panel">
+      <strong>需要登录后使用移动作业</strong>
+      <p>请先登录资产管理系统，再进行扫码盘点、入库、出库、维修和待办处理。</p>
+      <el-button type="primary" size="large" @click="goMobileLogin">去登录</el-button>
+    </section>
+
+    <template v-else>
     <section class="mobile-hero">
       <div>
         <span class="eyebrow">{{ currentSectionTitle }}</span>
@@ -286,6 +293,7 @@
         <small v-if="item.count !== undefined">{{ item.count }}</small>
       </button>
     </nav>
+    </template>
   </div>
 </template>
 
@@ -302,10 +310,12 @@ import { getStocktakeTasks, submitStocktakeItem } from '../../api/stocktake'
 import { getTodoItems } from '../../api/todo'
 import { resolveScanBinding } from '../../api/scanBinding'
 import TodoAssetActions from '../../components/TodoAssetActions.vue'
+import { useAppStore } from '../../store'
 import { assetCodeCandidates, assetCodeMatches, parseAssetCode } from '../../utils/assetCode'
 import { feishuRuntimeStatus, getLastFeishuScanError, isFeishuClient, scanByFeishuSdk } from '../../utils/feishuSdk'
 
 const router = useRouter()
+const store = useAppStore()
 const SCAN_CANCELLED = Symbol('scan-cancelled')
 const QUEUE_STORAGE_KEY = 'itam_mobile_pending_jobs'
 const modes = [
@@ -406,6 +416,8 @@ const showFieldStatus = computed(() => !isOnline.value || queueRetrying.value ||
 onMounted(async () => {
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
+  store.syncSessionFromStorage()
+  if (!store.isAuthenticated) return
   const [userRows, locationRows, faultRows] = await Promise.all([
     getUsers().catch(() => []),
     getLocations().catch(() => []),
@@ -589,6 +601,10 @@ function handleScanResult(value) {
   lastScan.at = Date.now()
   if (duplicate) setScanFeedback('warning', '重复扫码', `${assetCode.value} 刚刚已经扫描过，可直接确认提交。`)
   loadAsset()
+}
+
+function goMobileLogin() {
+  router.push({ path: '/login', query: { redirect: '/mobile' } })
 }
 
 async function loadAsset() {
@@ -1061,6 +1077,28 @@ function statusType(value) {
   border-radius: 50%;
   background: #ff7a2f;
   content: "";
+}
+
+.mobile-auth-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 22px;
+  border: 1px solid #dbeafe;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 34px rgba(31, 86, 150, 0.12);
+}
+
+.mobile-auth-panel strong {
+  color: #102044;
+  font-size: 20px;
+}
+
+.mobile-auth-panel p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.6;
 }
 
 .mobile-hero {

@@ -6,25 +6,28 @@
         <p class="page-subtitle">维护资产分类，用于产品档案、采购入库和资产归类。</p>
       </div>
       <div class="toolbar">
-        <el-button @click="resetForm">清空</el-button>
-        <el-button type="primary" @click="saveType">{{ form.id ? '保存修改' : '创建设备类型' }}</el-button>
+        <el-button @click="resetKeyword">清空</el-button>
+        <el-button type="primary" @click="openCreateType">创建设备类型</el-button>
       </div>
     </div>
 
-    <div class="content-grid">
-      <el-card shadow="never" class="edit-panel">
-        <template #header>{{ form.id ? '编辑设备类型' : '创建设备类型' }}</template>
-        <el-form :model="form" label-width="86px">
-          <el-form-item label="类型名称" required>
-            <el-input v-model.trim="form.name" placeholder="例如 笔记本、显示器、服务器" />
-          </el-form-item>
-          <el-form-item label="说明">
-            <el-input v-model.trim="form.description" type="textarea" :rows="4" placeholder="可填写适用范围、管理说明" />
-          </el-form-item>
-        </el-form>
-      </el-card>
+    <el-dialog v-model="typeDialog.visible" :title="form.id ? '编辑设备类型' : '创建设备类型'" width="560px" class="device-type-dialog" destroy-on-close>
+      <el-form :model="form" label-width="86px">
+        <el-form-item label="类型名称" required>
+          <el-input v-model.trim="form.name" placeholder="例如 笔记本、显示器、服务器" />
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model.trim="form.description" type="textarea" :rows="4" placeholder="可填写适用范围、管理说明" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="closeTypeDialog">取消</el-button>
+        <el-button @click="resetForm">清空表单</el-button>
+        <el-button type="primary" :loading="typeDialog.saving" @click="saveType">{{ form.id ? '保存修改' : '创建设备类型' }}</el-button>
+      </template>
+    </el-dialog>
 
-      <el-card shadow="never">
+    <el-card shadow="never">
         <template #header>
           <div class="card-header">
             <span>类型列表</span>
@@ -50,8 +53,7 @@
             layout="total, sizes, prev, pager, next, jumper"
           />
         </div>
-      </el-card>
-    </div>
+    </el-card>
   </div>
 </template>
 
@@ -63,6 +65,7 @@ import { createDeviceType, deleteDeviceType, getDeviceTypes, updateDeviceType } 
 const rows = ref([])
 const keyword = ref('')
 const form = reactive(defaultForm())
+const typeDialog = reactive({ visible: false, saving: false })
 const pagination = reactive({ page: 1, pageSize: 10 })
 
 const filteredRows = computed(() => {
@@ -94,8 +97,23 @@ function resetForm() {
   Object.assign(form, defaultForm())
 }
 
+function resetKeyword() {
+  keyword.value = ''
+}
+
+function openCreateType() {
+  resetForm()
+  typeDialog.visible = true
+}
+
+function closeTypeDialog() {
+  typeDialog.visible = false
+  resetForm()
+}
+
 function editType(row) {
   Object.assign(form, row)
+  typeDialog.visible = true
 }
 
 async function saveType() {
@@ -103,11 +121,17 @@ async function saveType() {
     ElMessage.warning('请填写设备类型名称')
     return
   }
-  if (form.id) await updateDeviceType(form.id, form)
-  else await createDeviceType(form)
-  resetForm()
-  ElMessage.success('设备类型已保存')
-  await load()
+  typeDialog.saving = true
+  try {
+    if (form.id) await updateDeviceType(form.id, form)
+    else await createDeviceType(form)
+    typeDialog.visible = false
+    resetForm()
+    ElMessage.success('设备类型已保存')
+    await load()
+  } finally {
+    typeDialog.saving = false
+  }
 }
 
 async function removeType(row) {
@@ -120,16 +144,6 @@ async function removeType(row) {
 </script>
 
 <style scoped>
-.content-grid {
-  display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-  gap: 16px;
-}
-
-.edit-panel {
-  align-self: start;
-}
-
 .card-header {
   display: flex;
   align-items: center;
@@ -148,17 +162,8 @@ async function removeType(row) {
 }
 
 @media (max-width: 980px) {
-  .content-grid,
   .card-header {
     grid-template-columns: 1fr;
-  }
-
-  .content-grid {
-    display: block;
-  }
-
-  .edit-panel {
-    margin-bottom: 16px;
   }
 
   .card-header {

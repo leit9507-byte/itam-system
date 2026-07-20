@@ -58,6 +58,17 @@ class AssetBatchCheckinCreate(AssetCheckinCreate):
     asset_ids: list[str]
 
 
+class AssetBatchRepairCreate(BaseModel):
+    asset_ids: list[str]
+    repair_time: datetime
+    repair_type: str = "普通维修"
+    fault_reason: str
+    repair_cost: float = Field(default=0, ge=0)
+    vendor: Optional[str] = None
+    operator: str = "资产管理员"
+    remark: Optional[str] = None
+
+
 class AssetCheckoutOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -100,6 +111,11 @@ class AssetUpdate(BaseModel):
     dept_id: Optional[str] = None
     location: Optional[str] = None
     remark: Optional[str] = None
+
+
+class AssetBatchUpdateCreate(BaseModel):
+    asset_ids: list[str]
+    updates: AssetUpdate
 
 
 class AssetOut(BaseModel):

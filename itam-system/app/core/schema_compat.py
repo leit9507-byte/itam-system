@@ -18,7 +18,7 @@ def ensure_compatible_schema(engine) -> None:
         add_column(engine, columns, "purchases", "purchase_reason", "TEXT NULL")
         add_column(engine, columns, "purchases", "created_at", "DATETIME NULL")
         with engine.begin() as conn:
-            conn.execute(text("UPDATE purchases SET created_at = NOW() WHERE created_at IS NULL"))
+            conn.execute(text(f"UPDATE purchases SET created_at = {current_timestamp_sql(engine)} WHERE created_at IS NULL"))
 
     if "purchase_items" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("purchase_items")}
@@ -42,6 +42,7 @@ def ensure_compatible_schema(engine) -> None:
         add_column(engine, columns, "assets", "remark", "TEXT NULL")
         with engine.begin() as conn:
             conn.execute(text("UPDATE assets SET company = '未设置公司' WHERE company IS NULL OR company = ''"))
+            conn.execute(text("UPDATE assets SET status = 'scrapped' WHERE status = 'disposed'"))
 
     if "audit_rules" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("audit_rules")}
@@ -90,3 +91,9 @@ def add_column(engine, columns: set[str], table: str, column: str, definition: s
         return
     with engine.begin() as conn:
         conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
+
+
+def current_timestamp_sql(engine) -> str:
+    if engine.dialect.name == "sqlite":
+        return "CURRENT_TIMESTAMP"
+    return "NOW()"

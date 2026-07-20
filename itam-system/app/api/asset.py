@@ -7,8 +7,10 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import operator_from_request, user_context_from_request
 from app.models.asset import Asset
-from app.schemas.asset import AssetBatchCheckinCreate, AssetBatchCheckoutCreate, AssetBatchImport, AssetCheckinCreate, AssetCheckoutCreate, AssetCheckoutOut, AssetCreate, AssetImportResult, AssetOut, AssetStatusChange, AssetTextImport, AssetUpdate
+from app.schemas.asset import AssetBatchCheckinCreate, AssetBatchCheckoutCreate, AssetBatchImport, AssetBatchRepairCreate, AssetBatchUpdateCreate, AssetCheckinCreate, AssetCheckoutCreate, AssetCheckoutOut, AssetCreate, AssetImportResult, AssetOut, AssetStatusChange, AssetTextImport, AssetUpdate
+from app.schemas.repair import RepairCreate
 from app.services.asset_service import AssetService, AssetValidationError
+from app.services.repair_service import RepairService
 
 
 router = APIRouter(prefix="/asset", tags=["Asset"])
@@ -90,9 +92,49 @@ def batch_checkout_assets(payload: AssetBatchCheckoutCreate, request: Request, d
     return AssetService.batch_checkout_assets(db, payload, operator_from_request(request), user_context_from_request(request))
 
 
+@router.post("/batch-outbound")
+def batch_outbound_assets(payload: AssetBatchCheckoutCreate, request: Request, db: Session = Depends(get_db)):
+    return AssetService.batch_checkout_assets(db, payload, operator_from_request(request), user_context_from_request(request))
+
+
 @router.post("/checkouts/batch-checkin")
 def batch_checkin_assets(payload: AssetBatchCheckinCreate, request: Request, db: Session = Depends(get_db)):
     return AssetService.batch_checkin_assets(db, payload, operator_from_request(request), user_context_from_request(request))
+
+
+@router.post("/batch-inbound")
+def batch_inbound_assets(payload: AssetBatchCheckinCreate, request: Request, db: Session = Depends(get_db)):
+    return AssetService.batch_checkin_assets(db, payload, operator_from_request(request), user_context_from_request(request))
+
+
+@router.post("/batch-update")
+def batch_update_assets(payload: AssetBatchUpdateCreate, request: Request, db: Session = Depends(get_db)):
+    return AssetService.batch_update_assets(db, payload, operator_from_request(request), user_context_from_request(request))
+
+
+@router.post("/batch-repair")
+def batch_repair_assets(payload: AssetBatchRepairCreate, request: Request, db: Session = Depends(get_db)):
+    rows = []
+    errors = []
+    operator = operator_from_request(request)
+    user_context = user_context_from_request(request)
+    for asset_id in dict.fromkeys([item for item in payload.asset_ids if item]):
+        try:
+            repair_payload = RepairCreate(
+                asset_id=asset_id,
+                repair_time=payload.repair_time,
+                repair_type=payload.repair_type,
+                fault_reason=payload.fault_reason,
+                repair_cost=payload.repair_cost,
+                vendor=payload.vendor,
+                operator=operator,
+                remark=payload.remark,
+            )
+            rows.append(RepairService.create_record(db, repair_payload, user_context))
+        except ValueError as exc:
+            db.rollback()
+            errors.append({"asset_id": asset_id, "message": str(exc)})
+    return {"success": len(rows), "failed": len(errors), "repairs": rows, "errors": errors}
 
 
 @router.get("/{asset_id}/changes")

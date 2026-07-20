@@ -112,7 +112,7 @@
     <el-dialog v-model="disposeDialog.visible" :title="disposeDialog.row ? `报废处置登记 / ${disposeDialog.row.asset_id}` : '报废处置登记'" width="660px">
       <el-alert
         title="本次只登记当前这一台资产"
-        :description="disposeDialog.row ? `${disposeDialog.row.asset_id} / ${disposeDialog.row.asset_name || '-'}；确认后该资产将进入已处置终态。` : ''"
+        :description="disposeDialog.row ? `${disposeDialog.row.asset_id} / ${disposeDialog.row.asset_name || '-'}；确认后资产状态保持已报废，报废单标记为已处置。` : ''"
         type="warning"
         show-icon
         :closable="false"
@@ -276,7 +276,7 @@ async function dispose() {
   }
   if (!disposeDialog.form.disposal_remark.trim()) return ElMessage.warning('请填写实际处置说明')
   const recipientText = disposeDialog.form.disposal_method === '员工领用' ? `，报废领走人：${disposeDialog.form.dispose_recipient_name || disposeDialog.form.dispose_recipient_user_id}` : ''
-  await ElMessageBox.confirm(`确认登记 ${disposeDialog.row.asset_id} 的报废处置？退役时间：${disposeDialog.form.retirement_date}，实际处置方式：${disposeDialog.form.disposal_method}${recipientText}。登记后资产进入已处置终态。`, '确认登记', { type: 'warning' })
+  await ElMessageBox.confirm(`确认登记 ${disposeDialog.row.asset_id} 的报废处置？退役时间：${disposeDialog.form.retirement_date}，实际处置方式：${disposeDialog.form.disposal_method}${recipientText}。登记后资产状态保持已报废，报废单标记为已处置。`, '确认登记', { type: 'warning' })
   await disposeScrapRequest(disposeDialog.row.id, disposeDialog.form)
   disposeDialog.visible = false
   ElMessage.success('报废资产已处置归档')

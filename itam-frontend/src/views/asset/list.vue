@@ -387,7 +387,7 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import { computed, defineComponent, h, onMounted, reactive, ref, resolveComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { assetStatuses, batchUpdateAssets, createScrapRequest, downloadAssetImportTemplate, editableAssetStatuses, getAssets, importAssets, inboundAsset, outboundAsset, previewAssetsFromExcel, previewAssetsFromText, statusMap, updateAsset } from '../../api/asset'
+import { assetStatuses, batchCheckinAssets, batchCheckoutAssets, batchUpdateAssets, createScrapRequest, downloadAssetImportTemplate, editableAssetStatuses, getAssets, importAssets, previewAssetsFromExcel, previewAssetsFromText, statusMap, updateAsset } from '../../api/asset'
 import { getCompanies } from '../../api/company'
 import { getLocations } from '../../api/location'
 import { getDeviceTypes, getProducts } from '../../api/product'
@@ -857,10 +857,14 @@ async function submitRepair() {
     ElMessage.warning('请选择故障类型')
     return
   }
-  await createRepairRecords(repairDialog.assets, repairDialog.form)
+  const result = await createRepairRecords(repairDialog.assets, repairDialog.form)
   repairDialog.visible = false
   selected.value = []
-  ElMessage.success('维修单已创建，资产状态已更新为维修中')
+  if (result?.failed) {
+    showBatchOperationResult(normalizeBatchResult(result, repairDialog.assets.map(asset => asset.asset_id)))
+  } else {
+    ElMessage.success('维修单已创建，资产状态已更新为维修中')
+  }
   await loadAssets()
 }
 
@@ -1036,6 +1040,15 @@ function showBatchOperationResult(results) {
   })
 }
 
+function normalizeBatchResult(result, assetIds = []) {
+  const failedIds = new Set((result?.errors || []).map(item => item.asset_id))
+  const rows = assetIds.filter(asset_id => !failedIds.has(asset_id)).map(asset_id => ({ asset_id, ok: true }))
+  return [
+    ...rows,
+    ...(result?.errors || []).map(item => ({ asset_id: item.asset_id, ok: false, message: item.message || '执行失败' }))
+  ]
+}
+
 async function submitBatch() {
   if (!validateBatchAssets(batch.type, batch.assets)) return
   if (batch.type === 'inbound') {
@@ -1067,15 +1080,22 @@ async function submitBatch() {
       batch.form.outboundTarget = 'user'
     }
   }
-  const results = []
-  for (const asset of batch.assets) {
-    try {
-      if (batch.type === 'inbound') await inboundAsset(asset.asset_id, batch.form)
-      if (batch.type === 'outbound') await outboundAsset(asset.asset_id, batch.form)
-      if (batch.type === 'scrap') await createScrapRequest(asset.asset_id, {})
-      results.push({ asset_id: asset.asset_id, ok: true })
-    } catch (error) {
-      results.push({ asset_id: asset.asset_id, ok: false, message: error.userMessage || error?.response?.data?.detail || error.message })
+  const assetIds = batch.assets.map(asset => asset.asset_id)
+  let results = []
+  if (batch.type === 'inbound') {
+    const result = await batchCheckinAssets(assetIds, batch.form)
+    results = normalizeBatchResult(result, assetIds)
+  } else if (batch.type === 'outbound') {
+    const result = await batchCheckoutAssets(assetIds, batch.form)
+    results = normalizeBatchResult(result, assetIds)
+  } else {
+    for (const asset of batch.assets) {
+      try {
+        await createScrapRequest(asset.asset_id, {})
+        results.push({ asset_id: asset.asset_id, ok: true })
+      } catch (error) {
+        results.push({ asset_id: asset.asset_id, ok: false, message: error.userMessage || error?.response?.data?.detail || error.message })
+      }
     }
   }
   if (results.some(item => !item.ok)) {

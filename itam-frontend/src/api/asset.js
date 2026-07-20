@@ -12,7 +12,7 @@ export const assetStatuses = [
   { label: '待报废', value: 'ready_scrap', type: 'warning' },
   { label: '待处置登记', value: 'pending_scrap', type: 'danger' },
   { label: '已报废', value: 'scrapped', type: 'info' },
-  { label: '已处置', value: 'disposed', type: 'info' }
+  { label: '已报废', value: 'disposed', type: 'info' }
 ]
 
 export const statusMap = Object.fromEntries(assetStatuses.map(item => [item.value, item]))
@@ -149,24 +149,27 @@ export async function updateAsset(assetId, payload) {
 }
 
 export async function batchUpdateAssets(rows, payload) {
-  const updated = []
-  for (const row of rows) {
-    updated.push(await updateAsset(row.asset_id, { ...row, ...payload }))
-  }
-  return updated
+  return request.post('/asset/batch-update', {
+    asset_ids: rows.map(row => row.asset_id),
+    updates: payload
+  })
 }
 
 export async function getAssetDetail(assetId) {
-  const [asset, lifecycleResult, changes, checkouts] = await Promise.all([
+  const [asset, lifecycleResult, changes, checkouts, scrapResult] = await Promise.all([
     getAssetById(assetId),
     getLifecycleList({ asset_id: assetId, page: 1, page_size: DETAIL_CONTEXT_LIMIT }).catch(() => ({ list: [] })),
     getAssetChanges(assetId).catch(() => []),
-    getAssetCheckouts(assetId).catch(() => [])
+    getAssetCheckouts(assetId).catch(() => []),
+    getScrapRequests({ asset_id: assetId, page: 1, page_size: 5 }).catch(() => ({ list: [] }))
   ])
   const lifecycles = lifecycleResult.list
+  const scrapRequests = scrapResult.list || []
   const inventoryRecords = lifecycles.filter(item => item.category === 'daily_inventory').map(mapInventoryLifecycle)
   return {
     asset,
+    scrapInfo: scrapRequests[0] || null,
+    scrapRequests,
     lifecycles,
     changes,
     checkouts,
@@ -246,7 +249,7 @@ export async function checkoutAsset(assetId, payload = {}) {
 }
 
 export async function batchCheckoutAssets(assetIds, payload = {}) {
-  return request.post('/asset/checkouts/batch-checkout', {
+  return request.post('/asset/batch-outbound', {
     asset_ids: assetIds,
     checkout_type: payload.toStatus || payload.checkout_type || 'in_use',
     owner_user_id: payload.owner_user_id,
@@ -266,7 +269,7 @@ export async function checkinAsset(assetId, payload = {}) {
 }
 
 export async function batchCheckinAssets(assetIds, payload = {}) {
-  return request.post('/asset/checkouts/batch-checkin', {
+  return request.post('/asset/batch-inbound', {
     asset_ids: assetIds,
     location: payload.location,
     remark: payload.remark || '资产批量归还入库'
@@ -306,6 +309,7 @@ export async function getScrapRequests(params = {}) {
     params: {
       status: params.status || undefined,
       disposal_method: params.disposal_method || undefined,
+      asset_id: params.asset_id || undefined,
       created_from: params.created_from || undefined,
       created_to: params.created_to || undefined,
       page: params.page || undefined,
@@ -450,6 +454,7 @@ function mapScrapRequest(row) {
     dispose_recipient_name: row.dispose_recipient_name || '',
     disposed_by: row.disposed_by || '',
     disposed_at: formatDate(row.disposed_at),
+    disposal_status: row.status === '已处置' ? '已处置' : '未处置',
     status: row.status,
     created_at: formatDate(row.created_at),
     approver: row.approver || '',

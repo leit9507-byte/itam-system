@@ -20,11 +20,16 @@ export async function createRepairRecord(asset, payload) {
 }
 
 export async function createRepairRecords(assets, payload) {
-  const rows = []
-  for (const asset of assets) {
-    rows.push(await createRepairRecord(asset, payload))
-  }
-  return rows
+  return request.post('/asset/batch-repair', {
+    asset_ids: assets.map(asset => asset.asset_id),
+    repair_time: `${payload.repair_time}T00:00:00`,
+    repair_type: payload.repair_type || '普通维修',
+    fault_reason: payload.fault_reason,
+    repair_cost: Number(payload.repair_cost || 0),
+    vendor: payload.vendor || '',
+    operator: payload.operator || '资产管理员',
+    remark: payload.remark || ''
+  })
 }
 
 export function getRepairFaultTypes() {

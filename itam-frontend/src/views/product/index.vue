@@ -6,13 +6,12 @@
         <p class="page-subtitle">维护可采购、可入库的标准产品，采购单可直接引用这些档案。</p>
       </div>
       <div class="toolbar">
-        <el-button @click="resetProductForm">清空</el-button>
-        <el-button type="primary" @click="saveProduct">{{ productForm.id ? '保存修改' : '创建产品' }}</el-button>
+        <el-button @click="resetFilters">清空</el-button>
+        <el-button type="primary" @click="openCreateProduct">创建产品</el-button>
       </div>
     </div>
 
-    <el-card shadow="never" class="form-card">
-      <template #header>{{ productForm.id ? '编辑产品' : '创建产品' }}</template>
+    <el-dialog v-model="productDialog.visible" :title="productForm.id ? '编辑产品' : '创建产品'" width="920px" class="product-dialog" destroy-on-close>
       <el-form :model="productForm" label-width="96px">
         <div class="product-form">
           <el-form-item label="产品名称" required>
@@ -51,7 +50,12 @@
           </el-form-item>
         </div>
       </el-form>
-    </el-card>
+      <template #footer>
+        <el-button @click="closeProductDialog">取消</el-button>
+        <el-button @click="resetProductForm">清空表单</el-button>
+        <el-button type="primary" :loading="productDialog.saving" @click="saveProduct">{{ productForm.id ? '保存修改' : '创建产品' }}</el-button>
+      </template>
+    </el-dialog>
 
     <el-card shadow="never">
       <template #header>
@@ -106,6 +110,7 @@ const products = ref([])
 const deviceTypes = ref([])
 const locations = ref([])
 const productForm = reactive(defaultProductForm())
+const productDialog = reactive({ visible: false, saving: false })
 const filters = reactive({ keyword: '', device_type: '' })
 const pagination = reactive({ page: 1, pageSize: 10 })
 
@@ -146,7 +151,22 @@ function locationLabel(item) {
 
 function editProduct(row) {
   Object.assign(productForm, row)
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+  productDialog.visible = true
+}
+
+function openCreateProduct() {
+  resetProductForm()
+  productDialog.visible = true
+}
+
+function closeProductDialog() {
+  productDialog.visible = false
+  resetProductForm()
+}
+
+function resetFilters() {
+  filters.keyword = ''
+  filters.device_type = ''
 }
 
 function resetProductForm() {
@@ -158,11 +178,17 @@ async function saveProduct() {
     ElMessage.warning('请填写产品名称和设备类型')
     return
   }
-  if (productForm.id) await updateProduct(productForm.id, productForm)
-  else await createProduct(productForm)
-  resetProductForm()
-  ElMessage.success('产品档案已保存')
-  await load()
+  productDialog.saving = true
+  try {
+    if (productForm.id) await updateProduct(productForm.id, productForm)
+    else await createProduct(productForm)
+    productDialog.visible = false
+    resetProductForm()
+    ElMessage.success('产品档案已保存')
+    await load()
+  } finally {
+    productDialog.saving = false
+  }
 }
 
 async function removeProduct(row) {
@@ -175,14 +201,14 @@ async function removeProduct(row) {
 </script>
 
 <style scoped>
-.form-card {
-  margin-bottom: 16px;
-}
-
 .product-form {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+}
+
+.product-dialog :deep(.el-dialog__body) {
+  padding-bottom: 10px;
 }
 
 .product-form :deep(.el-form-item) {

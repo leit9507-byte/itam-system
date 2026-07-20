@@ -39,6 +39,7 @@ class ScrapService:
         page: int = 1,
         page_size: int = 0,
         status: str | None = None,
+        asset_id: str | None = None,
         created_from: datetime | None = None,
         created_to: datetime | None = None,
         user_context: dict | None = None,
@@ -48,6 +49,8 @@ class ScrapService:
         query = ScrapService.apply_data_scope(query, user_context)
         if status:
             query = query.filter(ScrapRequest.status == status)
+        if asset_id:
+            query = query.filter(ScrapRequest.asset_id == asset_id)
         if disposal_method:
             normalized_method = ScrapService.normalize_disposal_method(disposal_method)
             query = query.filter(ScrapRequest.disposal_method == normalized_method) if normalized_method else query.filter(False)
@@ -157,6 +160,7 @@ class ScrapService:
         asset = AssetService.get_scoped_asset(db, request.asset_id, user_context)
         if asset and asset.status == "disposed":
             request.status = "已处置"
+            asset.status = "scrapped"
             db.commit()
             db.refresh(request)
             return request
@@ -206,8 +210,9 @@ class ScrapService:
         request.disposed_at = datetime.utcnow()
         if asset:
             from_status = asset.status
-            AssetService.validate_transition(from_status, "disposed")
-            asset.status = "disposed"
+            if from_status != "scrapped":
+                AssetService.validate_transition(from_status, "scrapped")
+            asset.status = "scrapped"
             recipient_label = request.dispose_recipient_name or request.dispose_recipient_user_id or "-"
             dispose_reason = request.disposal_remark or request.disposal_method or "报废资产已完成处置归档"
             if request.disposal_method == "员工领用":
@@ -217,7 +222,7 @@ class ScrapService:
                 asset.asset_id,
                 "SCRAP_DISPOSE",
                 from_status,
-                "disposed",
+                "scrapped",
                 operator,
                 LifecycleService.structured_remark(
                     reason=dispose_reason,

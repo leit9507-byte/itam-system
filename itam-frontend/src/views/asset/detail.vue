@@ -41,7 +41,10 @@
               <el-descriptions-item label="资产编码">{{ detail.asset?.asset_id || '-' }}</el-descriptions-item>
               <el-descriptions-item label="所属公司">{{ detail.asset?.company || '-' }}</el-descriptions-item>
               <el-descriptions-item label="状态">
-                <el-tag :type="statusMap[detail.asset?.status]?.type">{{ statusMap[detail.asset?.status]?.label || detail.asset?.status }}</el-tag>
+                <div class="status-tags">
+                  <el-tag :type="statusMap[detail.asset?.status]?.type">{{ statusMap[detail.asset?.status]?.label || detail.asset?.status }}</el-tag>
+                  <el-tag v-if="detail.scrapInfo" :type="scrapDisposalTag.type" effect="plain">{{ scrapDisposalTag.text }}</el-tag>
+                </div>
               </el-descriptions-item>
               <el-descriptions-item label="产品名称">{{ detail.asset?.name }}</el-descriptions-item>
               <el-descriptions-item label="设备类型">{{ detail.asset?.category }}</el-descriptions-item>
@@ -73,6 +76,29 @@
             <el-descriptions-item label="质保状态">
               <el-tag :type="warrantyTag.type">{{ warrantyTag.text }}</el-tag>
             </el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+
+        <el-card v-if="detail.scrapInfo" shadow="never" class="scrap-info-card">
+          <template #header>
+            <div class="card-header">
+              <span>报废处置信息</span>
+              <el-tag :type="scrapDisposalTag.type">{{ scrapDisposalTag.text }}</el-tag>
+            </div>
+          </template>
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="报废单号">{{ detail.scrapInfo.request_no || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="报废单状态">{{ detail.scrapInfo.status || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="报废原因" :span="2">{{ detail.scrapInfo.reason || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="退役时间">{{ detail.scrapInfo.retirement_date || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="退役审批单号">{{ detail.scrapInfo.retirement_approval_no || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="处置方式">{{ detail.scrapInfo.disposal_method || (detail.scrapInfo.disposal_status === '未处置' ? '未处置' : '-') }}</el-descriptions-item>
+            <el-descriptions-item label="报废领走人">{{ detail.scrapInfo.dispose_recipient_name || detail.scrapInfo.dispose_recipient_user_id || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="预计残值">¥{{ Number(detail.scrapInfo.estimated_residual_value || 0).toLocaleString() }}</el-descriptions-item>
+            <el-descriptions-item label="实际残值">¥{{ Number(detail.scrapInfo.final_residual_value || 0).toLocaleString() }}</el-descriptions-item>
+            <el-descriptions-item label="处置人">{{ detail.scrapInfo.disposed_by || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="处置时间">{{ detail.scrapInfo.disposed_at || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="处置说明" :span="2">{{ detail.scrapInfo.disposal_remark || '-' }}</el-descriptions-item>
           </el-descriptions>
         </el-card>
 
@@ -289,7 +315,7 @@ import { getUsers } from '../../api/user'
 
 const route = useRoute()
 const router = useRouter()
-const detail = reactive({ asset: null, lifecycles: [], changes: [], checkouts: [], timeline: [], usageRecords: [], inventoryRecords: [], risks: [] })
+const detail = reactive({ asset: null, scrapInfo: null, scrapRequests: [], lifecycles: [], changes: [], checkouts: [], timeline: [], usageRecords: [], inventoryRecords: [], risks: [] })
 const attachments = ref([])
 const categories = ref([])
 const products = ref([])
@@ -337,6 +363,13 @@ const warrantyTag = computed(() => {
   const value = detail.asset?.warranty_expire_date
   if (!value) return { type: 'info', text: '未设置' }
   return new Date(value) >= new Date() ? { type: 'success', text: '在保' } : { type: 'danger', text: '已过保' }
+})
+
+const scrapDisposalTag = computed(() => {
+  if (!detail.scrapInfo) return { type: 'info', text: '' }
+  return detail.scrapInfo.disposal_status === '已处置'
+    ? { type: 'success', text: `已处置${detail.scrapInfo.disposal_method ? ` / ${detail.scrapInfo.disposal_method}` : ''}` }
+    : { type: 'warning', text: '未处置' }
 })
 
 watch(historyFilter, () => {
@@ -646,6 +679,12 @@ function formatSize(size = 0) {
 
 .basic-info-table {
   min-width: 0;
+}
+
+.status-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .scan-binding-panel {

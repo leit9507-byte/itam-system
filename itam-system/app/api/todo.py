@@ -14,6 +14,7 @@ from app.services.asset_service import AssetService
 from app.services.purchase_service import PurchaseService
 from app.services.repair_service import RepairService
 from app.services.scrap_service import ScrapService
+from app.services.todo_service import TodoService
 
 
 router = APIRouter(prefix="/todo", tags=["Todo"])
@@ -25,44 +26,7 @@ BORROW_DUE_SOON_DAYS = 7
 
 @router.get("/list")
 def list_todos(request: Request, db: Session = Depends(get_db)):
-    user_context = user_context_from_request(request)
-    purchase_result = PurchaseService.list_purchases(db, page=1, page_size=TODO_SOURCE_LIMIT, user_context=user_context)
-    scrap_result = ScrapService.list_requests(db, page=1, page_size=TODO_SOURCE_LIMIT, status="待处置", user_context=user_context)
-    repair_result = RepairService.list_records(db, page=1, page_size=TODO_SOURCE_LIMIT, status="维修中", user_context=user_context)
-    asset_query = AssetService.apply_data_scope(db.query(Asset), user_context)
-
-    purchases = purchase_result["list"]
-    scraps = scrap_result["list"]
-    repairs = repair_result["list"]
-    assets = asset_query.order_by(Asset.created_at.desc()).limit(TODO_SOURCE_LIMIT).all()
-    user_query = db.query(UserDirectory)
-    if not can_view_all_data(user_context):
-        dept_id = scoped_dept_id(user_context)
-        identities = scoped_user_identities(user_context)
-        if is_department_manager(user_context) and dept_id:
-            user_query = user_query.filter(
-                (UserDirectory.dept_id == dept_id) | (UserDirectory.dept_name == dept_id)
-            )
-        elif identities:
-            user_query = user_query.filter(
-                (UserDirectory.user_id.in_(identities)) | (UserDirectory.username.in_(identities))
-            )
-        else:
-            user_query = user_query.filter(False)
-    users = user_query.all()
-    inactive_user_map = build_inactive_user_map(users)
-    assigned_user_ids = build_assigned_user_ids(assets)
-
-    rows = [
-        *build_onboarding_todos(users, assigned_user_ids),
-        *build_purchase_todos(purchases),
-        *build_scrap_todos(scraps),
-        *build_ready_scrap_todos(assets),
-        *build_offboarding_todos(assets, inactive_user_map),
-        *build_borrow_due_todos(assets),
-        *build_repair_todos(repairs),
-    ]
-    return sorted(rows, key=lambda item: (-priority_weight(item.get("priority")), -date_value(item.get("created_at"))))
+    return TodoService.list_todos(db, user_context_from_request(request))
 
 
 def build_onboarding_todos(users: list[UserDirectory], assigned_user_ids: set[str]) -> list[dict]:

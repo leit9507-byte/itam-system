@@ -1,6 +1,10 @@
 import time
 import logging
+from pathlib import Path
 
+from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,7 +12,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import asset, audit, company, files, identity, inventory, lifecycle, location, notification, ops, product, purchase, repair, reporting, scan_binding, scrap, stocktake, supplier, todo
+from app.api import asset, audit, company, dashboard, files, identity, inventory, lifecycle, location, notification, ops, product, purchase, repair, reporting, scan_binding, scrap, stocktake, supplier, todo
 from app.core.database import Base, engine
 from app.core.schema_compat import ensure_compatible_schema
 from app.core.config import get_settings
@@ -47,10 +51,31 @@ def validate_production_settings(settings) -> None:
         raise RuntimeError("Production database pool settings are invalid")
 
 
+def validate_migration_state() -> None:
+    settings = get_settings()
+    if not settings.production_mode:
+        return
+    project_root = Path(__file__).resolve().parents[1]
+    alembic_ini = project_root / "alembic.ini"
+    if not alembic_ini.exists():
+        raise RuntimeError("Production requires alembic.ini for migration state checks")
+    config = Config(str(alembic_ini))
+    config.set_main_option("script_location", str(project_root / "alembic"))
+    config.set_main_option("sqlalchemy.url", settings.database_url)
+    script = ScriptDirectory.from_config(config)
+    expected_heads = set(script.get_heads())
+    with engine.connect() as connection:
+        context = MigrationContext.configure(connection)
+        current_heads = set(context.get_current_heads())
+    if current_heads != expected_heads:
+        raise RuntimeError(f"Database migration mismatch: current={sorted(current_heads) or ['<none>']} expected={sorted(expected_heads)}. Run alembic upgrade head before starting production.")
+
+
 def create_app() -> FastAPI:
     init_database_with_retry()
     settings = get_settings()
     validate_production_settings(settings)
+    validate_migration_state()
 
     app = FastAPI(
         title="Enterprise ITAM System",
@@ -90,6 +115,7 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(asset.router)
+    app.include_router(dashboard.router)
     app.include_router(company.router)
     app.include_router(purchase.router)
     app.include_router(repair.router)

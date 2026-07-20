@@ -11,12 +11,16 @@ from app.models.checkout import AssetCheckout
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.repair import RepairRecord
 from app.models.scan_binding import AssetScanBinding
-from app.schemas.asset import AssetUpdate
+from app.core.schema_compat import current_timestamp_sql
+from app.schemas.asset import AssetBatchUpdateCreate, AssetUpdate
 from app.schemas.purchase import PurchaseAcceptanceReceive
 from app.schemas.repair import RepairCreate
 from app.services.asset_service import AssetService, AssetValidationError
+from app.services.dashboard_service import DashboardService
 from app.services.purchase_service import PurchaseService
 from app.services.repair_service import RepairService
+from app.services.scrap_service import ScrapService
+from app.services.todo_service import TodoService
 
 
 class CoreWorkflowTest(unittest.TestCase):
@@ -123,6 +127,77 @@ class CoreWorkflowTest(unittest.TestCase):
         payload = RepairCreate(asset_id=asset.asset_id, repair_time=datetime.utcnow(), fault_reason="Screen")
         with self.assertRaisesRegex(ValueError, "active repair"):
             RepairService.create_record(self.db, payload, {"role": "admin"})
+
+    def test_enterprise_dashboard_uses_backend_aggregation(self):
+        self.add_asset(asset_id="ITAM-DASH-1", status="in_stock")
+        self.add_asset(asset_id="ITAM-DASH-2", status="repair")
+
+        result = DashboardService.enterprise(self.db, {"role": "admin"})
+        metrics = {item["label"]: item["value"] for item in result["metrics"]}
+
+        self.assertEqual(metrics["在管资产"], 2)
+        self.assertTrue(any(item["name"] == "库存中" and item["value"] == 1 for item in result["lifecycleDistribution"]))
+        self.assertTrue(any(item["name"] == "笔记本电脑" and item["value"] == 2 for item in result["categoryDistribution"]))
+
+    def test_todo_service_caches_short_lived_list(self):
+        TodoService.invalidate()
+        purchase = Purchase(purchase_no="PO-TODO-1", status="pending_acceptance")
+        purchase.items.append(PurchaseItem(name="Laptop", category="Laptop", quantity=1, unit_price=100))
+        self.db.add(purchase)
+        self.db.commit()
+
+        first = TodoService.list_todos(self.db, {"role": "admin"})
+        self.db.add(Purchase(purchase_no="PO-TODO-2", status="pending_acceptance"))
+        self.db.commit()
+        second = TodoService.list_todos(self.db, {"role": "admin"})
+        TodoService.invalidate()
+        third = TodoService.list_todos(self.db, {"role": "admin"})
+
+        self.assertEqual(len(first), len(second))
+        self.assertGreater(len(third), len(second))
+
+    def test_batch_update_rolls_back_when_any_asset_fails(self):
+        self.add_asset(asset_id="ITAM-BATCH-1")
+        self.add_asset(asset_id="ITAM-BATCH-2", status="scrapped")
+
+        result = AssetService.batch_update_assets(
+            self.db,
+            AssetBatchUpdateCreate(asset_ids=["ITAM-BATCH-1", "ITAM-BATCH-2"], updates=AssetUpdate(location="New room")),
+            "tester",
+            {"role": "admin"},
+        )
+
+        self.assertEqual(result["success"], 0)
+        self.assertEqual(self.db.get(Asset, "ITAM-BATCH-1").location, None)
+
+    def test_sqlite_timestamp_compat_uses_current_timestamp(self):
+        self.assertEqual(current_timestamp_sql(self.engine), "CURRENT_TIMESTAMP")
+
+    def test_scrap_disposal_keeps_asset_status_scrapped(self):
+        asset = self.add_asset(asset_id="ITAM-SCRAP-1")
+        request = ScrapService.create_request(
+            self.db,
+            asset.asset_id,
+            {"reason": "retired"},
+            "tester",
+            {"role": "admin"},
+        )
+
+        disposed = ScrapService.dispose(
+            self.db,
+            request.id,
+            {
+                "retirement_approval_no": "SC-APPROVAL-1",
+                "disposal_method": "报废",
+                "final_residual_value": 10,
+                "disposal_remark": "disposed by recycling",
+            },
+            "tester",
+            {"role": "admin"},
+        )
+
+        self.assertEqual(disposed.status, "已处置")
+        self.assertEqual(self.db.get(Asset, asset.asset_id).status, "scrapped")
 
 
 if __name__ == "__main__":

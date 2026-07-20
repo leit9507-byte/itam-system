@@ -8,12 +8,24 @@ export default defineConfig({
   plugins: [
     vue(),
     AutoImport({
-      resolvers: [ElementPlusResolver({ importStyle: 'css' })]
+      resolvers: [ElementPlusResolver({ importStyle: false })]
     }),
     Components({
-      resolvers: [ElementPlusResolver({ importStyle: 'css' })]
+      resolvers: [ElementPlusResolver({ importStyle: false })]
     })
   ],
+  optimizeDeps: {
+    include: [
+      'vue',
+      'vue-router',
+      'pinia',
+      'axios',
+      'echarts',
+      'element-plus',
+      'element-plus/es',
+      '@element-plus/icons-vue'
+    ]
+  },
   build: {
     chunkSizeWarningLimit: 800,
     modulePreload: {

@@ -354,5 +354,46 @@ body {
 
   .el-dialog {
     width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px);
+    margin: 8vh auto 0 !important;
+  }
+
+  .el-dialog__body {
+    max-height: calc(100dvh - 190px);
+    overflow: auto;
+  }
+
+  .el-dialog__footer {
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+  }
+
+  .el-drawer {
+    width: min(100vw, 420px) !important;
+  }
+
+  .el-drawer__body {
+    overflow: auto;
+    padding: 16px;
+  }
+
+  .el-select-dropdown,
+  .el-picker-panel,
+  .el-popper.is-light {
+    max-width: calc(100vw - 24px);
+  }
+
+  .el-select-dropdown__wrap {
+    max-height: min(48dvh, 360px);
+  }
+
+  .el-select-dropdown__item {
+    height: auto;
+    min-height: 42px;
+    line-height: 1.25;
+    white-space: normal;
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
 }

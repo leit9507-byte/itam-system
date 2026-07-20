@@ -25,7 +25,7 @@ from app.models.scan_binding import AssetScanBinding
 from app.models.scrap import ScrapRequest
 from app.models.stocktake import StocktakeItem, StocktakeScanLog
 from app.models.user import UserDirectory
-from app.schemas.asset import AssetBatchCheckinCreate, AssetBatchCheckoutCreate, AssetBatchImport, AssetCheckinCreate, AssetCheckoutCreate, AssetCreate, AssetImportRow, AssetTextImport, AssetUpdate
+from app.schemas.asset import AssetBatchCheckinCreate, AssetBatchCheckoutCreate, AssetBatchImport, AssetBatchUpdateCreate, AssetCheckinCreate, AssetCheckoutCreate, AssetCreate, AssetImportRow, AssetTextImport, AssetUpdate
 from app.services.audit_log_service import AuditLogService
 from app.services.asset_residual_service import AssetResidualService
 from app.services.lifecycle_service import LifecycleService
@@ -822,6 +822,13 @@ class AssetService:
 
     @staticmethod
     def update_asset(db: Session, asset_id: str, payload: AssetUpdate, operator: str = "system", user_context: dict | None = None) -> Asset:
+        asset = AssetService.apply_asset_update(db, asset_id, payload, operator, user_context)
+        db.commit()
+        db.refresh(asset)
+        return AssetService.to_out(asset)
+
+    @staticmethod
+    def apply_asset_update(db: Session, asset_id: str, payload: AssetUpdate, operator: str = "system", user_context: dict | None = None) -> Asset:
         asset = AssetService.get_scoped_asset(db, asset_id, user_context)
 
         data = payload.model_dump(exclude_unset=True)
@@ -864,9 +871,27 @@ class AssetService:
             summary=f"更新资产 {asset.asset_id}",
         )
         LifecycleService.record(db, asset.asset_id, "ASSET_UPDATE", old_status, asset.status, operator)
-        db.commit()
-        db.refresh(asset)
-        return AssetService.to_out(asset)
+        return asset
+
+    @staticmethod
+    def batch_update_assets(db: Session, payload: AssetBatchUpdateCreate, operator: str = "system", user_context: dict | None = None) -> dict:
+        rows: list[Asset] = []
+        errors: list[dict] = []
+        clean_ids = [AssetService.normalize_blank(asset_id) for asset_id in payload.asset_ids if AssetService.normalize_blank(asset_id)]
+        unique_ids = list(dict.fromkeys(clean_ids))
+        if not unique_ids:
+            return {"success": 0, "failed": 0, "assets": [], "errors": []}
+        try:
+            for asset_id in unique_ids:
+                rows.append(AssetService.apply_asset_update(db, asset_id, payload.updates, operator, user_context))
+            db.commit()
+            for asset in rows:
+                db.refresh(asset)
+            return {"success": len(rows), "failed": 0, "assets": [AssetService.to_out(asset) for asset in rows], "errors": []}
+        except (AssetValidationError, ValueError) as exc:
+            db.rollback()
+            errors = [{"asset_id": asset_id, "message": str(exc)} for asset_id in unique_ids]
+            return {"success": 0, "failed": len(errors), "assets": [], "errors": errors}
 
     @staticmethod
     def snapshot_asset(asset: Asset) -> dict:

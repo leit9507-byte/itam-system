@@ -3,6 +3,7 @@ import { getPurchases } from './purchase'
 import { getProducts } from './product'
 import { getRepairDashboard } from './repair'
 import { getUsers } from './user'
+import request from '../utils/request'
 
 const DASHBOARD_SOURCE_LIMIT = 1000
 const categoryNames = ['笔记本电脑', '台式机', 'Mac设备', '显示器', '服务器', '存储设备', '网络设备', '软件授权', '其他']
@@ -20,6 +21,16 @@ const lifecycleNames = {
 }
 
 export async function getEnterpriseDashboard(filters = {}) {
+  const dateRange = filters.dateRange || []
+  return request.get('/dashboard/enterprise', {
+    params: {
+      date_from: dateRange[0] || undefined,
+      date_to: dateRange[1] || undefined
+    }
+  })
+}
+
+export async function legacyGetEnterpriseDashboard(filters = {}) {
   const [
     { list: allAssets },
     assetSummary,
