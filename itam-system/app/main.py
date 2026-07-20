@@ -61,7 +61,7 @@ def validate_migration_state() -> None:
         raise RuntimeError("Production requires alembic.ini for migration state checks")
     config = Config(str(alembic_ini))
     config.set_main_option("script_location", str(project_root / "alembic"))
-    config.set_main_option("sqlalchemy.url", settings.database_url)
+    config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
     script = ScriptDirectory.from_config(config)
     expected_heads = set(script.get_heads())
     with engine.connect() as connection:

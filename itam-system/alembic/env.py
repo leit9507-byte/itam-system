@@ -16,7 +16,7 @@ target_metadata = Base.metadata
 
 database_url = get_settings().database_url or os.getenv("DATABASE_URL")
 if database_url:
-    config.set_main_option("sqlalchemy.url", database_url)
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 
 def run_migrations_offline() -> None:
