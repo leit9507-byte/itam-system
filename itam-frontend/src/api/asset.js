@@ -18,6 +18,7 @@ export const assetStatuses = [
 export const statusMap = Object.fromEntries(assetStatuses.map(item => [item.value, item]))
 export const editableAssetStatuses = assetStatuses.filter(item => !['pending_purchase', 'pending_acceptance', 'pending_scrap', 'scrapped', 'disposed'].includes(item.value))
 const DETAIL_CONTEXT_LIMIT = 500
+const IMPORT_TIMEOUT_MS = 180000
 
 export const lifecycleActionMap = {
   CREATE: '资产建档',
@@ -61,7 +62,7 @@ export async function getAssetById(assetId) {
 }
 
 export async function importAssetsFromText(content, operator = 'asset-import') {
-  const result = await request.post('/asset/import/text', { content, operator })
+  const result = await request.post('/asset/import/text', { content, operator }, { timeout: IMPORT_TIMEOUT_MS })
   return normalizeImportResult(result)
 }
 
@@ -69,7 +70,8 @@ export async function importAssetsFromExcel(file, operator = 'asset-excel-import
   const form = new FormData()
   form.append('file', file)
   const result = await request.post(`/asset/import/excel?operator=${encodeURIComponent(operator)}`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' }
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: IMPORT_TIMEOUT_MS
   })
   return normalizeImportResult(result)
 }
@@ -78,12 +80,13 @@ export async function previewAssetsFromExcel(file) {
   const form = new FormData()
   form.append('file', file)
   return normalizeImportPreview(await request.post('/asset/import/excel/preview', form, {
-    headers: { 'Content-Type': 'multipart/form-data' }
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: IMPORT_TIMEOUT_MS
   }))
 }
 
 export async function previewAssetsFromText(content, operator = 'asset-import') {
-  return normalizeImportPreview(await request.post('/asset/import/text/preview', { content, operator }))
+  return normalizeImportPreview(await request.post('/asset/import/text/preview', { content, operator }, { timeout: IMPORT_TIMEOUT_MS }))
 }
 
 export async function downloadAssetImportTemplate() {
@@ -99,7 +102,7 @@ export async function downloadAssetImportTemplate() {
 }
 
 export async function importAssets(items, operator = 'asset-import') {
-  const result = await request.post('/asset/import', { items, operator })
+  const result = await request.post('/asset/import', { items, operator }, { timeout: IMPORT_TIMEOUT_MS })
   return normalizeImportResult(result)
 }
 
