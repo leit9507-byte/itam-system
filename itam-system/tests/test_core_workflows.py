@@ -352,6 +352,15 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertGreater(self.db.query(DeviceType).count(), 0)
         self.assertEqual(self.db.query(ProductCatalog).count(), 0)
 
+    def test_product_seed_reuses_existing_device_type(self):
+        self.db.add(DeviceType(name="笔记本电脑", description="已有类型"))
+        self.db.commit()
+
+        ensure_seed(self.db)
+
+        self.assertEqual(self.db.query(DeviceType).filter(DeviceType.name == "笔记本电脑").count(), 1)
+        self.assertEqual(self.db.query(ProductCatalog).count(), 0)
+
     def test_import_allows_historical_terminal_statuses(self):
         result = AssetService.import_assets(
             self.db,
