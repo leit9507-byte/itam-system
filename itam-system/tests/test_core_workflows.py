@@ -39,6 +39,11 @@ class CoreWorkflowTest(unittest.TestCase):
         self.db.close()
         self.engine.dispose()
 
+    def test_models_package_exports_clean_deploy_tables(self):
+        self.assertTrue(hasattr(app.models, "Company"))
+        self.assertTrue(hasattr(app.models, "Location"))
+        self.assertTrue(hasattr(app.models, "ScrapRequest"))
+
     def add_asset(self, asset_id="ITAM-000001", dept_id="D1", status="in_stock"):
         asset = Asset(
             asset_id=asset_id,
