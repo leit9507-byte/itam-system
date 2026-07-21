@@ -742,7 +742,7 @@ function handleOutboundTargetChange(value) {
 }
 
 function canInbound(row) {
-  return !['in_stock', 'pending_scrap', 'scrapped', 'disposed'].includes(row.status)
+  return !['in_stock', 'pending_scrap', 'scrapped', 'disposed', 'lost'].includes(row.status)
 }
 
 function canOutbound(row) {
@@ -750,11 +750,11 @@ function canOutbound(row) {
 }
 
 function canRepair(row) {
-  return !['scrapped', 'disposed', 'pending_scrap', 'repair'].includes(row.status)
+  return !['scrapped', 'disposed', 'lost', 'pending_scrap', 'repair'].includes(row.status)
 }
 
 function canScrap(row) {
-  return !['scrapped', 'disposed', 'pending_scrap'].includes(row.status)
+  return !['scrapped', 'disposed', 'lost', 'pending_scrap'].includes(row.status)
 }
 
 function hasAssetOwner(row) {
@@ -1113,7 +1113,7 @@ async function submitBatch() {
 }
 
 function isWorkflowLockedStatus(status) {
-  return ['pending_scrap', 'scrapped', 'disposed'].includes(status)
+  return ['pending_scrap', 'scrapped', 'disposed', 'lost'].includes(status)
 }
 
 function manualStatusOptions(currentStatus) {

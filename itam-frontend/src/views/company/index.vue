@@ -46,6 +46,7 @@
         <el-table-column prop="ready_scrap_count" label="待报废" width="90" />
         <el-table-column prop="pending_scrap_count" label="待处置" width="90" />
         <el-table-column prop="scrapped_count" label="已报废" width="90" />
+        <el-table-column prop="lost_count" label="已丢失" width="90" />
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link :disabled="row.virtual" @click.stop="openEdit(row)">编辑</el-button>

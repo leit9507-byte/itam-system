@@ -45,6 +45,7 @@ ASSET_STATUS_LABELS = {
     "pending_scrap": "待处置登记",
     "scrapped": "已报废",
     "disposed": "已处置",
+    "lost": "已丢失",
 }
 
 
@@ -91,6 +92,7 @@ def list_companies(db: Session = Depends(get_db)):
                 "ready_scrap_count": status_counter.get("ready_scrap", 0),
                 "scrapped_count": status_counter.get("scrapped", 0),
                 "disposed_count": status_counter.get("disposed", 0),
+                "lost_count": status_counter.get("lost", 0),
                 "pending_scrap_count": status_counter.get("pending_scrap", 0),
                 "status_distribution": [{"name": status_label(key), "value": value} for key, value in status_counter.items()],
             }
@@ -117,6 +119,7 @@ def list_companies(db: Session = Depends(get_db)):
                 "ready_scrap_count": status_counter.get("ready_scrap", 0),
                 "scrapped_count": status_counter.get("scrapped", 0),
                 "disposed_count": status_counter.get("disposed", 0),
+                "lost_count": status_counter.get("lost", 0),
                 "pending_scrap_count": status_counter.get("pending_scrap", 0),
                 "status_distribution": [{"name": status_label(key), "value": value} for key, value in status_counter.items()],
             }

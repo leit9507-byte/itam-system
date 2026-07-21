@@ -174,7 +174,7 @@ def export_person_holdings_csv(request: Request, db: Session = Depends(get_db)):
     rows = []
     query = (
         scoped_assets_query(db, request)
-        .filter(Asset.owner_user_id.isnot(None), Asset.owner_user_id != "", ~Asset.status.in_(["scrapped", "disposed"]))
+        .filter(Asset.owner_user_id.isnot(None), Asset.owner_user_id != "", ~Asset.status.in_(["scrapped", "disposed", "lost"]))
         .order_by(Asset.owner_user_id.asc(), Asset.asset_id.asc())
     )
     for asset in query.all():
@@ -352,7 +352,7 @@ def report_analytics(request: Request, db: Session = Depends(get_db)):
             func.coalesce(func.sum(Asset.purchase_price), 0),
             func.count(func.distinct(Asset.owner_user_id)),
         )
-        .filter(Asset.asset_id.in_(scoped_asset_ids), ~Asset.status.in_(["scrapped", "disposed"]))
+        .filter(Asset.asset_id.in_(scoped_asset_ids), ~Asset.status.in_(["scrapped", "disposed", "lost"]))
         .group_by(Asset.dept_id)
         .order_by(func.count(Asset.asset_id).desc())
         .all()

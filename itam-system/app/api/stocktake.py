@@ -273,6 +273,7 @@ def scoped_assets(db: Session, scope: str, target: str | list[str] | None, user_
     if not include_scrapped:
         excluded_statuses.append("scrapped")
     excluded_statuses.append("disposed")
+    excluded_statuses.append("lost")
     if excluded_statuses:
         query = query.filter(~Asset.status.in_(excluded_statuses))
     if scope == "部门" and targets:

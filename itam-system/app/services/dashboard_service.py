@@ -28,6 +28,7 @@ class DashboardService:
         "pending_scrap": "待处置登记",
         "scrapped": "已报废",
         "disposed": "已处置",
+        "lost": "已丢失",
     }
     INACTIVE_USER_STATUSES = {"inactive", "disabled", "locked", "resigned", "left", "offboarded", "离职", "停用", "禁用"}
 
@@ -35,7 +36,7 @@ class DashboardService:
     def enterprise(db: Session, user_context: dict | None = None, date_range: list[str] | None = None) -> dict:
         now = datetime.utcnow()
         summary = AssetService.asset_summary(db, user_context)
-        managed_query = AssetService.apply_data_scope(db.query(Asset), user_context).filter(or_(Asset.status.is_(None), ~Asset.status.in_(["scrapped", "disposed"])))
+        managed_query = AssetService.apply_data_scope(db.query(Asset), user_context).filter(or_(Asset.status.is_(None), ~Asset.status.in_(["scrapped", "disposed", "lost"])))
         assets_for_detail = managed_query.options().all()
         products = db.query(ProductCatalog).all()
 
@@ -84,6 +85,7 @@ class DashboardService:
                 "idle": int(status_counts.get("idle", 0)),
                 "repair": int(status_counts.get("repair", 0)),
                 "scrapped": int(summary["status_counts"].get("scrapped", 0) if use_global_summary else sum(1 for asset in assets if asset.status == "scrapped")),
+                "lost": int(summary["status_counts"].get("lost", 0) if use_global_summary else sum(1 for asset in assets if asset.status == "lost")),
                 "pending_scrap": int(status_counts.get("ready_scrap", 0)) + int(status_counts.get("pending_scrap", 0)),
             },
             "personnelTrend": DashboardService.personnel_trend(users, now),
@@ -311,6 +313,7 @@ class DashboardService:
             {"name": DashboardService.LIFECYCLE_NAMES["pending_scrap"], "value": count("pending_scrap")},
             {"name": DashboardService.LIFECYCLE_NAMES["scrapped"], "value": count("scrapped")},
             {"name": DashboardService.LIFECYCLE_NAMES["disposed"], "value": count("disposed")},
+            {"name": DashboardService.LIFECYCLE_NAMES["lost"], "value": count("lost")},
         ]
 
     @staticmethod

@@ -17,7 +17,8 @@ const lifecycleNames = {
   ready_scrap: '待报废',
   pending_scrap: '待处置登记',
   scrapped: '已报废',
-  disposed: '已处置'
+  disposed: '已处置',
+  lost: '已丢失'
 }
 
 export async function getEnterpriseDashboard(filters = {}) {
@@ -66,6 +67,7 @@ export async function legacyGetEnterpriseDashboard(filters = {}) {
   const idle = useGlobalSummary ? activeStatusCounts.idle || 0 : countStatus(assets, 'idle')
   const repair = useGlobalSummary ? activeStatusCounts.repair || 0 : countStatus(assets, 'repair')
   const scrapped = useGlobalSummary ? summary.statusCounts.scrapped || 0 : countStatus(assets, 'scrapped')
+  const lost = useGlobalSummary ? summary.statusCounts.lost || 0 : countStatus(assets, 'lost')
   const pendingScrap = useGlobalSummary
     ? (activeStatusCounts.ready_scrap || 0) + (activeStatusCounts.pending_scrap || 0)
     : countStatus(assets, 'ready_scrap') + countStatus(assets, 'pending_scrap')
@@ -95,7 +97,7 @@ export async function legacyGetEnterpriseDashboard(filters = {}) {
     lifecycleDistribution: buildLifecycleDistribution(assets, purchases, useGlobalSummary ? summary.statusCounts : null),
     retirementSoonAssets,
     maintenance: buildMaintenance(repairDashboard, assets),
-    statusCounts: { in_use: inUse, idle, repair, scrapped, pending_scrap: pendingScrap },
+    statusCounts: { in_use: inUse, idle, repair, scrapped, lost, pending_scrap: pendingScrap },
     personnelTrend: buildPersonnelTrend(users || []),
     recentRecords: buildRecentRecords(lifecycleResult.list || [], assets),
     warrantyRows: buildWarrantyRows(retirementSoonAssets)
@@ -111,7 +113,7 @@ function countStatus(assets, status) {
 }
 
 function isManagedAsset(asset) {
-  return !['scrapped', 'disposed'].includes(asset.status)
+  return !['scrapped', 'disposed', 'lost'].includes(asset.status)
 }
 
 function sumAssets(assets) {
@@ -208,7 +210,7 @@ function buildRetirementSoonAssets(assets, products) {
     .map(asset => {
       const expireDate = resolveWarrantyExpireDate(asset)
       const retirementDate = expireDate || resolveRetirementDate(asset, products)
-      if (!retirementDate || ['scrapped', 'disposed'].includes(asset.status)) return null
+      if (!retirementDate || ['scrapped', 'disposed', 'lost'].includes(asset.status)) return null
       const days = Math.ceil((retirementDate.getTime() - now.getTime()) / 86400000)
       if (days > 180) return null
       return {
@@ -347,7 +349,7 @@ function buildRetirementDueTrend(assets, products) {
   const retirementAssets = assets
     .map(asset => {
       const retirementDate = resolveRetirementDate(asset, products) || resolveWarrantyExpireDate(asset)
-      return retirementDate && !['scrapped', 'disposed'].includes(asset.status) ? { asset, retirementDate } : null
+      return retirementDate && !['scrapped', 'disposed', 'lost'].includes(asset.status) ? { asset, retirementDate } : null
     })
     .filter(Boolean)
   return {
@@ -388,7 +390,8 @@ function buildLifecycleDistribution(assets, purchases, statusCounts = null) {
     { name: lifecycleNames.ready_scrap, value: count('ready_scrap') },
     { name: lifecycleNames.pending_scrap, value: count('pending_scrap') },
     { name: lifecycleNames.scrapped, value: count('scrapped') },
-    { name: lifecycleNames.disposed, value: count('disposed') }
+    { name: lifecycleNames.disposed, value: count('disposed') },
+    { name: lifecycleNames.lost, value: count('lost') }
   ]
 }
 

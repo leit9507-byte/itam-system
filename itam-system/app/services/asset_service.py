@@ -44,26 +44,27 @@ class AssetService:
     DEFAULT_COMPANY = "未设置公司"
     ASSIGNED_STATUSES = {"in_use", "borrowed"}
     UNASSIGNED_STATUSES = {"pending_purchase", "pending_acceptance", "in_stock", "idle", "ready_scrap"}
-    WORKFLOW_STATUSES = {"pending_purchase", "pending_acceptance", "pending_scrap", "scrapped", "disposed"}
-    TERMINAL_STATUSES = {"scrapped", "disposed"}
+    WORKFLOW_STATUSES = {"pending_purchase", "pending_acceptance", "pending_scrap", "scrapped", "disposed", "lost"}
+    TERMINAL_STATUSES = {"scrapped", "disposed", "lost"}
     CHECKOUT_ALLOWED_FROM = {"in_stock", "idle"}
     CHECKIN_ALLOWED_FROM = {"in_use", "borrowed", "out_stock", "repair"}
     VALID_STATUSES = {
         "pending_purchase", "pending_acceptance", "in_stock", "idle", "in_use",
         "borrowed", "out_stock", "repair", "ready_scrap", "pending_scrap",
-        "scrapped", "disposed",
+        "scrapped", "disposed", "lost",
     }
     STATUS_TRANSITIONS = {
-        "in_stock": {"idle", "in_use", "borrowed", "out_stock", "repair", "ready_scrap", "pending_scrap"},
-        "idle": {"in_stock", "in_use", "borrowed", "out_stock", "repair", "ready_scrap", "pending_scrap"},
-        "in_use": {"in_stock", "repair", "ready_scrap", "pending_scrap"},
-        "borrowed": {"in_stock", "repair", "ready_scrap", "pending_scrap"},
-        "out_stock": {"in_stock", "repair", "ready_scrap", "pending_scrap"},
-        "repair": {"in_stock", "ready_scrap", "pending_scrap"},
-        "ready_scrap": {"in_stock", "scrapped"},
-        "pending_scrap": {"ready_scrap", "scrapped", "disposed"},
-        "scrapped": {"disposed"},
+        "in_stock": {"idle", "in_use", "borrowed", "out_stock", "repair", "ready_scrap", "pending_scrap", "lost"},
+        "idle": {"in_stock", "in_use", "borrowed", "out_stock", "repair", "ready_scrap", "pending_scrap", "lost"},
+        "in_use": {"in_stock", "repair", "ready_scrap", "pending_scrap", "lost"},
+        "borrowed": {"in_stock", "repair", "ready_scrap", "pending_scrap", "lost"},
+        "out_stock": {"in_stock", "repair", "ready_scrap", "pending_scrap", "lost"},
+        "repair": {"in_stock", "ready_scrap", "pending_scrap", "lost"},
+        "ready_scrap": {"in_stock", "scrapped", "lost"},
+        "pending_scrap": {"ready_scrap", "scrapped", "disposed", "lost"},
+        "scrapped": {"disposed", "lost"},
         "disposed": set(),
+        "lost": set(),
     }
     IMPORT_TEMPLATE_HEADERS = [
         "asset_id",
@@ -166,6 +167,8 @@ class AssetService:
             raise AssetValidationError(f"资产已报废，只能进行处置归档，不能执行{action}")
         if asset.status == "disposed":
             raise AssetValidationError(f"资产已处置归档，不能执行{action}")
+        if asset.status == "lost":
+            raise AssetValidationError(f"资产已丢失，不能执行{action}")
 
     @staticmethod
     def apply_warranty_expire(asset: Asset) -> None:
@@ -480,7 +483,7 @@ class AssetService:
 
         status_validation = DataValidation(
             type="list",
-            formula1='"in_stock,in_use,idle,borrowed,out_stock,repair,ready_scrap"',
+            formula1='"in_stock,in_use,idle,borrowed,out_stock,repair,ready_scrap,lost"',
             allow_blank=False,
         )
         sheet.add_data_validation(status_validation)
@@ -871,7 +874,7 @@ class AssetService:
         scoped_ids = scoped.with_entities(Asset.asset_id)
         total = scoped.count()
         total_value = scoped.with_entities(func.coalesce(func.sum(Asset.purchase_price), 0)).scalar() or 0
-        managed_filter = or_(Asset.status.is_(None), ~Asset.status.in_(["scrapped", "disposed"]))
+        managed_filter = or_(Asset.status.is_(None), ~Asset.status.in_(["scrapped", "disposed", "lost"]))
         managed_total = scoped.filter(managed_filter).count()
         managed_total_value = scoped.filter(managed_filter).with_entities(func.coalesce(func.sum(Asset.purchase_price), 0)).scalar() or 0
         current_month_count = scoped.filter(Asset.created_at >= current_month).count()
@@ -1558,6 +1561,7 @@ class AssetService:
             "pending_scrap": "待处置登记",
             "scrapped": "已报废",
             "disposed": "已处置",
+            "lost": "已丢失",
         }.get(value or "", value or "-")
 
     @staticmethod

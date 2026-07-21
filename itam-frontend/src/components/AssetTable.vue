@@ -33,9 +33,9 @@
     <el-table-column label="操作" width="260" fixed="right">
       <template #default="{ row }">
         <el-button type="primary" link @click="$emit('detail', row)">详情</el-button>
-        <el-button type="success" link :disabled="row.status === 'in_stock' || row.status === 'scrapped'" @click="$emit('inbound', row)">入库</el-button>
-        <el-button type="warning" link :disabled="['scrapped', 'pending_scrap'].includes(row.status)" @click="$emit('outbound', row)">出库</el-button>
-        <el-button type="danger" link :disabled="['scrapped', 'pending_scrap'].includes(row.status)" @click="$emit('scrap', row)">申请报废</el-button>
+        <el-button type="success" link :disabled="['in_stock', 'scrapped', 'disposed', 'lost'].includes(row.status)" @click="$emit('inbound', row)">入库</el-button>
+        <el-button type="warning" link :disabled="['scrapped', 'disposed', 'lost', 'pending_scrap'].includes(row.status)" @click="$emit('outbound', row)">出库</el-button>
+        <el-button type="danger" link :disabled="['scrapped', 'disposed', 'lost', 'pending_scrap'].includes(row.status)" @click="$emit('scrap', row)">申请报废</el-button>
       </template>
     </el-table-column>
   </el-table>

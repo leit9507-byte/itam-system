@@ -12,11 +12,12 @@ export const assetStatuses = [
   { label: '待报废', value: 'ready_scrap', type: 'warning' },
   { label: '待处置登记', value: 'pending_scrap', type: 'danger' },
   { label: '已报废', value: 'scrapped', type: 'info' },
-  { label: '已报废', value: 'disposed', type: 'info' }
+  { label: '已处置', value: 'disposed', type: 'info' },
+  { label: '已丢失', value: 'lost', type: 'danger' }
 ]
 
 export const statusMap = Object.fromEntries(assetStatuses.map(item => [item.value, item]))
-export const editableAssetStatuses = assetStatuses.filter(item => !['pending_purchase', 'pending_acceptance', 'pending_scrap', 'scrapped', 'disposed'].includes(item.value))
+export const editableAssetStatuses = assetStatuses.filter(item => !['pending_purchase', 'pending_acceptance', 'pending_scrap', 'scrapped', 'disposed', 'lost'].includes(item.value))
 const DETAIL_CONTEXT_LIMIT = 500
 const IMPORT_TIMEOUT_MS = 180000
 
@@ -366,7 +367,7 @@ export async function getDashboardStats() {
   const { list } = await getAssets({})
   const inUse = list.filter(item => item.status === 'in_use').length
   const idle = list.filter(item => item.status === 'idle').length
-  const risk = list.filter(item => !item.owner || !item.dept || ['idle', 'repair', 'ready_scrap', 'pending_scrap', 'scrapped'].includes(item.status)).length
+  const risk = list.filter(item => !item.owner || !item.dept || ['idle', 'repair', 'ready_scrap', 'pending_scrap', 'scrapped', 'lost'].includes(item.status)).length
   return {
     total: list.length,
     inUse,
@@ -700,14 +701,14 @@ function lifecycleTone(row) {
   if (row.to_status === 'in_stock') return 'primary'
   if (['in_use', 'out_stock'].includes(row.to_status)) return 'success'
   if (row.to_status === 'borrowed') return 'warning'
-  if (['repair', 'pending_scrap', 'scrapped', 'disposed'].includes(row.to_status)) return 'danger'
+  if (['repair', 'pending_scrap', 'scrapped', 'disposed', 'lost'].includes(row.to_status)) return 'danger'
   return 'info'
 }
 
 function lifecycleGroup(row) {
   if (['STATUS_CHANGE', 'PURCHASE', 'PURCHASE_ACCEPTANCE'].includes(row.type)) return 'inventory'
   if (['REPAIR_CREATE', 'REPAIR_FINISH'].includes(row.type) || row.to_status === 'repair') return 'repair'
-  if (['SCRAP_REQUEST', 'SCRAP_APPROVE', 'SCRAP_REJECT', 'SCRAP_DISPOSE'].includes(row.type) || ['ready_scrap', 'pending_scrap', 'scrapped', 'disposed'].includes(row.to_status)) return 'scrap'
+  if (['SCRAP_REQUEST', 'SCRAP_APPROVE', 'SCRAP_REJECT', 'SCRAP_DISPOSE'].includes(row.type) || ['ready_scrap', 'pending_scrap', 'scrapped', 'disposed', 'lost'].includes(row.to_status)) return 'scrap'
   return 'lifecycle'
 }
 
@@ -747,6 +748,7 @@ function buildAssetRisksV2(asset) {
   if (asset.status === 'pending_scrap') risks.push({ level: 'medium', message: '待处置登记', detail: '资产已进入报废处置登记流程，请补充退役时间、审批单号和处理手段。' })
   if (asset.status === 'scrapped') risks.push({ level: 'low', message: '资产已报废', detail: '资产已报废，等待处置归档，后续盘点应作为非在用资产处理。' })
   if (asset.status === 'disposed') risks.push({ level: 'low', message: '资产已处置归档', detail: '资产已完成处置，保留审计记录和附件归档即可。' })
+  if (asset.status === 'lost') risks.push({ level: 'high', message: '资产已丢失', detail: '资产已登记丢失，应保留盘点、审批或责任确认记录，禁止继续领用、维修或处置操作。' })
   return risks.length ? risks : [{ level: 'low', message: '暂无显著风险', detail: '责任人、状态、质保和预计退役时间未发现明显异常。' }]
 }
 
@@ -777,6 +779,7 @@ function buildAssetRisks(asset) {
   if (asset.status === 'pending_scrap') risks.push({ level: 'medium', message: '资产待报废处置登记' })
   if (asset.status === 'scrapped') risks.push({ level: 'low', message: '资产已报废，等待处置归档' })
   if (asset.status === 'disposed') risks.push({ level: 'low', message: '资产已处置归档，仅保留审计记录' })
+  if (asset.status === 'lost') risks.push({ level: 'high', message: '资产已丢失，仅保留审计记录' })
   if (asset.warranty_expire_date && new Date(asset.warranty_expire_date) < new Date()) risks.push({ level: 'medium', message: '资产质保已过期' })
   return risks.length ? risks : [{ level: 'low', message: '暂无显著风险' }]
 }

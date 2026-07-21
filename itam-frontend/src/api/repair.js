@@ -190,7 +190,7 @@ function buildAgeTrend(rows) {
 }
 
 function buildBrandFaultRates(rows, assets) {
-  const managedAssets = assets.filter(item => !['scrapped', 'disposed'].includes(item.status))
+  const managedAssets = assets.filter(item => !['scrapped', 'disposed', 'lost'].includes(item.status))
   const byBrand = new Map()
   managedAssets.forEach(asset => {
     const brand = normalizeBrand(asset.brand)

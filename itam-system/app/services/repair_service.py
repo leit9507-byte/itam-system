@@ -133,7 +133,7 @@ class RepairService:
         ).with_for_update().first()
         if not asset:
             raise ValueError("asset not found")
-        if asset.status in {"scrapped", "disposed"}:
+        if asset.status in {"scrapped", "disposed", "lost"}:
             raise ValueError("已报废/已处置资产不能创建维修单")
         active = db.query(RepairRecord).filter(
             RepairRecord.asset_id == payload.asset_id,
@@ -199,7 +199,7 @@ class RepairService:
         if payload.remark:
             record.remark = payload.remark
         if asset:
-            if asset.status in {"scrapped", "disposed"}:
+            if asset.status in {"scrapped", "disposed", "lost"}:
                 raise ValueError("已报废/已处置资产不能变更维修状态")
             from_status = asset.status
             if from_status != "repair":

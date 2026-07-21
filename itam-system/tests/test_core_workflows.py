@@ -332,13 +332,17 @@ class CoreWorkflowTest(unittest.TestCase):
                 items=[
                     AssetImportRow(asset_id="OLD-SCRAP-001", name="报废历史资产", category="显示器", status="scrapped"),
                     AssetImportRow(asset_id="OLD-DISP-001", name="已处置历史资产", category="手机", status="disposed"),
+                    AssetImportRow(asset_id="OLD-LOST-001", name="丢失历史资产", category="手机", status="lost"),
                 ],
             ),
         )
 
-        self.assertEqual(result["created"], 2)
+        self.assertEqual(result["created"], 3)
         self.assertEqual(self.db.get(Asset, "OLD-SCRAP-001").status, "scrapped")
         self.assertEqual(self.db.get(Asset, "OLD-DISP-001").status, "disposed")
+        self.assertEqual(self.db.get(Asset, "OLD-LOST-001").status, "lost")
+        with self.assertRaises(AssetValidationError):
+            AssetService.ensure_asset_operable(self.db.get(Asset, "OLD-LOST-001"), "维修")
 
 
 if __name__ == "__main__":
