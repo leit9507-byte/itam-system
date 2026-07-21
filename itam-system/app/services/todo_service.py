@@ -1,3 +1,4 @@
+import re
 import time
 from datetime import date, datetime, timedelta
 
@@ -65,7 +66,7 @@ class TodoService:
         assets = asset_query.order_by(Asset.created_at.desc()).limit(TodoService.SOURCE_LIMIT).all()
         users = TodoService.scoped_users(db, user_context)
         inactive_user_map = TodoService.inactive_user_map(users)
-        assigned_user_ids = TodoService.assigned_user_ids(assets)
+        assigned_user_ids = TodoService.assigned_user_ids_from_db(db, user_context)
 
         rows = [
             *TodoService.onboarding_todos(users, assigned_user_ids),
@@ -287,22 +288,50 @@ class TodoService:
             if asset.status not in {"in_use", "borrowed", "out_stock"}:
                 continue
             if asset.owner_user_id:
-                ids.add(TodoService.identity_key(asset.owner_user_id))
+                ids.update(TodoService.identity_keys(asset.owner_user_id))
+        return ids
+
+    @staticmethod
+    def assigned_user_ids_from_db(db: Session, user_context: dict) -> set[str]:
+        query = AssetService.apply_data_scope(db.query(Asset.owner_user_id), user_context)
+        rows = (
+            query
+            .filter(Asset.status.in_(["in_use", "borrowed", "out_stock"]))
+            .filter(Asset.owner_user_id.isnot(None), Asset.owner_user_id != "")
+            .distinct()
+            .all()
+        )
+        ids: set[str] = set()
+        for row in rows:
+            ids.update(TodoService.identity_keys(row[0]))
         return ids
 
     @staticmethod
     def user_has_assigned_asset(user: UserDirectory, assigned_user_ids: set[str]) -> bool:
-        return any(TodoService.identity_key(value) in assigned_user_ids for value in [
+        return any(key in assigned_user_ids for value in [
             user.user_id,
             user.username,
             user.external_id,
             user.email,
             user.display_name,
-        ])
+        ] for key in TodoService.identity_keys(value))
 
     @staticmethod
     def identity_key(value: str | None) -> str:
         return str(value or "").strip().casefold()
+
+    @staticmethod
+    def identity_keys(value: str | None) -> set[str]:
+        raw = TodoService.identity_key(value)
+        if not raw:
+            return set()
+        parts = {
+            item.strip().casefold()
+            for item in re.split(r"[\s\-_/\\|,;:，；：()（）]+", raw)
+            if item.strip()
+        }
+        parts.add(raw)
+        return parts
 
     @staticmethod
     def priority_weight(priority: str | None) -> int:

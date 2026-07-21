@@ -179,12 +179,40 @@ class CoreWorkflowTest(unittest.TestCase):
 
     def test_onboarding_todo_skips_users_with_existing_imported_asset_owner(self):
         self.db.add(UserDirectory(user_id="U-ONBOARD-1", username="alice", display_name="Alice Zhang", status="active"))
-        self.db.add(Asset(asset_id="ITAM-ONBOARD-1", asset_no="ITAM-ONBOARD-1", name="Laptop", category="Laptop", status="in_use", owner_user_id="Alice Zhang"))
+        self.db.add(Asset(asset_id="ITAM-ONBOARD-1", asset_no="ITAM-ONBOARD-1", name="Laptop", category="Laptop", status="in_use", owner_user_id="alice-Alice Zhang"))
         self.db.commit()
 
         todos = TodoService.list_todos(self.db, {"role": "admin"})
 
         self.assertFalse(any(item["type"] == "onboarding_assign" and item.get("user_id") == "U-ONBOARD-1" for item in todos))
+
+    def test_onboarding_todo_uses_all_assigned_assets_not_only_recent_limit(self):
+        self.db.add(UserDirectory(user_id="U-ONBOARD-OLD", username="yukiko", display_name="廖玉连", status="active"))
+        for index in range(TodoService.SOURCE_LIMIT + 5):
+            self.db.add(
+                Asset(
+                    asset_id=f"ITAM-FILL-{index:04d}",
+                    asset_no=f"ITAM-FILL-{index:04d}",
+                    name="Fill asset",
+                    category="Laptop",
+                    status="in_stock",
+                )
+            )
+        self.db.add(
+            Asset(
+                asset_id="ITAM-OLD-OWNER",
+                asset_no="ITAM-OLD-OWNER",
+                name="Desktop",
+                category="Desktop",
+                status="in_use",
+                owner_user_id="yukiko-廖玉连",
+            )
+        )
+        self.db.commit()
+
+        todos = TodoService.list_todos(self.db, {"role": "admin"})
+
+        self.assertFalse(any(item["type"] == "onboarding_assign" and item.get("user_id") == "U-ONBOARD-OLD" for item in todos))
 
     def test_onboarding_todo_skips_users_marked_no_asset_required(self):
         self.db.add(
