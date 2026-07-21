@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import or_
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -138,17 +137,4 @@ def nullable_text_match(column, value: str):
 
 
 def ensure_seed(db: Session) -> None:
-    defaults = [
-        ("笔记本电脑", "移动办公电脑"),
-        ("显示器", "显示设备"),
-        ("网络设备", "交换机、路由器、防火墙等"),
-        ("打印设备", "打印机和复合机"),
-    ]
-    for name, description in defaults:
-        if db.query(DeviceType.id).filter(DeviceType.name == name).first():
-            continue
-        db.add(DeviceType(name=name, description=description))
-        try:
-            db.commit()
-        except IntegrityError:
-            db.rollback()
+    return None

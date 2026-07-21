@@ -346,13 +346,13 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(catalogs[0].default_warehouse, "阳光粤海大厦")
         self.assertEqual(self.db.query(Company).filter(Company.name == "雷泰科技").count(), 1)
 
-    def test_product_seed_does_not_create_demo_products(self):
+    def test_product_seed_keeps_catalog_clean(self):
         ensure_seed(self.db)
 
-        self.assertGreater(self.db.query(DeviceType).count(), 0)
+        self.assertEqual(self.db.query(DeviceType).count(), 0)
         self.assertEqual(self.db.query(ProductCatalog).count(), 0)
 
-    def test_product_seed_reuses_existing_device_type(self):
+    def test_product_seed_keeps_existing_device_type(self):
         self.db.add(DeviceType(name="笔记本电脑", description="已有类型"))
         self.db.commit()
 
