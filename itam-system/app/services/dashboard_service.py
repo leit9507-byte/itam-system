@@ -1,4 +1,6 @@
 from collections import Counter
+import copy
+import time
 from datetime import datetime
 
 from sqlalchemy import func, or_
@@ -32,13 +34,24 @@ class DashboardService:
     }
     INACTIVE_USER_STATUSES = {"inactive", "disabled", "locked", "resigned", "left", "offboarded", "离职", "停用", "禁用"}
 
+    CACHE_TTL_SECONDS = 45
+    _cache: dict[str, tuple[float, dict]] = {}
+
     @staticmethod
     def enterprise(db: Session, user_context: dict | None = None, date_range: list[str] | None = None) -> dict:
+        cache_key = DashboardService.cache_key(user_context, date_range)
+        now_monotonic = time.monotonic()
+        cached = DashboardService._cache.get(cache_key)
+        if cached and now_monotonic - cached[0] <= DashboardService.CACHE_TTL_SECONDS:
+            return copy.deepcopy(cached[1])
+
         now = datetime.utcnow()
         summary = AssetService.asset_summary(db, user_context)
         managed_query = AssetService.apply_data_scope(db.query(Asset), user_context).filter(or_(Asset.status.is_(None), ~Asset.status.in_(["scrapped", "disposed", "lost"])))
         assets_for_detail = managed_query.options().all()
         products = db.query(ProductCatalog).all()
+        product_index = DashboardService.product_retirement_index(products)
+        products = product_index
 
         scoped_assets = DashboardService.filter_by_date_range(assets_for_detail, date_range, "created_at")
         assets = scoped_assets if date_range else assets_for_detail
@@ -56,12 +69,12 @@ class DashboardService:
 
         purchases = DashboardService.scoped_purchases(db, user_context, date_range)
         scraps = DashboardService.scoped_scraps(db, user_context, date_range)
-        retirement_assets = DashboardService.retirement_soon_assets(assets, products, now)
+        retirement_assets = DashboardService.retirement_soon_assets(assets, product_index, now)
         repair_dashboard = DashboardService.repair_dashboard(db, user_context)
         lifecycles = DashboardService.scoped_lifecycles(db, user_context, limit=20)
         users = DashboardService.scoped_users(db, user_context)
 
-        return {
+        result = {
             "metrics": [
                 DashboardService.metric("在管资产", total, "项", "", DashboardService.compare(total, max(total - current_month_count, 0)), DashboardService.asset_month_trend(assets_for_detail, "count", now), "primary"),
                 DashboardService.metric("资产原值", original_value, "", "¥", DashboardService.compare(DashboardService.sum_assets_by_month(assets_for_detail, 0, now), DashboardService.sum_assets_by_month(assets_for_detail, 1, now)), DashboardService.asset_month_trend(assets, "value", now), "success"),
@@ -92,6 +105,30 @@ class DashboardService:
             "recentRecords": DashboardService.recent_records(lifecycles, assets),
             "warrantyRows": DashboardService.warranty_rows(retirement_assets),
         }
+        DashboardService._cache[cache_key] = (now_monotonic, copy.deepcopy(result))
+        DashboardService.prune_cache(now_monotonic)
+        return result
+
+    @staticmethod
+    def cache_key(user_context: dict | None, date_range: list[str] | None) -> str:
+        user_context = user_context or {}
+        return "|".join([
+            str(user_context.get("role") or ""),
+            str(user_context.get("user_id") or ""),
+            str(user_context.get("username") or ""),
+            str(user_context.get("dept_id") or user_context.get("dept_name") or ""),
+            ",".join(date_range or []),
+        ])
+
+    @staticmethod
+    def prune_cache(now: float) -> None:
+        expired = [
+            key
+            for key, (created_at, _) in DashboardService._cache.items()
+            if now - created_at > DashboardService.CACHE_TTL_SECONDS * 3
+        ]
+        for key in expired:
+            DashboardService._cache.pop(key, None)
 
     @staticmethod
     def metric(label, value, suffix, prefix, change, trend, tone) -> dict:
@@ -355,10 +392,42 @@ class DashboardService:
         config = asset.config or {}
         if config.get("retirement_years"):
             return int(config["retirement_years"])
+        if isinstance(products, dict):
+            for key in DashboardService.product_lookup_keys(asset):
+                if key in products:
+                    return int(products[key] or 0)
+            return 0
         for product in products:
             if DashboardService.product_matches_asset(product, asset):
                 return int(product.retirement_years or 0)
         return 0
+
+    @staticmethod
+    def product_retirement_index(products: list[ProductCatalog]) -> dict[tuple[str, str, str], int]:
+        rows: dict[tuple[str, str, str], int] = {}
+        for product in products:
+            years = int(product.retirement_years or 0)
+            if not years:
+                continue
+            name = DashboardService.normalize_text(product.product_name)
+            model = DashboardService.normalize_text(product.model)
+            brand = DashboardService.normalize_text(product.brand)
+            if not name or not model:
+                continue
+            rows[(name, model, brand)] = years
+            rows.setdefault((name, model, ""), years)
+        return rows
+
+    @staticmethod
+    def product_lookup_keys(asset: Asset) -> list[tuple[str, str, str]]:
+        name = DashboardService.normalize_text(asset.name)
+        model = DashboardService.normalize_text(asset.model)
+        brand = DashboardService.normalize_text(asset.brand)
+        return [(name, model, brand), (name, model, "")]
+
+    @staticmethod
+    def normalize_text(value: str | None) -> str:
+        return str(value or "").strip().lower()
 
     @staticmethod
     def product_matches_asset(product: ProductCatalog, asset: Asset) -> bool:

@@ -34,6 +34,7 @@ class CoreWorkflowTest(unittest.TestCase):
         Base.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine)
         self.db = self.Session()
+        DashboardService._cache.clear()
 
     def tearDown(self):
         self.db.close()
@@ -148,6 +149,14 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(metrics["在管资产"], 2)
         self.assertTrue(any(item["name"] == "库存中" and item["value"] == 1 for item in result["lifecycleDistribution"]))
         self.assertTrue(any(item["name"] == "笔记本电脑" and item["value"] == 2 for item in result["categoryDistribution"]))
+
+    def test_dashboard_product_retirement_index_matches_asset(self):
+        product = ProductCatalog(product_name="ThinkPad X1 Carbon", device_type="Laptop", brand="Lenovo", model="Gen 12", retirement_years=4)
+        asset = Asset(asset_id="ITAM-RET-001", name="ThinkPad X1 Carbon", brand="Lenovo", model="Gen 12")
+
+        product_index = DashboardService.product_retirement_index([product])
+
+        self.assertEqual(DashboardService.resolve_retirement_years(asset, product_index), 4)
 
     def test_todo_service_caches_short_lived_list(self):
         TodoService.invalidate()
