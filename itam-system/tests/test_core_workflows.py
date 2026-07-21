@@ -13,6 +13,7 @@ from app.models.product import DeviceType, ProductCatalog
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.repair import RepairRecord
 from app.models.scan_binding import AssetScanBinding
+from app.models.user import UserDirectory
 from app.core.schema_compat import current_timestamp_sql
 from app.schemas.asset import AssetBatchImport, AssetBatchUpdateCreate, AssetImportRow, AssetUpdate
 from app.schemas.purchase import PurchaseAcceptanceReceive
@@ -35,6 +36,7 @@ class CoreWorkflowTest(unittest.TestCase):
         self.Session = sessionmaker(bind=self.engine)
         self.db = self.Session()
         DashboardService._cache.clear()
+        TodoService.invalidate()
 
     def tearDown(self):
         self.db.close()
@@ -174,6 +176,31 @@ class CoreWorkflowTest(unittest.TestCase):
 
         self.assertEqual(len(first), len(second))
         self.assertGreater(len(third), len(second))
+
+    def test_onboarding_todo_skips_users_with_existing_imported_asset_owner(self):
+        self.db.add(UserDirectory(user_id="U-ONBOARD-1", username="alice", display_name="Alice Zhang", status="active"))
+        self.db.add(Asset(asset_id="ITAM-ONBOARD-1", asset_no="ITAM-ONBOARD-1", name="Laptop", category="Laptop", status="in_use", owner_user_id="Alice Zhang"))
+        self.db.commit()
+
+        todos = TodoService.list_todos(self.db, {"role": "admin"})
+
+        self.assertFalse(any(item["type"] == "onboarding_assign" and item.get("user_id") == "U-ONBOARD-1" for item in todos))
+
+    def test_onboarding_todo_skips_users_marked_no_asset_required(self):
+        self.db.add(
+            UserDirectory(
+                user_id="U-ONBOARD-2",
+                username="bob",
+                display_name="Bob Li",
+                status="active",
+                asset_assignment_required=False,
+            )
+        )
+        self.db.commit()
+
+        todos = TodoService.list_todos(self.db, {"role": "admin"})
+
+        self.assertFalse(any(item["type"] == "onboarding_assign" and item.get("user_id") == "U-ONBOARD-2" for item in todos))
 
     def test_batch_update_rolls_back_when_any_asset_fails(self):
         self.add_asset(asset_id="ITAM-BATCH-1")

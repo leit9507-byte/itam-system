@@ -35,6 +35,7 @@
     </el-form>
     <template #footer>
       <el-button @click="assignDialog.visible = false">取消</el-button>
+      <el-button :loading="processing" @click="skipAssetAssignment">不需要分配公司资产</el-button>
       <el-button type="primary" :loading="processing" @click="submitAssign">确认分配</el-button>
     </template>
   </el-dialog>
@@ -72,7 +73,7 @@ import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getAssets, inboundAsset, outboundAsset } from '../api/asset'
 import { getLocations } from '../api/location'
-import { getUsers } from '../api/user'
+import { getUsers, updateUserAssetAssignment } from '../api/user'
 
 const emit = defineEmits(['completed'])
 const props = defineProps({
@@ -161,6 +162,29 @@ async function submitAssign() {
     emit('completed')
   } catch (error) {
     ElMessage.error(`分配失败：${error?.message || '请稍后重试'}`)
+  } finally {
+    processing.value = false
+  }
+}
+
+async function skipAssetAssignment() {
+  const todo = assignDialog.todo
+  const userId = todo?.user_id || todo?.username
+  if (!userId) return ElMessage.warning('未找到对应用户')
+  const confirmed = await ElMessageBox.confirm(
+    `确认将 ${todo.name || todo.owner || userId} 标记为不需要分配公司资产？后续入职待办将不再提醒。`,
+    '无需资产分配',
+    { type: 'warning' }
+  ).then(() => true).catch(() => false)
+  if (!confirmed) return
+  processing.value = true
+  try {
+    await updateUserAssetAssignment(userId, { asset_assignment_required: false })
+    ElMessage.success('已标记为无需分配公司资产')
+    assignDialog.visible = false
+    emit('completed')
+  } catch (error) {
+    ElMessage.error(`操作失败：${error?.userMessage || error?.message || '请稍后重试'}`)
   } finally {
     processing.value = false
   }

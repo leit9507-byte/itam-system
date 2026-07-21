@@ -14,12 +14,14 @@ from app.schemas.user import (
     RolePermissionOut,
     SyncUsersRequest,
     SyncUsersResponse,
+    UserAssetAssignmentUpdate,
     UserPermissionUpdate,
     UserOut,
     UserUpsert,
 )
 from app.services.identity_service import IdentityService
 from app.services.audit_log_service import AuditLogService
+from app.services.todo_service import TodoService
 
 
 router = APIRouter(tags=["Identity"])
@@ -100,6 +102,29 @@ def update_user_permissions(user_id: str, payload: UserPermissionUpdate, request
     try:
         row = IdentityService.update_user_permissions(db, user_id, payload)
         AuditLogService.record_operation(db, "identity", "update_user_permissions", operator_from_request(request), "user", user_id, f"更新用户权限 {user_id}", payload.model_dump())
+        db.commit()
+        return row
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 404 if message == "user not found" else 400
+        raise HTTPException(status_code=status_code, detail=message) from exc
+
+
+@router.put("/users/{user_id}/asset-assignment", response_model=UserOut)
+def update_user_asset_assignment(user_id: str, payload: UserAssetAssignmentUpdate, request: Request, db: Session = Depends(get_db)):
+    try:
+        row = IdentityService.update_asset_assignment_required(db, user_id, payload.asset_assignment_required)
+        AuditLogService.record_operation(
+            db,
+            "identity",
+            "update_user_asset_assignment",
+            operator_from_request(request),
+            "user",
+            user_id,
+            f"更新用户资产分配要求 {user_id}",
+            payload.model_dump(),
+        )
+        TodoService.invalidate()
         db.commit()
         return row
     except ValueError as exc:

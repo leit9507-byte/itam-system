@@ -24,6 +24,13 @@
             <el-table-column prop="source" label="来源" width="100">
               <template #default="{ row }"><el-tag>{{ row.source }}</el-tag></template>
             </el-table-column>
+            <el-table-column label="资产要求" width="120">
+              <template #default="{ row }">
+                <el-tag :type="row.asset_assignment_required === false ? 'info' : 'success'">
+                  {{ row.asset_assignment_required === false ? '无需分配' : '需要分配' }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column prop="role" label="角色" width="120" />
             <el-table-column prop="failed_login_count" label="失败次数" width="100" />
             <el-table-column prop="locked_until" label="锁定至" min-width="160">
@@ -73,9 +80,11 @@
             <el-table-column prop="last_synced_at" label="最近同步" min-width="180">
               <template #default="{ row }">{{ formatDateTime(row.last_synced_at) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="150" fixed="right">
+            <el-table-column label="操作" width="240" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click="goAssetAssign(row)">资产分配</el-button>
+                <el-button v-if="row.asset_assignment_required !== false" link type="primary" @click="goAssetAssign(row)">资产分配</el-button>
+                <el-button v-if="row.asset_assignment_required !== false" link type="info" @click="markNoAssetRequired(row)">不需要资产</el-button>
+                <el-button v-else link type="primary" @click="markAssetRequired(row)">恢复分配</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -578,6 +587,7 @@ import {
   syncUsers,
   testIdentityProvider,
   updateIdentityProvider,
+  updateUserAssetAssignment,
   updateUserPermissions
 } from '../../api/user'
 
@@ -902,6 +912,23 @@ async function goAssetAssign(row) {
     name: row.display_name || row.username || row.user_id,
     owner: row.display_name || row.username || row.user_id
   })
+}
+
+async function markNoAssetRequired(row) {
+  await ElMessageBox.confirm(
+    `确认将“${row.display_name || row.username}”标记为不需要分配公司资产？后续入职待办将不再提醒。`,
+    '无需资产分配',
+    { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' }
+  )
+  await updateUserAssetAssignment(row.user_id, { asset_assignment_required: false })
+  ElMessage.success('已标记为无需分配公司资产')
+  await loadUsers()
+}
+
+async function markAssetRequired(row) {
+  await updateUserAssetAssignment(row.user_id, { asset_assignment_required: true })
+  ElMessage.success('已恢复为需要资产分配')
+  await loadUsers()
 }
 
 async function goAssetReclaim(row) {

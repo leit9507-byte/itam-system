@@ -9,6 +9,7 @@ def ensure_compatible_schema(engine) -> None:
         add_column(engine, columns, "user_directory", "failed_login_count", "INTEGER DEFAULT 0 NOT NULL")
         add_column(engine, columns, "user_directory", "locked_until", "DATETIME NULL")
         add_column(engine, columns, "user_directory", "last_login_at", "DATETIME NULL")
+        add_column(engine, columns, "user_directory", "asset_assignment_required", "BOOLEAN DEFAULT 1 NOT NULL")
 
     if "purchases" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("purchases")}

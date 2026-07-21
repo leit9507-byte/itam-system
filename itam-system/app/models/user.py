@@ -21,6 +21,7 @@ class UserDirectory(Base):
     password_hash = Column(String(255), nullable=True)
     failed_login_count = Column(Integer, default=0, nullable=False)
     locked_until = Column(DateTime, nullable=True)
+    asset_assignment_required = Column(Boolean, default=True, nullable=False)
     external_id = Column(String(128), nullable=True, index=True)
     last_login_at = Column(DateTime, nullable=True)
     last_synced_at = Column(DateTime, nullable=True)

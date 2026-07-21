@@ -16,6 +16,7 @@ class UserUpsert(BaseModel):
     status: str = "active"
     external_id: str | None = None
     password: str | None = None
+    asset_assignment_required: bool | None = None
 
 
 class UserOut(BaseModel):
@@ -36,7 +37,12 @@ class UserOut(BaseModel):
     created_at: datetime
     failed_login_count: int = 0
     locked_until: datetime | None = None
+    asset_assignment_required: bool = True
     last_login_at: datetime | None = None
+
+
+class UserAssetAssignmentUpdate(BaseModel):
+    asset_assignment_required: bool = True
 
 
 class IdentityProviderSave(BaseModel):

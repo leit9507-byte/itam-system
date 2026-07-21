@@ -97,7 +97,9 @@ class TodoService:
         for user in users:
             if str(user.status or "").lower() != "active" or user.role in {"admin", "auditor"}:
                 continue
-            if user.user_id in assigned_user_ids or user.username in assigned_user_ids:
+            if user.asset_assignment_required is False:
+                continue
+            if TodoService.user_has_assigned_asset(user, assigned_user_ids):
                 continue
             name = user.display_name or user.username or user.user_id
             rows.append({
@@ -285,8 +287,22 @@ class TodoService:
             if asset.status not in {"in_use", "borrowed", "out_stock"}:
                 continue
             if asset.owner_user_id:
-                ids.add(asset.owner_user_id)
+                ids.add(TodoService.identity_key(asset.owner_user_id))
         return ids
+
+    @staticmethod
+    def user_has_assigned_asset(user: UserDirectory, assigned_user_ids: set[str]) -> bool:
+        return any(TodoService.identity_key(value) in assigned_user_ids for value in [
+            user.user_id,
+            user.username,
+            user.external_id,
+            user.email,
+            user.display_name,
+        ])
+
+    @staticmethod
+    def identity_key(value: str | None) -> str:
+        return str(value or "").strip().casefold()
 
     @staticmethod
     def priority_weight(priority: str | None) -> int:

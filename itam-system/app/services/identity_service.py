@@ -145,6 +145,10 @@ class IdentityService:
             user.identity_provider_id = identity_provider_id
         user.status = payload.status
         user.external_id = payload.external_id
+        if created:
+            user.asset_assignment_required = True if payload.asset_assignment_required is None else payload.asset_assignment_required
+        elif payload.source == "local" and payload.asset_assignment_required is not None:
+            user.asset_assignment_required = payload.asset_assignment_required
         if payload.password:
             user.password_hash = hash_password(payload.password)
         user.last_synced_at = datetime.utcnow()
@@ -216,6 +220,18 @@ class IdentityService:
 
         user.role = next_role
         user.status = next_status
+        user.last_synced_at = datetime.utcnow()
+        db.commit()
+        db.refresh(user)
+        return user
+
+    @staticmethod
+    def update_asset_assignment_required(db: Session, user_id: str, required: bool) -> UserDirectory:
+        IdentityService.ensure_seed(db)
+        user = db.get(UserDirectory, user_id)
+        if not user:
+            raise ValueError("user not found")
+        user.asset_assignment_required = required
         user.last_synced_at = datetime.utcnow()
         db.commit()
         db.refresh(user)

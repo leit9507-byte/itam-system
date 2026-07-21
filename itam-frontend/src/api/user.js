@@ -28,6 +28,11 @@ export function updateUserPermissions(userId, payload) {
   return request.put(`/users/${encodeURIComponent(userId)}/permissions`, payload)
 }
 
+export function updateUserAssetAssignment(userId, payload) {
+  clearCache('identity:')
+  return request.put(`/users/${encodeURIComponent(userId)}/asset-assignment`, payload)
+}
+
 export function syncUsers(payload = {}) {
   clearCache('identity:')
   return request.post('/users/sync', payload)
