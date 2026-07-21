@@ -164,11 +164,13 @@ class AssetImportRow(AssetCreate):
 
 class AssetBatchImport(BaseModel):
     operator: str = "asset-import"
+    overwrite: bool = False
     items: list[AssetImportRow]
 
 
 class AssetTextImport(BaseModel):
     operator: str = "asset-import"
+    overwrite: bool = False
     content: str
 
 
@@ -180,6 +182,7 @@ class AssetImportError(BaseModel):
 
 class AssetImportResult(BaseModel):
     created: int
+    updated: int = 0
     skipped: int
     errors: list[AssetImportError]
     assets: list[AssetOut]

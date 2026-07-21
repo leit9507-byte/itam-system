@@ -12,7 +12,7 @@ from app.models.purchase import Purchase, PurchaseItem
 from app.models.repair import RepairRecord
 from app.models.scan_binding import AssetScanBinding
 from app.core.schema_compat import current_timestamp_sql
-from app.schemas.asset import AssetBatchUpdateCreate, AssetImportRow, AssetUpdate
+from app.schemas.asset import AssetBatchImport, AssetBatchUpdateCreate, AssetImportRow, AssetUpdate
 from app.schemas.purchase import PurchaseAcceptanceReceive
 from app.schemas.repair import RepairCreate
 from app.schemas.user import UserPermissionUpdate, UserUpsert
@@ -254,6 +254,36 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(row.asset_no, "OLD-001")
         self.assertEqual(row.config["payment_time"], "2026-07-21")
         self.assertEqual(row.config["payment_no"], "PAY-001")
+
+    def test_overwrite_import_updates_existing_asset_by_asset_no_and_renames_id(self):
+        self.add_asset(asset_id="ITAM-000001")
+        existing = self.db.get(Asset, "ITAM-000001")
+        existing.asset_no = "TAG-001"
+        self.db.commit()
+
+        result = AssetService.import_assets(
+            self.db,
+            AssetBatchImport(
+                overwrite=True,
+                items=[
+                    AssetImportRow(
+                        asset_id="LEGACY-001",
+                        asset_no="TAG-001",
+                        name="Updated legacy asset",
+                        category="Monitor",
+                        status="in_stock",
+                    )
+                ],
+            ),
+        )
+
+        self.assertEqual(result["created"], 0)
+        self.assertEqual(result["updated"], 1)
+        self.assertIsNone(self.db.get(Asset, "ITAM-000001"))
+        updated = self.db.get(Asset, "LEGACY-001")
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated.asset_no, "TAG-001")
+        self.assertEqual(updated.name, "Updated legacy asset")
 
 
 if __name__ == "__main__":

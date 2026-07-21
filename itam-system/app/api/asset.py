@@ -173,12 +173,12 @@ def preview_assets_from_text(payload: AssetTextImport, db: Session = Depends(get
 
 
 @router.post("/import/excel", response_model=AssetImportResult)
-async def import_assets_from_excel(request: Request, operator: str = "asset-import", file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_assets_from_excel(request: Request, operator: str = "asset-import", overwrite: bool = False, file: UploadFile = File(...), db: Session = Depends(get_db)):
     filename = file.filename or ""
     if not filename.lower().endswith((".xlsx", ".xlsm")):
         raise HTTPException(status_code=400, detail="请上传 .xlsx 或 .xlsm 格式的 Excel 文件")
     try:
-        return AssetService.import_assets_from_excel(db, await file.read(), operator_from_request(request))
+        return AssetService.import_assets_from_excel(db, await file.read(), operator_from_request(request), overwrite=overwrite)
     except AssetValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -186,12 +186,12 @@ async def import_assets_from_excel(request: Request, operator: str = "asset-impo
 
 
 @router.post("/import/excel/preview")
-async def preview_assets_from_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def preview_assets_from_excel(overwrite: bool = False, file: UploadFile = File(...), db: Session = Depends(get_db)):
     filename = file.filename or ""
     if not filename.lower().endswith((".xlsx", ".xlsm")):
         raise HTTPException(status_code=400, detail="请上传 .xlsx 或 .xlsm 格式的 Excel 文件")
     try:
-        return AssetService.preview_import_excel(db, await file.read())
+        return AssetService.preview_import_excel(db, await file.read(), overwrite=overwrite)
     except AssetValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

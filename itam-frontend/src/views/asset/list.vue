@@ -348,6 +348,7 @@
         </el-upload>
         <el-button @click="downloadTemplate">下载导入模板</el-button>
         <el-button @click="fillImportExample">填入粘贴示例</el-button>
+        <el-checkbox v-model="importDialog.overwrite" @change="clearImportPreview">覆盖已有资产</el-checkbox>
       </div>
       <el-input v-model="importDialog.content" type="textarea" :rows="9" class="import-textarea" placeholder="也可以把 Excel 表格复制后粘贴到这里" @input="clearImportPreview" />
       <div class="import-actions">
@@ -377,7 +378,7 @@
         <el-table-column prop="row" label="行号" width="80" />
         <el-table-column prop="message" label="提示" />
       </el-table>
-      <el-result v-if="importDialog.result && !importDialog.result.errors.length" icon="success" :title="`已导入 ${importDialog.result.created} 条资产`" sub-title="资产已写入后端，并生成批量导入生命周期记录" />
+      <el-result v-if="importDialog.result && !importDialog.result.errors.length" icon="success" :title="`导入完成：新增 ${importDialog.result.created} 条，更新 ${importDialog.result.updated || 0} 条`" sub-title="资产已写入后端，并生成批量导入生命周期记录" />
     </el-dialog>
   </div>
 </template>
@@ -411,7 +412,7 @@ const filters = reactive({ keyword: '', status: '', category: '', company: '', s
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const batch = reactive({ visible: false, type: 'inbound', assets: [], form: defaultBatchForm() })
 const batchEdit = reactive({ visible: false, form: defaultBatchEditForm(), fields: defaultBatchEditFields() })
-const importDialog = reactive({ visible: false, loading: false, importing: false, content: '', preview: null, result: null })
+const importDialog = reactive({ visible: false, loading: false, importing: false, overwrite: false, content: '', preview: null, result: null })
 const editDialog = reactive({ visible: false, form: {} })
 const repairDialog = reactive({ visible: false, asset: null, assets: [], form: defaultRepairForm() })
 const columnDialog = reactive({ visible: false })
@@ -977,7 +978,7 @@ async function previewExcelImport(file) {
   importDialog.result = null
   importDialog.preview = null
   try {
-    importDialog.preview = await previewAssetsFromExcel(file)
+    importDialog.preview = await previewAssetsFromExcel(file, importDialog.overwrite)
     ElMessage.success(`预览完成：${importDialog.preview.valid}/${importDialog.preview.total} 行可导入`)
   } catch (error) {
     ElMessage.error({ message: importErrorMessage(error, 'Excel 文件预览失败'), duration: 6000, showClose: true })
@@ -996,7 +997,7 @@ async function previewTextImport() {
   importDialog.result = null
   importDialog.preview = null
   try {
-    importDialog.preview = await previewAssetsFromText(importDialog.content, 'frontend-text-preview')
+    importDialog.preview = await previewAssetsFromText(importDialog.content, 'frontend-text-preview', importDialog.overwrite)
     ElMessage.success(`预览完成：${importDialog.preview.valid}/${importDialog.preview.total} 行可导入`)
   } catch (error) {
     ElMessage.error({ message: importErrorMessage(error, '粘贴内容预览失败'), duration: 6000, showClose: true })
@@ -1010,8 +1011,8 @@ async function confirmImport() {
   importDialog.importing = true
   try {
     const items = importDialog.preview.items.filter(item => item.valid).map(item => item.data)
-    importDialog.result = await importAssets(items, 'frontend-confirm-import')
-    ElMessage.success(`导入完成：新增 ${importDialog.result.created} 条，跳过 ${importDialog.result.skipped} 条`)
+    importDialog.result = await importAssets(items, 'frontend-confirm-import', importDialog.overwrite)
+    ElMessage.success(`导入完成：新增 ${importDialog.result.created} 条，更新 ${importDialog.result.updated || 0} 条，跳过 ${importDialog.result.skipped} 条`)
     importDialog.preview = null
     await loadAssets()
   } catch (error) {

@@ -233,6 +233,7 @@ class AssetService:
     @staticmethod
     def import_assets(db: Session, payload: AssetBatchImport) -> dict:
         created_assets: list[Asset] = []
+        updated_assets: list[Asset] = []
         errors: list[dict] = []
         skipped = 0
 
@@ -242,58 +243,67 @@ class AssetService:
                     normalized = AssetService.normalize_import_row(row)
                     asset_id = normalized.asset_id or AssetService.generate_asset_id(db)
                     asset_no = AssetService.normalize_asset_no(normalized.asset_no, asset_id)
-                    if db.get(Asset, asset_id):
+                    asset = db.get(Asset, asset_id)
+                    if not asset and payload.overwrite:
+                        asset = db.query(Asset).filter(Asset.asset_no == asset_no).first()
+                        if asset and asset.asset_id != asset_id:
+                            AssetService.rename_asset_id(db, asset, asset.asset_id, asset_id, payload.operator)
+                    if asset and not payload.overwrite:
                         skipped += 1
                         errors.append({"row": index, "message": f"duplicate asset_id: {asset_id}", "data": row.model_dump()})
                         continue
-                    AssetService.validate_asset_identity_unique(db, asset_no=asset_no, sn=normalized.sn)
+                    AssetService.validate_asset_identity_unique(db, asset_no=asset_no, sn=normalized.sn, current_asset_id=asset.asset_id if asset else None)
                     AssetService.validate_status_owner(
                         SimpleNamespace(status=normalized.status, owner_user_id=normalized.owner_user_id, location=normalized.location)
                     )
 
-                    asset = Asset(
-                        asset_id=asset_id,
-                        asset_no=asset_no,
-                        company=AssetService.normalize_company(normalized.company),
-                        name=normalized.name,
-                        category=normalized.category,
-                        brand=normalized.brand,
-                        model=normalized.model,
-                        sn=normalized.sn,
-                        config=normalized.config,
-                        purchase_price=normalized.purchase_price,
-                        purchase_date=normalized.purchase_date,
-                        purchase_approval_no=normalized.purchase_approval_no,
-                        purchase_supplier_name=normalized.purchase_supplier_name,
-                        warranty_expire_date=normalized.warranty_expire_date,
-                        warranty_months=normalized.warranty_months,
-                        status=normalized.status,
-                        owner_user_id=normalized.owner_user_id,
-                        dept_id=normalized.dept_id,
-                        location=normalized.location,
-                        remark=normalized.remark,
-                    )
+                    old_status = asset.status if asset else None
+                    if not asset:
+                        asset = Asset(asset_id=asset_id)
+                        db.add(asset)
+                    asset.asset_no = asset_no
+                    asset.company = AssetService.normalize_company(normalized.company)
+                    asset.name = normalized.name
+                    asset.category = normalized.category
+                    asset.brand = normalized.brand
+                    asset.model = normalized.model
+                    asset.sn = normalized.sn
+                    asset.config = normalized.config
+                    asset.purchase_price = normalized.purchase_price
+                    asset.purchase_date = normalized.purchase_date
+                    asset.purchase_approval_no = normalized.purchase_approval_no
+                    asset.purchase_supplier_name = normalized.purchase_supplier_name
+                    asset.warranty_expire_date = normalized.warranty_expire_date
+                    asset.warranty_months = normalized.warranty_months
+                    asset.status = normalized.status
+                    asset.owner_user_id = normalized.owner_user_id
+                    asset.dept_id = normalized.dept_id
+                    asset.location = normalized.location
+                    asset.remark = normalized.remark
                     AssetService.apply_warranty_expire(asset)
                     AssetService.sync_owner_department(db, asset)
                     SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
-                    db.add(asset)
                     db.flush()
-                    LifecycleService.record(db, asset.asset_id, "BATCH_IMPORT", None, asset.status, payload.operator)
-                    created_assets.append(asset)
+                    LifecycleService.record(db, asset.asset_id, "BATCH_IMPORT", old_status, asset.status, payload.operator)
+                    if old_status is None:
+                        created_assets.append(asset)
+                    else:
+                        updated_assets.append(asset)
             except SQLAlchemyError as exc:
                 errors.append({"row": index, "message": f"数据库保存失败：{AssetService.db_error_message(exc)}", "data": row.model_dump()})
             except Exception as exc:
                 errors.append({"row": index, "message": str(exc), "data": row.model_dump()})
 
         db.commit()
-        for asset in created_assets:
+        for asset in [*created_assets, *updated_assets]:
             db.refresh(asset)
 
         return {
             "created": len(created_assets),
+            "updated": len(updated_assets),
             "skipped": skipped,
             "errors": errors,
-            "assets": [AssetService.to_out(asset) for asset in created_assets],
+            "assets": [AssetService.to_out(asset) for asset in [*created_assets, *updated_assets]],
         }
 
     @staticmethod
@@ -310,15 +320,15 @@ class AssetService:
     @staticmethod
     def import_assets_from_text(db: Session, payload: AssetTextImport) -> dict:
         items = AssetService.parse_import_text(payload.content)
-        return AssetService.import_assets(db, AssetBatchImport(operator=payload.operator, items=items))
+        return AssetService.import_assets(db, AssetBatchImport(operator=payload.operator, overwrite=payload.overwrite, items=items))
 
     @staticmethod
-    def import_assets_from_excel(db: Session, content: bytes, operator: str = "asset-import") -> dict:
+    def import_assets_from_excel(db: Session, content: bytes, operator: str = "asset-import", overwrite: bool = False) -> dict:
         items = AssetService.parse_import_excel(content)
-        return AssetService.import_assets(db, AssetBatchImport(operator=operator, items=items))
+        return AssetService.import_assets(db, AssetBatchImport(operator=operator, overwrite=overwrite, items=items))
 
     @staticmethod
-    def preview_import_assets(db: Session, items: list[AssetImportRow]) -> dict:
+    def preview_import_assets(db: Session, items: list[AssetImportRow], overwrite: bool = False) -> dict:
         errors: list[dict] = []
         preview_items: list[dict] = []
         seen_sn: set[str] = set()
@@ -331,14 +341,15 @@ class AssetService:
                 asset_no = AssetService.normalize_asset_no(normalized.asset_no, normalized.asset_id or f"PREVIEW-{index}")
                 if asset_no in seen_asset_no:
                     raise AssetValidationError(f"duplicate asset_no: {asset_no}")
-                AssetService.validate_asset_identity_unique(db, asset_no=asset_no)
+                if not overwrite:
+                    AssetService.validate_asset_identity_unique(db, asset_no=asset_no)
                 seen_asset_no.add(asset_no)
                 if normalized.sn:
-                    if normalized.sn in seen_sn or db.query(Asset).filter(Asset.sn == normalized.sn).first():
+                    if normalized.sn in seen_sn or (not overwrite and db.query(Asset).filter(Asset.sn == normalized.sn).first()):
                         raise AssetValidationError(f"duplicate sn: {normalized.sn}")
                     seen_sn.add(normalized.sn)
                 if normalized.asset_id:
-                    if normalized.asset_id in seen_asset_id or db.get(Asset, normalized.asset_id):
+                    if normalized.asset_id in seen_asset_id or (not overwrite and db.get(Asset, normalized.asset_id)):
                         raise AssetValidationError(f"duplicate asset_id: {normalized.asset_id}")
                     seen_asset_id.add(normalized.asset_id)
                 AssetService.validate_status_owner(
@@ -358,11 +369,11 @@ class AssetService:
 
     @staticmethod
     def preview_import_text(db: Session, payload: AssetTextImport) -> dict:
-        return AssetService.preview_import_assets(db, AssetService.parse_import_text(payload.content))
+        return AssetService.preview_import_assets(db, AssetService.parse_import_text(payload.content), overwrite=payload.overwrite)
 
     @staticmethod
-    def preview_import_excel(db: Session, content: bytes) -> dict:
-        return AssetService.preview_import_assets(db, AssetService.parse_import_excel(content))
+    def preview_import_excel(db: Session, content: bytes, overwrite: bool = False) -> dict:
+        return AssetService.preview_import_assets(db, AssetService.parse_import_excel(content), overwrite=overwrite)
 
     @staticmethod
     def build_import_template() -> bytes:
