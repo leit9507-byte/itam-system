@@ -325,6 +325,21 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(catalogs[0].default_warehouse, "阳光粤海大厦")
         self.assertEqual(self.db.query(Company).filter(Company.name == "雷泰科技").count(), 1)
 
+    def test_import_allows_historical_terminal_statuses(self):
+        result = AssetService.import_assets(
+            self.db,
+            AssetBatchImport(
+                items=[
+                    AssetImportRow(asset_id="OLD-SCRAP-001", name="报废历史资产", category="显示器", status="scrapped"),
+                    AssetImportRow(asset_id="OLD-DISP-001", name="已处置历史资产", category="手机", status="disposed"),
+                ],
+            ),
+        )
+
+        self.assertEqual(result["created"], 2)
+        self.assertEqual(self.db.get(Asset, "OLD-SCRAP-001").status, "scrapped")
+        self.assertEqual(self.db.get(Asset, "OLD-DISP-001").status, "disposed")
+
 
 if __name__ == "__main__":
     unittest.main()

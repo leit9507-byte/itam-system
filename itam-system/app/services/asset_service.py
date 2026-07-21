@@ -145,13 +145,13 @@ class AssetService:
                 raise AssetValidationError(f"序列号已存在：{sn}")
 
     @staticmethod
-    def validate_status_owner(asset: Asset, *, status_changed: bool = True) -> None:
+    def validate_status_owner(asset: Asset, *, status_changed: bool = True, allow_workflow_statuses: bool = False) -> None:
         status = asset.status
         if status not in AssetService.VALID_STATUSES:
             raise AssetValidationError(f"unsupported asset status: {status}")
         has_owner = bool(AssetService.normalize_blank(asset.owner_user_id))
         has_location = bool(AssetService.normalize_blank(asset.location))
-        if status_changed and status in AssetService.WORKFLOW_STATUSES:
+        if status_changed and status in AssetService.WORKFLOW_STATUSES and not allow_workflow_statuses:
             raise AssetValidationError("待采购、待验收、待处置登记、已报废状态由流程控制，不能通过导入或手工状态变更直接设置")
         if status in AssetService.UNASSIGNED_STATUSES and has_owner:
             raise AssetValidationError("待采购、待验收、在库、闲置、待报废状态不能填写使用人/责任人；请清空使用人，或把状态改为 in_use、borrowed、out_stock")
@@ -256,7 +256,8 @@ class AssetService:
                         continue
                     AssetService.validate_asset_identity_unique(db, asset_no=asset_no, sn=normalized.sn, current_asset_id=asset.asset_id if asset else None)
                     AssetService.validate_status_owner(
-                        SimpleNamespace(status=normalized.status, owner_user_id=normalized.owner_user_id, location=normalized.location)
+                        SimpleNamespace(status=normalized.status, owner_user_id=normalized.owner_user_id, location=normalized.location),
+                        allow_workflow_statuses=True,
                     )
 
                     old_status = asset.status if asset else None
@@ -357,7 +358,8 @@ class AssetService:
                         raise AssetValidationError(f"duplicate asset_id: {normalized.asset_id}")
                     seen_asset_id.add(normalized.asset_id)
                 AssetService.validate_status_owner(
-                    SimpleNamespace(status=normalized.status, owner_user_id=normalized.owner_user_id, location=normalized.location)
+                    SimpleNamespace(status=normalized.status, owner_user_id=normalized.owner_user_id, location=normalized.location),
+                    allow_workflow_statuses=True,
                 )
                 preview_items.append({"row": index, "valid": True, "data": normalized.model_dump(mode="json")})
             except Exception as exc:
