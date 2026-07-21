@@ -94,6 +94,7 @@ services:
       context: ./itam-frontend
       args:
         VITE_API_BASE_URL: /backend
+        VITE_API_TIMEOUT_MS: ${VITE_API_TIMEOUT_MS:-30000}
         VITE_MOBILE_PUBLIC_URL: ${VITE_MOBILE_PUBLIC_URL:-}
         VITE_FEISHU_SDK_URL: ${VITE_FEISHU_SDK_URL:-}
         VITE_FEISHU_SDK_AUTO_LOAD: ${VITE_FEISHU_SDK_AUTO_LOAD:-}
