@@ -8,6 +8,7 @@ from app.core.database import Base
 import app.models  # noqa: F401
 from app.models.asset import Asset
 from app.models.checkout import AssetCheckout
+from app.models.company import Company
 from app.models.product import DeviceType, ProductCatalog
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.repair import RepairRecord
@@ -300,6 +301,7 @@ class CoreWorkflowTest(unittest.TestCase):
                     spec="Ultra 7 / 32GB / 1TB",
                     purchase_price=15000,
                     location="阳光粤海大厦",
+                    company="雷泰科技",
                     status="in_stock",
                 )
             ],
@@ -321,6 +323,7 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(catalogs[0].spec, "Ultra 7 / 32GB / 1TB")
         self.assertEqual(catalogs[0].unit_price, 15000)
         self.assertEqual(catalogs[0].default_warehouse, "阳光粤海大厦")
+        self.assertEqual(self.db.query(Company).filter(Company.name == "雷泰科技").count(), 1)
 
 
 if __name__ == "__main__":

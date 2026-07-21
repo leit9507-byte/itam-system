@@ -17,6 +17,7 @@ from app.models.asset import Asset
 from app.models.audit_response import AuditResponse
 from app.models.audit_log import AssetChangeLog
 from app.models.checkout import AssetCheckout
+from app.models.company import Company
 from app.models.file import AssetAttachment
 from app.models.inventory import InventoryComponentInstallation, InventoryLedger, InventoryLicenseSeat, InventoryLicenseSeatHistory
 from app.models.lifecycle import Lifecycle
@@ -284,6 +285,7 @@ class AssetService:
                     AssetService.apply_warranty_expire(asset)
                     AssetService.sync_owner_department(db, asset)
                     SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
+                    AssetService.ensure_company_from_import(db, normalized.company)
                     AssetService.ensure_product_catalog_from_import(db, normalized)
                     db.flush()
                     LifecycleService.record(db, asset.asset_id, "BATCH_IMPORT", old_status, asset.status, payload.operator)
@@ -647,6 +649,18 @@ class AssetService:
         config.pop("warehouse", None)
         data["config"] = config
         return AssetImportRow(**data)
+
+    @staticmethod
+    def ensure_company_from_import(db: Session, company: str | None) -> Company | None:
+        name = AssetService.normalize_company(company)
+        if not name:
+            return None
+        existed = db.query(Company).filter(Company.name == name).first()
+        if existed:
+            return existed
+        item = Company(name=name, status="启用")
+        db.add(item)
+        return item
 
     @staticmethod
     def ensure_product_catalog_from_import(db: Session, row: AssetImportRow) -> ProductCatalog | None:
