@@ -15,8 +15,10 @@ from app.core.schema_compat import current_timestamp_sql
 from app.schemas.asset import AssetBatchUpdateCreate, AssetUpdate
 from app.schemas.purchase import PurchaseAcceptanceReceive
 from app.schemas.repair import RepairCreate
+from app.schemas.user import UserPermissionUpdate, UserUpsert
 from app.services.asset_service import AssetService, AssetValidationError
 from app.services.dashboard_service import DashboardService
+from app.services.identity_service import IdentityService
 from app.services.purchase_service import PurchaseService
 from app.services.repair_service import RepairService
 from app.services.scrap_service import ScrapService
@@ -198,6 +200,43 @@ class CoreWorkflowTest(unittest.TestCase):
 
         self.assertEqual(disposed.status, "已处置")
         self.assertEqual(self.db.get(Asset, asset.asset_id).status, "scrapped")
+
+
+    def test_external_user_sync_preserves_manual_role(self):
+        user, created = IdentityService.upsert_user(
+            self.db,
+            UserUpsert(
+                username="ldap-user",
+                display_name="LDAP User",
+                role="user",
+                source="ldap",
+                external_id="ldap:uid=ldap-user,dc=example,dc=com",
+            ),
+        )
+        self.assertTrue(created)
+        self.assertEqual(user.role, "user")
+
+        IdentityService.update_user_permissions(
+            self.db,
+            user.user_id,
+            UserPermissionUpdate(role="asset_manager", status="active"),
+        )
+
+        synced_user, created = IdentityService.upsert_user(
+            self.db,
+            UserUpsert(
+                username="ldap-user",
+                display_name="LDAP User Updated",
+                role="user",
+                source="ldap",
+                external_id="ldap:uid=ldap-user,dc=example,dc=com",
+                dept_id="D2",
+            ),
+        )
+
+        self.assertFalse(created)
+        self.assertEqual(synced_user.role, "asset_manager")
+        self.assertEqual(synced_user.dept_id, "D2")
 
 
 if __name__ == "__main__":

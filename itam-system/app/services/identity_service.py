@@ -134,7 +134,10 @@ class IdentityService:
         user.email = payload.email
         user.dept_id = payload.dept_id
         user.dept_name = payload.dept_name
-        user.role = payload.role
+        if created or payload.source == "local":
+            user.role = payload.role
+        elif not user.role:
+            user.role = payload.role
         user.source = payload.source
         if payload.source == "local":
             user.identity_provider_id = None
