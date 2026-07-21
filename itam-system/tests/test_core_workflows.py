@@ -8,6 +8,7 @@ from app.core.database import Base
 import app.models  # noqa: F401
 from app.models.asset import Asset
 from app.models.checkout import AssetCheckout
+from app.models.product import DeviceType, ProductCatalog
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.repair import RepairRecord
 from app.models.scan_binding import AssetScanBinding
@@ -284,6 +285,42 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertIsNotNone(updated)
         self.assertEqual(updated.asset_no, "TAG-001")
         self.assertEqual(updated.name, "Updated legacy asset")
+
+    def test_import_creates_product_catalog_without_duplicates(self):
+        payload = AssetBatchImport(
+            overwrite=True,
+            items=[
+                AssetImportRow(
+                    asset_id="LEGACY-002",
+                    asset_no="TAG-002",
+                    name="ThinkPad X1 Carbon",
+                    category="笔记本电脑",
+                    brand="Lenovo",
+                    model="X1 Carbon Gen 12",
+                    spec="Ultra 7 / 32GB / 1TB",
+                    purchase_price=15000,
+                    location="阳光粤海大厦",
+                    status="in_stock",
+                )
+            ],
+        )
+
+        first = AssetService.import_assets(self.db, payload)
+        second = AssetService.import_assets(self.db, payload)
+
+        self.assertEqual(first["created"], 1)
+        self.assertEqual(second["updated"], 1)
+        self.assertEqual(self.db.query(DeviceType).filter(DeviceType.name == "笔记本电脑").count(), 1)
+        catalogs = self.db.query(ProductCatalog).filter(
+            ProductCatalog.product_name == "ThinkPad X1 Carbon",
+            ProductCatalog.device_type == "笔记本电脑",
+        ).all()
+        self.assertEqual(len(catalogs), 1)
+        self.assertEqual(catalogs[0].brand, "Lenovo")
+        self.assertEqual(catalogs[0].model, "X1 Carbon Gen 12")
+        self.assertEqual(catalogs[0].spec, "Ultra 7 / 32GB / 1TB")
+        self.assertEqual(catalogs[0].unit_price, 15000)
+        self.assertEqual(catalogs[0].default_warehouse, "阳光粤海大厦")
 
 
 if __name__ == "__main__":

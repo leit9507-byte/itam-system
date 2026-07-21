@@ -20,6 +20,7 @@ from app.models.checkout import AssetCheckout
 from app.models.file import AssetAttachment
 from app.models.inventory import InventoryComponentInstallation, InventoryLedger, InventoryLicenseSeat, InventoryLicenseSeatHistory
 from app.models.lifecycle import Lifecycle
+from app.models.product import DeviceType, ProductCatalog
 from app.models.repair import RepairRecord
 from app.models.scan_binding import AssetScanBinding
 from app.models.scrap import ScrapRequest
@@ -283,6 +284,7 @@ class AssetService:
                     AssetService.apply_warranty_expire(asset)
                     AssetService.sync_owner_department(db, asset)
                     SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
+                    AssetService.ensure_product_catalog_from_import(db, normalized)
                     db.flush()
                     LifecycleService.record(db, asset.asset_id, "BATCH_IMPORT", old_status, asset.status, payload.operator)
                     if old_status is None:
@@ -645,6 +647,63 @@ class AssetService:
         config.pop("warehouse", None)
         data["config"] = config
         return AssetImportRow(**data)
+
+    @staticmethod
+    def ensure_product_catalog_from_import(db: Session, row: AssetImportRow) -> ProductCatalog | None:
+        product_name = AssetService.normalize_blank(row.name)
+        device_type = AssetService.normalize_blank(row.category)
+        if not product_name or not device_type:
+            return None
+
+        if not db.query(DeviceType).filter(DeviceType.name == device_type).first():
+            db.add(DeviceType(name=device_type, description="由资产导入自动创建"))
+
+        brand = AssetService.normalize_blank(row.brand)
+        model = AssetService.normalize_blank(row.model)
+        spec = AssetService.normalize_blank((row.config or {}).get("spec"))
+
+        query = db.query(ProductCatalog).filter(
+            ProductCatalog.product_name == product_name,
+            ProductCatalog.device_type == device_type,
+        )
+        query = AssetService.filter_nullable_text(query, ProductCatalog.brand, brand)
+        query = AssetService.filter_nullable_text(query, ProductCatalog.model, model)
+        query = AssetService.filter_nullable_text(query, ProductCatalog.spec, spec)
+        catalog = query.first()
+
+        if not catalog:
+            catalog = ProductCatalog(
+                product_name=product_name,
+                device_type=device_type,
+                brand=brand or None,
+                model=model or None,
+                spec=spec or None,
+                unit_price=row.purchase_price or 0,
+                default_warehouse=AssetService.normalize_blank(row.location) or None,
+                retirement_years=AssetService.parse_int((row.config or {}).get("retirement_years")),
+            )
+            db.add(catalog)
+            return catalog
+
+        if not catalog.brand and brand:
+            catalog.brand = brand
+        if not catalog.model and model:
+            catalog.model = model
+        if not catalog.spec and spec:
+            catalog.spec = spec
+        if not catalog.unit_price and row.purchase_price:
+            catalog.unit_price = row.purchase_price
+        if not catalog.default_warehouse and row.location:
+            catalog.default_warehouse = row.location
+        if not catalog.retirement_years:
+            catalog.retirement_years = AssetService.parse_int((row.config or {}).get("retirement_years"))
+        return catalog
+
+    @staticmethod
+    def filter_nullable_text(query, column, value: str):
+        if value:
+            return query.filter(column == value)
+        return query.filter(or_(column.is_(None), column == ""))
 
     @staticmethod
     def list_assets(
