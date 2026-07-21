@@ -249,8 +249,9 @@
         :closable="false"
       />
       <el-table v-if="batch.type === 'scrap'" :data="batch.assets" border stripe max-height="300" class="scrap-confirm-table">
-        <el-table-column prop="display_id" label="ID" width="80" />
-        <el-table-column prop="asset_id" label="资产编号" min-width="140" />
+        <el-table-column prop="display_id" label="序号" width="80" />
+        <el-table-column prop="asset_id" label="资产ID" min-width="120" />
+        <el-table-column prop="asset_no" label="资产标签" min-width="160" />
         <el-table-column prop="name" label="资产名称" min-width="180" show-overflow-tooltip />
         <el-table-column prop="sn" label="序列号" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">{{ row.sn || '-' }}</template>
@@ -419,13 +420,14 @@ const columnDialog = reactive({ visible: false })
 const workflowHint = ref('')
 const assignedStatuses = ['in_use', 'borrowed']
 const unassignedStatuses = ['pending_purchase', 'pending_acceptance', 'in_stock', 'idle', 'ready_scrap']
-const ASSET_COLUMN_ORDER_KEY = 'itam_asset_list_column_order_v5'
+const ASSET_COLUMN_ORDER_KEY = 'itam_asset_list_column_order_v6'
 const assetColumnDefs = [
-  { key: 'display_id', prop: 'display_id', label: 'ID', width: 90 },
+  { key: 'display_id', prop: 'display_id', label: '序号', width: 90 },
   { key: 'company', prop: 'company', label: '公司', width: 140, tooltip: true },
   { key: 'category', prop: 'category', label: '类型', width: 110 },
   { key: 'product', label: '产品信息' },
-  { key: 'asset_id', prop: 'asset_id', label: '资产编码', width: 150 },
+  { key: 'asset_id', prop: 'asset_id', label: '资产ID', width: 120 },
+  { key: 'asset_no', prop: 'asset_no', label: '资产标签', width: 160 },
   { key: 'sn', prop: 'sn', label: '序列号', width: 150 },
   { key: 'purchase_supplier_name', prop: 'purchase_supplier_name', label: '供应商', width: 150, tooltip: true },
   { key: 'price', label: '价值' },
@@ -445,6 +447,7 @@ const DEFAULT_ASSET_COLUMN_ORDER = [
   'category',
   'product',
   'asset_id',
+  'asset_no',
   'sn',
   'purchase_supplier_name',
   'price',

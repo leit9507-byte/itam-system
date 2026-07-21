@@ -257,6 +257,21 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(row.config["payment_time"], "2026-07-21")
         self.assertEqual(row.config["payment_no"], "PAY-001")
 
+    def test_row_mapping_preserves_company_from_english_header(self):
+        row = AssetService.row_from_mapping(
+            {
+                "asset_id": "2232",
+                "asset_no": "99-MB-20260521-001",
+                "name": "手机-OPPO手机 A55",
+                "category": "手机平板",
+                "company": "深圳市九九互动科技有限公司",
+            }
+        )
+
+        self.assertEqual(row.asset_id, "2232")
+        self.assertEqual(row.asset_no, "99-MB-20260521-001")
+        self.assertEqual(row.company, "深圳市九九互动科技有限公司")
+
     def test_overwrite_import_updates_existing_asset_by_asset_no_and_renames_id(self):
         self.add_asset(asset_id="ITAM-000001")
         existing = self.db.get(Asset, "ITAM-000001")

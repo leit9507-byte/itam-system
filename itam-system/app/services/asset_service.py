@@ -626,6 +626,7 @@ class AssetService:
             owner_user_id=pick("owner_user_id", "owner", "使用人", "责任人"),
             dept_id=pick("dept_id", "dept", "部门"),
             location=pick("location", "位置"),
+            company=pick("company", "公司", "所属公司"),
             remark=pick("remark", "备注", "特殊说明", "说明"),
         )
 
