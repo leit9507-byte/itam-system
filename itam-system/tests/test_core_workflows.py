@@ -25,6 +25,7 @@ from app.services.purchase_service import PurchaseService
 from app.services.repair_service import RepairService
 from app.services.scrap_service import ScrapService
 from app.services.todo_service import TodoService
+from app.api.product import ensure_seed
 
 
 class CoreWorkflowTest(unittest.TestCase):
@@ -339,6 +340,12 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(catalogs[0].unit_price, 15000)
         self.assertEqual(catalogs[0].default_warehouse, "阳光粤海大厦")
         self.assertEqual(self.db.query(Company).filter(Company.name == "雷泰科技").count(), 1)
+
+    def test_product_seed_does_not_create_demo_products(self):
+        ensure_seed(self.db)
+
+        self.assertGreater(self.db.query(DeviceType).count(), 0)
+        self.assertEqual(self.db.query(ProductCatalog).count(), 0)
 
     def test_import_allows_historical_terminal_statuses(self):
         result = AssetService.import_assets(
