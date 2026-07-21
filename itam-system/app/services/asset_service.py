@@ -82,6 +82,8 @@ class AssetService:
         "location",
         "company",
         "spec",
+        "payment_time",
+        "payment_no",
         "remark",
     ]
     CHANGE_FIELD_LABELS = {
@@ -449,7 +451,9 @@ class AssetService:
             "P": 18,
             "Q": 20,
             "R": 18,
-            "S": 28,
+            "S": 18,
+            "T": 22,
+            "U": 28,
         }
         for column, width in widths.items():
             sheet.column_dimensions[column].width = width
@@ -575,6 +579,12 @@ class AssetService:
             "spec": pick("spec", "规格", "配置", default=""),
             "source": "batch_import",
         }
+        payment_time = pick("payment_time")
+        payment_no = pick("payment_no")
+        if payment_time:
+            config["payment_time"] = str(payment_time).strip()
+        if payment_no:
+            config["payment_no"] = str(payment_no).strip()
         return AssetImportRow(
             asset_id=pick("asset_id", "资产编号", "外部ID"),
             asset_no=pick("asset_no", "标签编号", "资产编码"),
@@ -590,6 +600,8 @@ class AssetService:
             purchase_supplier_name=pick("purchase_supplier_name", "采购供应商", "供应商"),
             warranty_expire_date=AssetService.parse_datetime(pick("warranty_expire_date", "质保到期", "质保到期日")),
             warranty_months=warranty_months,
+            payment_time=payment_time,
+            payment_no=payment_no,
             status=pick("status", "状态", default="in_stock"),
             owner_user_id=pick("owner_user_id", "owner", "使用人", "责任人"),
             dept_id=pick("dept_id", "dept", "部门"),
@@ -615,6 +627,10 @@ class AssetService:
         config = data.get("config") or {}
         if data.get("spec"):
             config["spec"] = data["spec"]
+        if data.get("payment_time"):
+            config["payment_time"] = str(data["payment_time"]).strip()
+        if data.get("payment_no"):
+            config["payment_no"] = str(data["payment_no"]).strip()
         config.pop("warehouse", None)
         data["config"] = config
         return AssetImportRow(**data)

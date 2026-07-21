@@ -69,6 +69,8 @@
             <el-descriptions-item label="采购审批单号">{{ detail.asset?.purchase_approval_no || '-' }}</el-descriptions-item>
             <el-descriptions-item label="采购单号">{{ detail.asset?.config?.purchase_no || '-' }}</el-descriptions-item>
             <el-descriptions-item label="采购供应商">{{ detail.asset?.purchase_supplier_name || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="付款时间">{{ detail.asset?.payment_time || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="付款单号">{{ detail.asset?.payment_no || '-' }}</el-descriptions-item>
             <el-descriptions-item label="质保到期">{{ detail.asset?.warranty_expire_date || '-' }}</el-descriptions-item>
             <el-descriptions-item label="质保月数">{{ detail.asset?.warranty_months || '-' }}</el-descriptions-item>
             <el-descriptions-item label="退役年限">{{ detail.asset?.retirement_years ? `${detail.asset.retirement_years} 年` : '-' }}</el-descriptions-item>

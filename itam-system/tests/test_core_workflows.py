@@ -12,7 +12,7 @@ from app.models.purchase import Purchase, PurchaseItem
 from app.models.repair import RepairRecord
 from app.models.scan_binding import AssetScanBinding
 from app.core.schema_compat import current_timestamp_sql
-from app.schemas.asset import AssetBatchUpdateCreate, AssetUpdate
+from app.schemas.asset import AssetBatchUpdateCreate, AssetImportRow, AssetUpdate
 from app.schemas.purchase import PurchaseAcceptanceReceive
 from app.schemas.repair import RepairCreate
 from app.schemas.user import UserPermissionUpdate, UserUpsert
@@ -237,6 +237,23 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertFalse(created)
         self.assertEqual(synced_user.role, "asset_manager")
         self.assertEqual(synced_user.dept_id, "D2")
+
+    def test_import_preserves_payment_metadata(self):
+        row = AssetService.normalize_import_row(
+            AssetImportRow(
+                asset_id="OLD-001",
+                asset_no="OLD-001",
+                name="Legacy Asset",
+                category="Laptop",
+                payment_time="2026-07-21",
+                payment_no="PAY-001",
+            )
+        )
+
+        self.assertEqual(row.asset_id, "OLD-001")
+        self.assertEqual(row.asset_no, "OLD-001")
+        self.assertEqual(row.config["payment_time"], "2026-07-21")
+        self.assertEqual(row.config["payment_no"], "PAY-001")
 
 
 if __name__ == "__main__":

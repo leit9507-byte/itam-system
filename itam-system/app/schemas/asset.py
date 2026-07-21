@@ -157,6 +157,8 @@ class AssetImportRow(AssetCreate):
     dept: Optional[str] = None
     price: Optional[float] = None
     spec: Optional[str] = None
+    payment_time: Optional[str] = None
+    payment_no: Optional[str] = None
     remark: Optional[str] = None
 
 

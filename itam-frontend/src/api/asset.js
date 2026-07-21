@@ -133,6 +133,7 @@ export async function updateAsset(assetId, payload) {
     model: payload.model,
     sn: payload.sn,
     config: {
+      ...(payload.config || {}),
       spec: payload.spec || '',
       retirement_years: payload.retirement_years === '' || payload.retirement_years == null ? null : Number(payload.retirement_years)
     },
@@ -412,6 +413,8 @@ function mapBackendAsset(row) {
     purchase_date: purchaseDate,
     purchase_approval_no: row.purchase_approval_no || '',
     purchase_supplier_name: row.purchase_supplier_name || '',
+    payment_time: config.payment_time || '',
+    payment_no: config.payment_no || '',
     warranty_expire_date: formatDate(row.warranty_expire_date),
     warranty_months: row.warranty_months ?? '',
     warranty_years: row.warranty_months ? Math.round(Number(row.warranty_months) / 12) : '',
