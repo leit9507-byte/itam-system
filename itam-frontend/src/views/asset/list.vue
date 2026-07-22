@@ -38,7 +38,7 @@
         <el-button :disabled="!selected.length" @click="openBatch('inbound')">批量入库</el-button>
         <el-button :disabled="!selected.length" @click="openBatch('outbound')">批量出库</el-button>
         <el-button type="danger" :disabled="!selected.length" @click="openBatch('scrap')">批量申请报废</el-button>
-        <el-button @click="columnDialog.visible = true">字段顺序</el-button>
+        <el-button @click="columnDialog.visible = true">字段设置</el-button>
       </div>
     </el-card>
 
@@ -142,19 +142,25 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="columnDialog.visible" title="资产列表字段顺序" width="520px">
-      <el-alert title="调整后仅影响当前浏览器；选择列和操作列固定显示。" type="info" show-icon :closable="false" class="dialog-alert" />
+    <el-dialog v-model="columnDialog.visible" title="资产列表字段设置" width="560px">
+      <el-alert title="勾选需要展示的字段，并可调整展示顺序；选择列和操作列固定显示。" type="info" show-icon :closable="false" class="dialog-alert" />
       <div class="column-order-list">
-        <div v-for="(column, index) in orderedAssetColumns" :key="column.key" class="column-order-row">
-          <span>{{ index + 1 }}. {{ column.label }}</span>
+        <div v-for="(column, index) in configurableAssetColumns" :key="column.key" class="column-order-row">
+          <el-checkbox
+            :model-value="columnVisibility[column.key] !== false"
+            :disabled="visibleColumnCount === 1 && columnVisibility[column.key] !== false"
+            @change="value => toggleColumn(column.key, value)"
+          >
+            {{ index + 1 }}. {{ column.label }}
+          </el-checkbox>
           <div>
             <el-button size="small" :disabled="index === 0" @click="moveColumn(index, -1)">上移</el-button>
-            <el-button size="small" :disabled="index === orderedAssetColumns.length - 1" @click="moveColumn(index, 1)">下移</el-button>
+            <el-button size="small" :disabled="index === configurableAssetColumns.length - 1" @click="moveColumn(index, 1)">下移</el-button>
           </div>
         </div>
       </div>
       <template #footer>
-        <el-button @click="resetColumnOrder">恢复默认</el-button>
+        <el-button @click="resetColumnSettings">恢复默认</el-button>
         <el-button type="primary" @click="columnDialog.visible = false">完成</el-button>
       </template>
     </el-dialog>
@@ -420,6 +426,7 @@ const workflowHint = ref('')
 const assignedStatuses = ['in_use', 'borrowed']
 const unassignedStatuses = ['pending_purchase', 'pending_acceptance', 'in_stock', 'idle', 'ready_scrap']
 const ASSET_COLUMN_ORDER_KEY = 'itam_asset_list_column_order_v6'
+const ASSET_COLUMN_VISIBILITY_KEY = 'itam_asset_list_column_visibility_v1'
 const assetColumnDefs = [
   { key: 'display_id', prop: 'display_id', label: '序号', width: 90 },
   { key: 'company', prop: 'company', label: '公司', width: 140, tooltip: true },
@@ -459,6 +466,7 @@ const DEFAULT_ASSET_COLUMN_ORDER = [
   'retirement_date'
 ]
 const columnOrder = ref(loadColumnOrder())
+const columnVisibility = ref(loadColumnVisibility())
 const outboundTargetOptions = [
   { label: '人员', value: 'user' },
   { label: '地址', value: 'location' }
@@ -470,10 +478,12 @@ const activeLocations = computed(() => locations.value.filter(item => item.statu
 const activeFaultTypes = computed(() => faultTypes.value.filter(item => item.enabled !== '停用'))
 const batchEditSelectedCount = computed(() => Object.values(batchEdit.fields).filter(Boolean).length)
 const canConfirmImport = computed(() => importDialog.preview?.valid > 0 && !importDialog.preview.errors.length)
-const orderedAssetColumns = computed(() => {
+const configurableAssetColumns = computed(() => {
   const map = Object.fromEntries(assetColumnDefs.map(item => [item.key, item]))
   return columnOrder.value.map(key => map[key]).filter(Boolean)
 })
+const orderedAssetColumns = computed(() => configurableAssetColumns.value.filter(column => columnVisibility.value[column.key] !== false))
+const visibleColumnCount = computed(() => orderedAssetColumns.value.length)
 
 onMounted(async () => {
   applyWorkflowQuery()
@@ -508,6 +518,16 @@ function loadColumnOrder() {
   }
 }
 
+function loadColumnVisibility() {
+  const keys = assetColumnDefs.map(item => item.key)
+  try {
+    const saved = JSON.parse(localStorage.getItem(ASSET_COLUMN_VISIBILITY_KEY) || '{}')
+    return Object.fromEntries(keys.map(key => [key, saved?.[key] !== false]))
+  } catch {
+    return Object.fromEntries(keys.map(key => [key, true]))
+  }
+}
+
 function normalizeColumnOrder(order) {
   const knownKeys = assetColumnDefs.map(item => item.key)
   const valid = order.filter(key => knownKeys.includes(key))
@@ -516,6 +536,16 @@ function normalizeColumnOrder(order) {
 
 function saveColumnOrder() {
   localStorage.setItem(ASSET_COLUMN_ORDER_KEY, JSON.stringify(columnOrder.value))
+}
+
+function saveColumnVisibility() {
+  localStorage.setItem(ASSET_COLUMN_VISIBILITY_KEY, JSON.stringify(columnVisibility.value))
+}
+
+function toggleColumn(key, visible) {
+  if (!visible && visibleColumnCount.value <= 1) return
+  columnVisibility.value = { ...columnVisibility.value, [key]: visible !== false }
+  saveColumnVisibility()
 }
 
 function moveColumn(index, direction) {
@@ -528,9 +558,11 @@ function moveColumn(index, direction) {
   saveColumnOrder()
 }
 
-function resetColumnOrder() {
+function resetColumnSettings() {
   columnOrder.value = normalizeColumnOrder(DEFAULT_ASSET_COLUMN_ORDER)
+  columnVisibility.value = Object.fromEntries(assetColumnDefs.map(item => [item.key, true]))
   saveColumnOrder()
+  saveColumnVisibility()
 }
 
 async function loadUsers() {
@@ -1268,6 +1300,19 @@ function resolveDatePicker() { return resolveComponent('ElDatePicker') }
 .column-order-row span {
   font-weight: 600;
   color: var(--text);
+}
+
+.column-order-row :deep(.el-checkbox) {
+  min-width: 0;
+  flex: 1;
+  height: auto;
+  margin-right: 0;
+}
+
+.column-order-row :deep(.el-checkbox__label) {
+  font-weight: 600;
+  color: var(--text);
+  white-space: normal;
 }
 
 .upload-row,
