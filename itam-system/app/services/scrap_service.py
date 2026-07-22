@@ -195,6 +195,8 @@ class ScrapService:
                 recipient_name = user.display_name or user.username or recipient_name
             if not recipient_user_id and not recipient_name:
                 raise ValueError("员工领用处置必须选择领用员工")
+        elif disposal_method == "变卖":
+            recipient_user_id = ""
         else:
             recipient_user_id = ""
             recipient_name = ""
@@ -232,7 +234,7 @@ class ScrapService:
                     reason=dispose_reason,
                     object=f"报废单 {request.request_no}",
                     previous_owner=asset.owner_user_id or "-",
-                    new_owner=recipient_label if request.disposal_method == "员工领用" else operator,
+                    new_owner=recipient_label if request.disposal_method in {"员工领用", "变卖"} else operator,
                     location=asset.location,
                     extra={
                         "disposal_method": request.disposal_method or "",
@@ -267,7 +269,7 @@ class ScrapService:
                 f"退役时间：{request.retirement_date.date().isoformat() if request.retirement_date else '-'}",
                 f"退役审批单号：{request.retirement_approval_no or '-'}",
                 f"处置方式：{request.disposal_method or '-'}",
-                f"报废领走人：{request.dispose_recipient_name or request.dispose_recipient_user_id or '-'}",
+                f"处置接收方：{request.dispose_recipient_name or request.dispose_recipient_user_id or '-'}",
                 f"实际残值：¥{request.final_residual_value or 0:,.0f}",
                 f"处置人：{operator}",
             ],

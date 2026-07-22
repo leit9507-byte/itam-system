@@ -86,7 +86,7 @@
         <el-table-column label="实际处置方式" width="130">
           <template #default="{ row }">{{ row.disposal_method || '未登记' }}</template>
         </el-table-column>
-        <el-table-column label="报废领走人" width="140" show-overflow-tooltip>
+        <el-table-column label="接收方/供应商" width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.dispose_recipient_name || row.dispose_recipient_user_id || '-' }}</template>
         </el-table-column>
         <el-table-column prop="estimated_residual_value" label="预计残值" width="120">
@@ -172,6 +172,24 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="disposeDialog.form.disposal_method === '变卖'" label="处理供应商">
+          <el-select
+            v-model="disposeDialog.form.dispose_recipient_name"
+            filterable
+            clearable
+            allow-create
+            default-first-option
+            placeholder="选择或填写回收/购买供应商"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="supplier in activeSuppliers"
+              :key="supplier.id || supplier.name"
+              :label="supplierLabel(supplier)"
+              :value="supplier.name"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="finalResidualLabel">
           <el-input-number v-model="disposeDialog.form.final_residual_value" :min="0" :precision="2" style="width: 100%" />
           <div v-if="disposeDialogRows.length > 1" class="form-tip">批量登记时会按每台资产预计残值比例拆分；无预计残值时按数量平均拆分。</div>
@@ -192,12 +210,14 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { batchDisposeScrapRequests, disposeScrapRequest, getScrapRequests } from '../../api/asset'
+import { getSuppliers } from '../../api/supplier'
 import { getUsers } from '../../api/user'
 
 const requests = ref([])
 const allRequests = ref([])
 const selected = ref([])
 const users = ref([])
+const suppliers = ref([])
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const filters = reactive({ createdRange: [], disposalMethod: '' })
 const disposeDialog = reactive({
@@ -223,6 +243,7 @@ const disposalMethodOptions = [
 
 const totalResidual = computed(() => allRequests.value.reduce((sum, item) => sum + Number(item.estimated_residual_value || 0), 0))
 const pendingDisposalCount = computed(() => allRequests.value.filter(item => ['待处置', '审批中', '已通过'].includes(item.status)).length)
+const activeSuppliers = computed(() => suppliers.value.filter(item => item.status !== '停用'))
 const batchDisposableRows = computed(() => selected.value.filter(isDisposable))
 const disposeDialogRows = computed(() => disposeDialog.rows?.length ? disposeDialog.rows : (disposeDialog.row ? [disposeDialog.row] : []))
 const disposeDialogTitle = computed(() => disposeDialogRows.value.length > 1 ? `批量退役登记 / ${disposeDialogRows.value.length} 台资产` : (disposeDialog.row ? `报废处置登记 / ${disposeDialog.row.asset_no || disposeDialog.row.asset_id}` : '报废处置登记'))
@@ -238,11 +259,15 @@ const disposeRemarkPlaceholder = computed(() => {
 })
 
 onMounted(async () => {
-  await Promise.all([load(), loadUsers()])
+  await Promise.all([load(), loadUsers(), loadSuppliers()])
 })
 
 async function loadUsers() {
   users.value = await getUsers().catch(() => [])
+}
+
+async function loadSuppliers() {
+  suppliers.value = await getSuppliers().catch(() => [])
 }
 
 async function load() {
@@ -324,7 +349,7 @@ async function dispose() {
     ElMessage.warning('请选择报废领走员工')
     return
   }
-  const recipientText = disposeDialog.form.disposal_method === '员工领用' ? `，报废领走人：${disposeDialog.form.dispose_recipient_name || disposeDialog.form.dispose_recipient_user_id}` : ''
+  const recipientText = disposalRecipientConfirmText()
   const targetText = rows.length > 1 ? `${rows.length} 台资产` : `${rows[0].asset_no || rows[0].asset_id}`
   await ElMessageBox.confirm(`确认登记 ${targetText} 的报废处置？退役时间：${disposeDialog.form.retirement_date}，实际处置方式：${disposeDialog.form.disposal_method}${recipientText}。登记后资产状态保持已报废，报废单标记为已处置。`, '确认登记', { type: 'warning' })
   if (rows.length > 1) {
@@ -347,6 +372,16 @@ function handleDisposeRecipientChange(userId) {
   disposeDialog.form.dispose_recipient_name = user ? (user.display_name || user.username || user.user_id || '') : ''
 }
 
+function disposalRecipientConfirmText() {
+  if (disposeDialog.form.disposal_method === '员工领用') {
+    return `，报废领走人：${disposeDialog.form.dispose_recipient_name || disposeDialog.form.dispose_recipient_user_id}`
+  }
+  if (disposeDialog.form.disposal_method === '变卖' && disposeDialog.form.dispose_recipient_name) {
+    return `，处理供应商：${disposeDialog.form.dispose_recipient_name}`
+  }
+  return ''
+}
+
 function normalizeDisposeMethod(method) {
   if (['报废', '变卖', '员工领用'].includes(method)) return method
   if (['出售', '转卖'].includes(method)) return '变卖'
@@ -359,6 +394,11 @@ function isDisposable(row) {
 
 function userLabel(user) {
   return [user.display_name || user.username || user.user_id, user.dept_name || user.dept_id].filter(Boolean).join(' / ')
+}
+
+function supplierLabel(supplier) {
+  const meta = [supplier.contact, supplier.phone].filter(Boolean).join(' / ')
+  return meta ? `${supplier.name} (${meta})` : supplier.name
 }
 
 function todayText() {
