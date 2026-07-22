@@ -63,33 +63,40 @@
       </el-card>
     </div>
 
-    <el-card shadow="never">
+    <el-card shadow="never" class="category-rule-card">
       <template #header>
         <div class="card-header">
-          <span>设备类型覆盖规则</span>
-          <el-button type="primary" text @click="addCategoryRule">添加类型规则</el-button>
+          <div>
+            <span>设备类型覆盖规则</span>
+            <small>为特殊设备类型单独设置最低残值率，未命中的类型使用基础规则。</small>
+          </div>
+          <el-button type="primary" @click="addCategoryRule">添加类型规则</el-button>
         </div>
       </template>
-      <el-table :data="form.category_rates" border stripe empty-text="暂无类型覆盖规则，将使用默认最低残值率">
-        <el-table-column label="设备类型" min-width="220">
-          <template #default="{ row }">
+      <div v-if="form.category_rates.length" class="category-rule-list">
+        <section v-for="(row, index) in form.category_rates" :key="index" class="category-rule-item">
+          <div class="rule-item-head">
+            <strong>覆盖规则 {{ index + 1 }}</strong>
+            <el-button type="danger" link @click="form.category_rates.splice(index, 1)">删除</el-button>
+          </div>
+          <el-form label-position="top" class="rule-item-form">
+            <el-form-item label="设备类型">
             <el-select v-model="row.category" filterable allow-create default-first-option placeholder="选择或输入设备类型" style="width: 100%">
               <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
             </el-select>
-          </template>
-        </el-table-column>
-        <el-table-column label="最低残值率" width="220">
-          <template #default="{ row }">
-            <el-input-number v-model="row.rate_percent" :min="0" :max="100" :precision="2" style="width: 160px" />
-            <span class="unit">%</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="100">
-          <template #default="{ $index }">
-            <el-button type="danger" link @click="form.category_rates.splice($index, 1)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+            </el-form-item>
+            <el-form-item label="最低残值率">
+              <div class="rate-input">
+                <el-input-number v-model="row.rate_percent" :min="0" :max="100" :precision="2" style="width: 100%" />
+                <span>%</span>
+              </div>
+            </el-form-item>
+          </el-form>
+        </section>
+      </div>
+      <el-empty v-else description="暂无类型覆盖规则，系统将使用默认最低残值率" :image-size="90">
+        <el-button type="primary" @click="addCategoryRule">添加第一条规则</el-button>
+      </el-empty>
     </el-card>
   </div>
 </template>
@@ -202,6 +209,29 @@ function roundMoney(value) {
   gap: 16px;
 }
 
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-header > div {
+  display: grid;
+  gap: 4px;
+}
+
+.card-header span {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.card-header small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .setting-form,
 .preview-form {
   max-width: 680px;
@@ -246,10 +276,61 @@ function roundMoney(value) {
   font-size: 28px;
 }
 
+.category-rule-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.category-rule-item {
+  padding: 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #fbfdff;
+}
+
+.rule-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.rule-item-head strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.rule-item-form :deep(.el-form-item) {
+  margin-bottom: 12px;
+}
+
+.rule-item-form :deep(.el-form-item:last-child) {
+  margin-bottom: 0;
+}
+
+.rate-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.rate-input span {
+  color: var(--muted);
+}
+
 @media (max-width: 900px) {
   .content-grid,
   .inline-inputs {
     grid-template-columns: 1fr;
+  }
+
+  .card-header {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 </style>
