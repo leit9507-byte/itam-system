@@ -3,9 +3,10 @@
     <section class="dashboard-toolbar">
       <div>
         <h2>资产总览</h2>
-        <p>{{ dashboardRangeText }}</p>
+        <p>实时汇总资产、待办、风险和近期运营动作</p>
       </div>
       <div class="toolbar-actions">
+        <span class="range-chip">{{ dashboardRangeText }}</span>
         <el-date-picker
           v-model="dashboardDateRange"
           type="daterange"
@@ -17,6 +18,7 @@
           @change="load"
         />
         <el-button @click="clearDateRange">全部时间</el-button>
+        <el-button type="primary" :loading="dashboardLoading" @click="load">刷新</el-button>
       </div>
     </section>
 
@@ -29,6 +31,55 @@
           <span>{{ item.label }}</span>
           <strong>{{ formatValue(item.value) }}</strong>
           <small :class="item.changeTone">{{ item.caption || `较上月 ${item.change}` }}</small>
+        </div>
+      </article>
+    </section>
+
+    <section class="operations-grid">
+      <article class="panel todo-panel">
+        <header class="panel-head">
+          <div>
+            <h3>待办中心</h3>
+            <p>只显示需要处理的事项</p>
+          </div>
+          <el-button link type="primary" @click="goPath('/todo')">查看全部</el-button>
+        </header>
+        <div class="todo-summary">
+          <div v-for="item in todoStats" :key="item.label" class="todo-stat" :class="item.tone">
+            <span>{{ item.label }}</span>
+            <strong>{{ formatValue(item.value) }}</strong>
+          </div>
+        </div>
+        <div class="todo-list">
+          <button v-for="item in topTodos" :key="item.id" type="button" class="todo-row" @click="goTodo(item)">
+            <el-tag :type="priorityType(item.priority)" effect="light">{{ priorityLabel(item.priority) }}</el-tag>
+            <span>
+              <strong>{{ item.title }}</strong>
+              <small>{{ item.type_label || item.owner || item.created_at || '待处理' }}</small>
+            </span>
+          </button>
+          <el-empty v-if="!topTodos.length" description="暂无待处理事项" :image-size="72" />
+        </div>
+      </article>
+
+      <article class="panel action-panel">
+        <header class="panel-head">
+          <div>
+            <h3>运营入口</h3>
+            <p>高频动作直达</p>
+          </div>
+        </header>
+        <div class="action-grid">
+          <button v-for="item in actionCards" :key="item.label" type="button" class="action-card" @click="goPath(item.path, item.query)">
+            <span class="action-icon" :class="item.tone">
+              <el-icon><component :is="item.icon" /></el-icon>
+            </span>
+            <span>
+              <strong>{{ item.label }}</strong>
+              <small>{{ item.caption }}</small>
+            </span>
+            <em>{{ formatValue(item.value) }}</em>
+          </button>
         </div>
       </article>
     </section>
@@ -83,6 +134,57 @@
             <div><span>近六月入职</span><strong>{{ formatValue(data.personnelTrend.onboardingTotal) }}</strong></div>
             <div><span>近六月离职</span><strong>{{ formatValue(data.personnelTrend.offboardingTotal) }}</strong></div>
           </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="dashboard-grid insight-grid">
+      <article class="panel lifecycle-panel">
+        <header class="panel-head">
+          <h3>生命周期分布</h3>
+          <el-button link type="primary" @click="goPath('/lifecycle')">生命周期</el-button>
+        </header>
+        <div class="bar-list">
+          <div v-for="item in lifecycleBars" :key="item.name" class="bar-row">
+            <div class="bar-label">
+              <span>{{ item.name }}</span>
+              <strong>{{ formatValue(item.value) }}</strong>
+            </div>
+            <div class="bar-track">
+              <span :style="{ width: item.percent + '%', background: item.color }" />
+            </div>
+          </div>
+          <el-empty v-if="!lifecycleBars.length" description="暂无生命周期数据" :image-size="72" />
+        </div>
+      </article>
+
+      <article class="panel department-panel">
+        <header class="panel-head">
+          <h3>部门资产排行</h3>
+          <el-button link type="primary" @click="goPath('/department')">部门管理</el-button>
+        </header>
+        <div class="rank-list">
+          <div v-for="(item, index) in departmentTop" :key="item.name" class="rank-row">
+            <em>{{ index + 1 }}</em>
+            <span>{{ item.name }}</span>
+            <strong>{{ formatValue(item.value) }}</strong>
+          </div>
+          <el-empty v-if="!departmentTop.length" description="暂无部门数据" :image-size="72" />
+        </div>
+      </article>
+
+      <article class="panel fault-panel">
+        <header class="panel-head">
+          <h3>维修故障排行</h3>
+          <el-button link type="primary" @click="goPath('/repair')">维修管理</el-button>
+        </header>
+        <div class="rank-list">
+          <div v-for="(item, index) in maintenanceTop" :key="`${item.name}-${index}`" class="rank-row">
+            <em>{{ index + 1 }}</em>
+            <span>{{ item.name }}</span>
+            <strong>{{ formatValue(item.count) }}</strong>
+          </div>
+          <el-empty v-if="!maintenanceTop.length" description="暂无维修数据" :image-size="72" />
         </div>
       </article>
     </section>
@@ -225,6 +327,7 @@ import {
   Warning
 } from '@element-plus/icons-vue'
 import { getEnterpriseDashboard } from '../../api/dashboard'
+import { getTodoItems } from '../../api/todo'
 
 const router = useRouter()
 const statusRef = ref(null)
@@ -235,6 +338,8 @@ const retirementTrendRef = ref(null)
 const charts = []
 let resizeTimer = null
 const dashboardDateRange = ref([])
+const dashboardLoading = ref(false)
+const todos = ref([])
 const detailDialog = reactive({ visible: false, type: 'status' })
 const data = reactive({
   metrics: [],
@@ -245,6 +350,7 @@ const data = reactive({
   lifecycleDistribution: [],
   retirementSoonAssets: [],
   maintenance: { top10: [], mttr: '0小时', monthCost: 0, yearCost: 0 },
+  departmentDistribution: [],
   personnelTrend: { months: [], onboarding: [], offboarding: [], activeTotal: 0, inactiveTotal: 0, onboardingTotal: 0, offboardingTotal: 0 },
   recentRecords: [],
   warrantyRows: []
@@ -276,6 +382,27 @@ const summaryCards = computed(() => [
   card('维修中', repairAssets.value, '实时', 'up', 'purple', Tools, '实时状态'),
   card('待报废', pendingScrapAssets.value, '实时', 'up', 'orange', Delete, '含待处置登记'),
   card('即将过保', expiringAssets.value, '180天内', 'down', 'violet', Warning, '180天内')
+])
+
+const todoStats = computed(() => [
+  { label: '全部待办', value: todos.value.length, tone: 'blue' },
+  { label: '高优先级', value: todos.value.filter(item => item.priority === 'high').length, tone: 'red' },
+  { label: '入职配置', value: todos.value.filter(item => item.type === 'onboarding_assign').length, tone: 'green' },
+  { label: '回收/处置', value: todos.value.filter(item => ['offboarding_reclaim', 'scrap_disposal', 'scrap_request'].includes(item.type)).length, tone: 'orange' }
+])
+
+const topTodos = computed(() => {
+  const priorityWeight = { high: 0, medium: 1, low: 2 }
+  return [...todos.value]
+    .sort((a, b) => (priorityWeight[a.priority] ?? 9) - (priorityWeight[b.priority] ?? 9))
+    .slice(0, 5)
+})
+
+const actionCards = computed(() => [
+  { label: '采购验收', value: lifecycleValue('待采购') + lifecycleValue('待验收'), caption: '采购单和待验收入库', path: '/purchase', tone: 'blue', icon: Files },
+  { label: '领用归还', value: inUseAssets.value, caption: '员工资产流转', path: '/checkout', tone: 'green', icon: CircleCheck },
+  { label: '维修跟进', value: repairAssets.value, caption: `费用 ¥${formatCompact(data.maintenance?.monthCost || 0)}`, path: '/repair', tone: 'purple', icon: Tools },
+  { label: '报废处置', value: pendingScrapAssets.value, caption: '待报废和退役登记', path: '/scrap', tone: 'orange', icon: Delete }
 ])
 
 const statusDistribution = computed(() => {
@@ -322,6 +449,17 @@ const purchaseDetailRows = computed(() => {
   }))
 })
 const retirementDetailRows = computed(() => data.retirementSoonAssets || [])
+const lifecycleBars = computed(() => {
+  const rows = (data.lifecycleDistribution || []).filter(item => Number(item.value || 0) > 0)
+  const total = rows.reduce((sum, item) => sum + Number(item.value || 0), 0) || 1
+  return rows.slice(0, 9).map((item, index) => ({
+    ...item,
+    percent: Math.max(4, Math.round((Number(item.value || 0) / total) * 100)),
+    color: statusColors[index % statusColors.length]
+  }))
+})
+const departmentTop = computed(() => (data.departmentDistribution || []).filter(item => Number(item.value || 0) > 0).slice(0, 6))
+const maintenanceTop = computed(() => (data.maintenance?.top10 || []).filter(item => Number(item.count || 0) > 0).slice(0, 6))
 const detailDialogTitle = computed(() => ({
   status: '资产状态分布详情',
   category: '资产分类占比详情',
@@ -344,9 +482,19 @@ onUnmounted(() => {
 })
 
 async function load() {
-  Object.assign(data, await getEnterpriseDashboard({ dateRange: dashboardDateRange.value }))
-  await nextTick()
-  renderCharts()
+  dashboardLoading.value = true
+  try {
+    const [dashboardResult, todoResult] = await Promise.allSettled([
+      getEnterpriseDashboard({ dateRange: dashboardDateRange.value }),
+      getTodoItems()
+    ])
+    if (dashboardResult.status === 'fulfilled') Object.assign(data, dashboardResult.value)
+    if (todoResult.status === 'fulfilled') todos.value = todoResult.value
+    await nextTick()
+    renderCharts()
+  } finally {
+    dashboardLoading.value = false
+  }
 }
 
 function clearDateRange() {
@@ -366,6 +514,14 @@ function goPersonnel() {
 function goCheckout(row = null) {
   const keyword = row?.asset_id || row?.asset || ''
   router.push({ path: '/checkout', query: keyword ? { keyword } : {} })
+}
+
+function goPath(path, query = {}) {
+  router.push({ path, query })
+}
+
+function goTodo(row) {
+  router.push({ path: row.target_path || '/todo', query: row.target_query || {} })
 }
 
 function recentRange(days) {
@@ -522,6 +678,14 @@ function percentValue(value) {
   const total = categoryLegend.value.reduce((sum, item) => sum + Number(item.value || 0), 0)
   return percent(value, total)
 }
+
+function priorityLabel(priority) {
+  return { high: '高', medium: '中', low: '低' }[priority] || '低'
+}
+
+function priorityType(priority) {
+  return { high: 'danger', medium: 'warning', low: 'info' }[priority] || 'info'
+}
 </script>
 
 <style scoped>
@@ -559,6 +723,19 @@ function percentValue(value) {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.range-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid #d9e5f5;
+  border-radius: 8px;
+  background: #f7fbff;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .summary-grid {
@@ -640,6 +817,12 @@ function percentValue(value) {
 .summary-body small.up { color: var(--success); }
 .summary-body small.down { color: var(--danger); }
 
+.operations-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, 0.82fr) minmax(520px, 1.18fr);
+  gap: 16px;
+}
+
 .dashboard-grid {
   display: grid;
   gap: 16px;
@@ -655,6 +838,10 @@ function percentValue(value) {
 
 .trend-grid {
   grid-template-columns: minmax(430px, 1fr) minmax(430px, 1fr);
+}
+
+.insight-grid {
+  grid-template-columns: minmax(420px, 1.1fr) minmax(280px, 0.7fr) minmax(280px, 0.7fr);
 }
 
 .people-panel {
@@ -678,6 +865,137 @@ function percentValue(value) {
   margin: 0;
   color: var(--text);
   font-size: 17px;
+}
+
+.panel-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.todo-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.todo-stat {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid #edf4ff;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.todo-stat span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.todo-stat strong {
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.todo-stat.red strong { color: #dc2626; }
+.todo-stat.orange strong { color: #d97706; }
+.todo-stat.green strong { color: #16a34a; }
+
+.todo-list {
+  display: grid;
+  gap: 8px;
+}
+
+.todo-row,
+.action-card {
+  width: 100%;
+  border: 1px solid #edf2f8;
+  border-radius: 10px;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.todo-row:hover,
+.action-card:hover {
+  border-color: #b7d4ff;
+  box-shadow: 0 8px 20px rgba(36, 120, 255, 0.09);
+  transform: translateY(-1px);
+}
+
+.todo-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.todo-row span:last-child,
+.action-card span:last-of-type {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.todo-row strong,
+.action-card strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-row small,
+.action-card small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.action-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 84px;
+  padding: 14px;
+  text-align: left;
+}
+
+.action-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  font-size: 22px;
+}
+
+.action-icon.blue { color: #1975fc; background: #e5f2ff; }
+.action-icon.green { color: #16a34a; background: #eaf8f0; }
+.action-icon.purple { color: #7c3aed; background: #f1edff; }
+.action-icon.orange { color: #d97706; background: #fff7e8; }
+
+.action-card em {
+  color: var(--text);
+  font-style: normal;
+  font-size: 22px;
+  font-weight: 800;
 }
 
 .donut-layout {
@@ -784,6 +1102,76 @@ function percentValue(value) {
   font-size: 20px;
 }
 
+.bar-list,
+.rank-list {
+  display: grid;
+  gap: 12px;
+}
+
+.bar-row {
+  display: grid;
+  gap: 7px;
+}
+
+.bar-label,
+.rank-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bar-label span,
+.rank-row span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar-label strong,
+.rank-row strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.bar-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #edf3fb;
+}
+
+.bar-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.rank-row {
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid #edf2f8;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.rank-row em {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: #eef4ff;
+  color: #2478ff;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
 @media (max-width: 1500px) {
   .summary-grid {
     grid-template-columns: repeat(3, minmax(170px, 1fr));
@@ -791,7 +1179,8 @@ function percentValue(value) {
 
   .main-grid,
   .trend-grid,
-  .lower-grid {
+  .lower-grid,
+  .insight-grid {
     grid-template-columns: repeat(2, minmax(320px, 1fr));
   }
 
@@ -811,7 +1200,9 @@ function percentValue(value) {
   }
 
   .summary-grid,
+  .operations-grid,
   .main-grid,
+  .insight-grid,
   .trend-grid,
   .lower-grid,
   .donut-layout,
@@ -819,8 +1210,42 @@ function percentValue(value) {
     grid-template-columns: 1fr;
   }
 
+  .todo-summary,
+  .action-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .people-panel {
     grid-column: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .dashboard-page {
+    gap: 12px;
+  }
+
+  .panel,
+  .dashboard-toolbar,
+  .summary-card {
+    padding: 14px;
+    border-radius: 12px;
+  }
+
+  .summary-grid,
+  .todo-summary,
+  .action-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar-actions :deep(.el-date-editor) {
+    width: 100%;
+  }
+
+  .donut-chart,
+  .people-chart,
+  .trend-chart {
+    height: 220px;
   }
 }
 </style>
