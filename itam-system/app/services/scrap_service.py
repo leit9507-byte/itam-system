@@ -180,8 +180,6 @@ class ScrapService:
         if not retirement_approval_no:
             raise ValueError("请填写退役审批单号")
         disposal_remark = (payload.get("disposal_remark") or "").strip()
-        if not disposal_remark:
-            raise ValueError("请填写实际处置说明")
         recipient_user_id = (payload.get("dispose_recipient_user_id") or "").strip()
         recipient_name = (payload.get("dispose_recipient_name") or "").strip()
         if disposal_method == "员工领用":

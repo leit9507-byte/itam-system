@@ -120,7 +120,7 @@
     <el-dialog v-model="disposeDialog.visible" :title="disposeDialogTitle" width="760px">
       <el-alert
         :title="disposeDialogRows.length > 1 ? `本次将统一登记 ${disposeDialogRows.length} 台资产的退役处置` : '本次登记当前这一台资产'"
-        :description="disposeDialogRows.length > 1 ? '退役时间、审批单号、处置方式和处置说明会同时写入所选资产；确认后资产状态保持已报废，报废单标记为已处置。' : singleDisposeDescription"
+        :description="disposeDialogRows.length > 1 ? '退役时间、审批单号和处置方式会同时写入所选资产；确认后资产状态保持已报废，报废单标记为已处置。' : singleDisposeDescription"
         type="warning"
         show-icon
         :closable="false"
@@ -176,7 +176,7 @@
           <el-input-number v-model="disposeDialog.form.final_residual_value" :min="0" :precision="2" style="width: 100%" />
           <div v-if="disposeDialogRows.length > 1" class="form-tip">批量登记时会按每台资产预计残值比例拆分；无预计残值时按数量平均拆分。</div>
         </el-form-item>
-        <el-form-item label="处置说明" required>
+        <el-form-item label="处置说明">
           <el-input v-model="disposeDialog.form.disposal_remark" type="textarea" :rows="4" :placeholder="disposeRemarkPlaceholder" />
         </el-form-item>
       </el-form>
@@ -324,7 +324,6 @@ async function dispose() {
     ElMessage.warning('请选择报废领走员工')
     return
   }
-  if (!disposeDialog.form.disposal_remark.trim()) return ElMessage.warning('请填写实际处置说明')
   const recipientText = disposeDialog.form.disposal_method === '员工领用' ? `，报废领走人：${disposeDialog.form.dispose_recipient_name || disposeDialog.form.dispose_recipient_user_id}` : ''
   const targetText = rows.length > 1 ? `${rows.length} 台资产` : `${rows[0].asset_no || rows[0].asset_id}`
   await ElMessageBox.confirm(`确认登记 ${targetText} 的报废处置？退役时间：${disposeDialog.form.retirement_date}，实际处置方式：${disposeDialog.form.disposal_method}${recipientText}。登记后资产状态保持已报废，报废单标记为已处置。`, '确认登记', { type: 'warning' })
