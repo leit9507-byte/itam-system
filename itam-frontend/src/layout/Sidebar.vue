@@ -7,26 +7,39 @@
     <el-menu :default-active="route.path" router class="menu" :collapse="store.collapsed">
       <el-menu-item v-if="canAny(['asset', 'purchase', 'repair', 'audit', 'report'])" index="/dashboard"><el-icon><DataBoard /></el-icon><span>资产总览</span></el-menu-item>
       <el-menu-item v-if="canRead('asset')" index="/todo"><el-icon><Bell /></el-icon><span>待办中心</span></el-menu-item>
-      <el-menu-item v-if="canRead('asset')" index="/inventory"><el-icon><Box /></el-icon><span>配件管理</span></el-menu-item>
-      <el-menu-item v-if="canRead('asset')" index="/software-license"><el-icon><Key /></el-icon><span>软件许可</span></el-menu-item>
-      <el-menu-item v-if="canRead('asset')" index="/stocktake"><el-icon><Search /></el-icon><span>资产盘点</span></el-menu-item>
       <el-sub-menu v-if="assetGroupVisible" index="/asset">
         <template #title><el-icon><Monitor /></el-icon><span>资产运营</span></template>
-        <el-menu-item v-if="canRead('asset')" index="/asset/list">资产管理</el-menu-item>
-        <el-menu-item v-if="canRead('asset')" index="/checkout">借用中心</el-menu-item>
+        <el-menu-item v-if="canRead('asset')" index="/asset/list">资产台账</el-menu-item>
+        <el-menu-item v-if="canRead('asset')" index="/checkout">领用归还</el-menu-item>
+        <el-menu-item v-if="canRead('purchase')" index="/purchase">采购入库</el-menu-item>
+        <el-menu-item v-if="canRead('asset')" index="/stocktake">资产盘点</el-menu-item>
         <el-menu-item v-if="canRead('repair')" index="/repair">维修管理</el-menu-item>
-        <el-menu-item v-if="canRead('asset')" index="/scrap">报废处置登记</el-menu-item>
-        <el-menu-item v-if="canRead('purchase')" index="/purchase">采购管理</el-menu-item>
+        <el-menu-item v-if="canRead('asset')" index="/scrap">报废处置</el-menu-item>
       </el-sub-menu>
-      <el-sub-menu v-if="configGroupVisible" index="/manage-config">
-        <template #title><el-icon><Setting /></el-icon><span>管理配置</span></template>
-        <el-menu-item v-if="canRead('asset')" index="/location">位置管理</el-menu-item>
+
+      <el-sub-menu v-if="resourceGroupVisible" index="/asset-resource">
+        <template #title><el-icon><Box /></el-icon><span>资产资源</span></template>
+        <el-menu-item v-if="canRead('asset')" index="/inventory">配件管理</el-menu-item>
+        <el-menu-item v-if="canRead('asset')" index="/software-license">软件许可</el-menu-item>
         <el-menu-item v-if="canRead('catalog')" index="/device-type">设备类型</el-menu-item>
         <el-menu-item v-if="canRead('catalog')" index="/product">产品档案</el-menu-item>
-        <el-menu-item v-if="canRead('supplier')" index="/supplier">供应商管理</el-menu-item>
-        <el-menu-item v-if="canRead('identity')" index="/department">部门管理</el-menu-item>
-        <el-menu-item v-if="canRead('asset')" index="/company">公司管理</el-menu-item>
       </el-sub-menu>
+
+      <el-sub-menu v-if="masterDataGroupVisible" index="/master-data">
+        <template #title><el-icon><Setting /></el-icon><span>组织与主数据</span></template>
+        <el-menu-item v-if="canRead('asset')" index="/company">公司管理</el-menu-item>
+        <el-menu-item v-if="canRead('identity')" index="/department">部门管理</el-menu-item>
+        <el-menu-item v-if="canRead('asset')" index="/location">位置管理</el-menu-item>
+        <el-menu-item v-if="canRead('supplier')" index="/supplier">供应商管理</el-menu-item>
+      </el-sub-menu>
+
+      <el-sub-menu v-if="reportGroupVisible" index="/report-audit">
+        <template #title><el-icon><View /></el-icon><span>报告与审计</span></template>
+        <el-menu-item v-if="canRead('audit')" index="/audit">审计中心</el-menu-item>
+        <el-menu-item v-if="canRead('report')" index="/report">报告中心</el-menu-item>
+        <el-menu-item v-if="canRead('asset')" index="/lifecycle">生命周期</el-menu-item>
+      </el-sub-menu>
+
       <el-sub-menu v-if="systemGroupVisible" index="/system">
         <template #title><el-icon><Tools /></el-icon><span>系统设置</span></template>
         <el-menu-item v-if="canRead('rbac')" index="/permission">权限管理</el-menu-item>
@@ -36,12 +49,6 @@
         <el-menu-item v-if="canRead('ops')" index="/ops">运维面板</el-menu-item>
         <el-menu-item v-if="canRead('ops')" index="/operation-log">日志中心</el-menu-item>
       </el-sub-menu>
-      <el-sub-menu v-if="reportGroupVisible" index="/report-audit">
-        <template #title><el-icon><View /></el-icon><span>报告审核</span></template>
-        <el-menu-item v-if="canRead('audit')" index="/audit">审计中心</el-menu-item>
-        <el-menu-item v-if="canRead('report')" index="/report">报告中心</el-menu-item>
-        <el-menu-item v-if="canRead('asset')" index="/lifecycle">生命周期</el-menu-item>
-      </el-sub-menu>
     </el-menu>
   </el-aside>
 </template>
@@ -49,14 +56,15 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { Bell, Box, DataBoard, Key, Monitor, Search, Setting, Tools, View } from '@element-plus/icons-vue'
+import { Bell, Box, DataBoard, Monitor, Setting, Tools, View } from '@element-plus/icons-vue'
 import { useAppStore } from '../store'
 
 const route = useRoute()
 const store = useAppStore()
 
 const assetGroupVisible = computed(() => canAny(['asset', 'purchase', 'repair']))
-const configGroupVisible = computed(() => canAny(['asset', 'catalog', 'supplier', 'identity']))
+const resourceGroupVisible = computed(() => canAny(['asset', 'catalog']))
+const masterDataGroupVisible = computed(() => canAny(['asset', 'supplier', 'identity']))
 const systemGroupVisible = computed(() => canAny(['identity', 'rbac', 'asset', 'ops']))
 const reportGroupVisible = computed(() => canAny(['audit', 'report', 'asset']))
 
