@@ -1,7 +1,7 @@
 from datetime import date, datetime, time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -30,6 +30,10 @@ class ScrapDisposePayload(BaseModel):
     dispose_recipient_user_id: str | None = None
     dispose_recipient_name: str | None = None
     disposal_remark: str | None = None
+
+
+class ScrapBatchDisposePayload(ScrapDisposePayload):
+    request_ids: list[int] = Field(default_factory=list)
 
 
 @router.get("/list")
@@ -74,3 +78,20 @@ def dispose_scrap_request(request_id: int, payload: ScrapDisposePayload, request
         return ScrapService.dispose(db, request_id, payload.model_dump(), operator_from_request(request), user_context_from_request(request))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/batch-dispose")
+def batch_dispose_scrap_requests(payload: ScrapBatchDisposePayload, request: Request, db: Session = Depends(get_db)):
+    request_ids = list(dict.fromkeys([item for item in payload.request_ids if item]))
+    if not request_ids:
+        raise HTTPException(status_code=400, detail="请选择需要退役登记的资产")
+    data = payload.model_dump(exclude={"request_ids"})
+    rows = []
+    errors = []
+    for request_id in request_ids:
+        try:
+            row = ScrapService.dispose(db, request_id, data, operator_from_request(request), user_context_from_request(request))
+            rows.append(row)
+        except ValueError as exc:
+            errors.append({"request_id": request_id, "message": str(exc)})
+    return {"success": len(rows), "failed": len(errors), "list": rows, "errors": errors}

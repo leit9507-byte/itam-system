@@ -337,6 +337,25 @@ export async function disposeScrapRequest(requestId, payload = {}) {
   }))
 }
 
+export async function batchDisposeScrapRequests(requestIds, payload = {}) {
+  const result = await request.post('/scrap/batch-dispose', {
+    request_ids: requestIds,
+    final_residual_value: Number(payload.final_residual_value || 0),
+    disposal_method: payload.disposal_method || '',
+    retirement_date: dateToApi(payload.retirement_date),
+    retirement_approval_no: payload.retirement_approval_no || '',
+    dispose_recipient_user_id: payload.dispose_recipient_user_id || '',
+    dispose_recipient_name: payload.dispose_recipient_name || '',
+    disposal_remark: payload.disposal_remark || ''
+  })
+  return {
+    success: Number(result.success || 0),
+    failed: Number(result.failed || 0),
+    list: (result.list || []).map(mapScrapRequest),
+    errors: result.errors || []
+  }
+}
+
 export async function addAcceptedAssets(product, serialNumbers = []) {
   const created = []
   for (const sn of serialNumbers) {
@@ -439,6 +458,7 @@ function mapScrapRequest(row) {
     id: row.id,
     request_no: row.request_no || `SC-${row.id}`,
     asset_id: row.asset_id,
+    asset_no: row.asset_no || '',
     asset_name: row.asset_name,
     sn: row.asset_sn || '',
     company: row.company || '',

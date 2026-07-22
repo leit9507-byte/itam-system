@@ -5,7 +5,10 @@
         <h2 class="page-title">报废处置登记</h2>
         <p class="page-subtitle">资产实际完成处置后，登记退役时间、处置方式、审批单号和处理结果</p>
       </div>
-      <el-button @click="load">刷新</el-button>
+      <div class="header-actions">
+        <el-button :disabled="!batchDisposableRows.length" type="primary" @click="openBatchDispose">批量退役登记</el-button>
+        <el-button @click="load">刷新</el-button>
+      </div>
     </div>
 
     <div class="metric-grid">
@@ -41,7 +44,9 @@
     </el-card>
 
     <el-card shadow="never">
-      <el-table :data="requests" border stripe>
+      <el-alert v-if="selected.length" :title="`已选择 ${selected.length} 条报废记录，可退役登记 ${batchDisposableRows.length} 条`" type="info" show-icon :closable="false" class="selection-alert" />
+      <el-table :data="requests" border stripe @selection-change="selected = $event">
+        <el-table-column type="selection" width="48" />
         <el-table-column prop="request_no" label="流程单号" width="140" />
         <el-table-column prop="company" label="公司" width="120" show-overflow-tooltip />
         <el-table-column prop="asset_no" label="资产编号" width="140">
@@ -111,16 +116,29 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="disposeDialog.visible" :title="disposeDialog.row ? `报废处置登记 / ${disposeDialog.row.asset_id}` : '报废处置登记'" width="660px">
+    <el-dialog v-model="disposeDialog.visible" :title="disposeDialogTitle" width="760px">
       <el-alert
-        title="本次只登记当前这一台资产"
-        :description="disposeDialog.row ? `${disposeDialog.row.asset_id} / ${disposeDialog.row.asset_name || '-'}；确认后资产状态保持已报废，报废单标记为已处置。` : ''"
+        :title="disposeDialogRows.length > 1 ? `本次将统一登记 ${disposeDialogRows.length} 台资产的退役处置` : '本次登记当前这一台资产'"
+        :description="disposeDialogRows.length > 1 ? '退役时间、审批单号、处置方式和处置说明会同时写入所选资产；确认后资产状态保持已报废，报废单标记为已处置。' : singleDisposeDescription"
         type="warning"
         show-icon
         :closable="false"
       />
-      <el-descriptions v-if="disposeDialog.row" :column="2" border class="dispose-asset-summary">
-        <el-descriptions-item label="资产编号">{{ disposeDialog.row.asset_id }}</el-descriptions-item>
+      <el-table v-if="disposeDialogRows.length > 1" :data="disposeDialogRows" border stripe max-height="260" class="dispose-asset-summary">
+        <el-table-column prop="request_no" label="登记单号" width="140" />
+        <el-table-column prop="asset_no" label="资产编号" width="140">
+          <template #default="{ row }">{{ row.asset_no || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="asset_name" label="资产名称" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="sn" label="序列号" width="150">
+          <template #default="{ row }">{{ row.sn || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="estimated_residual_value" label="预计残值" width="120">
+          <template #default="{ row }">¥{{ row.estimated_residual_value.toLocaleString() }}</template>
+        </el-table-column>
+      </el-table>
+      <el-descriptions v-else-if="disposeDialog.row" :column="2" border class="dispose-asset-summary">
+        <el-descriptions-item label="资产编号">{{ disposeDialog.row.asset_no || '-' }}</el-descriptions-item>
         <el-descriptions-item label="序列号">{{ disposeDialog.row.sn || '-' }}</el-descriptions-item>
         <el-descriptions-item label="资产名称">{{ disposeDialog.row.asset_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="登记单号">{{ disposeDialog.row.request_no || '-' }}</el-descriptions-item>
@@ -134,7 +152,7 @@
         </el-form-item>
         <el-form-item label="实际处置方式" required>
           <el-segmented v-model="disposeDialog.form.disposal_method" :options="disposalMethodOptions" class="disposal-method-segment" />
-          <div class="form-tip">当前选择仅作用于上方这一台资产；其他资产需要分别登记。</div>
+          <div class="form-tip">{{ disposeDialogRows.length > 1 ? '当前选择会统一作用于上方所有资产。' : '当前选择仅作用于上方这一台资产。' }}</div>
         </el-form-item>
         <el-form-item v-if="disposeDialog.form.disposal_method === '员工领用'" label="领用员工" required>
           <el-select
@@ -153,7 +171,7 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="实际残值">
+        <el-form-item :label="disposeDialogRows.length > 1 ? '实际残值合计' : '实际残值'">
           <el-input-number v-model="disposeDialog.form.final_residual_value" :min="0" :precision="2" style="width: 100%" />
         </el-form-item>
         <el-form-item label="处置说明" required>
@@ -171,17 +189,19 @@
 <script setup>
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { disposeScrapRequest, getScrapRequests } from '../../api/asset'
+import { batchDisposeScrapRequests, disposeScrapRequest, getScrapRequests } from '../../api/asset'
 import { getUsers } from '../../api/user'
 
 const requests = ref([])
 const allRequests = ref([])
+const selected = ref([])
 const users = ref([])
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const filters = reactive({ createdRange: [], disposalMethod: '' })
 const disposeDialog = reactive({
   visible: false,
   row: null,
+  rows: [],
   form: {
     final_residual_value: 0,
     disposal_method: '',
@@ -201,6 +221,10 @@ const disposalMethodOptions = [
 
 const totalResidual = computed(() => allRequests.value.reduce((sum, item) => sum + Number(item.estimated_residual_value || 0), 0))
 const pendingDisposalCount = computed(() => allRequests.value.filter(item => ['待处置', '审批中', '已通过'].includes(item.status)).length)
+const batchDisposableRows = computed(() => selected.value.filter(isDisposable))
+const disposeDialogRows = computed(() => disposeDialog.rows?.length ? disposeDialog.rows : (disposeDialog.row ? [disposeDialog.row] : []))
+const disposeDialogTitle = computed(() => disposeDialogRows.value.length > 1 ? `批量退役登记 / ${disposeDialogRows.value.length} 台资产` : (disposeDialog.row ? `报废处置登记 / ${disposeDialog.row.asset_no || disposeDialog.row.asset_id}` : '报废处置登记'))
+const singleDisposeDescription = computed(() => disposeDialog.row ? `${disposeDialog.row.asset_no || disposeDialog.row.asset_id} / ${disposeDialog.row.asset_name || '-'}；确认后资产状态保持已报废，报废单标记为已处置。` : '')
 const disposeRemarkPlaceholder = computed(() => {
   if (disposeDialog.form.disposal_method === '员工领用') return '例如：报废资产由员工领走，已签收确认'
   if (disposeDialog.form.disposal_method === '变卖') return '例如：变卖给回收商，交易单号 XXX'
@@ -228,6 +252,7 @@ async function load() {
   requests.value = paged.list
   pagination.total = paged.total
   allRequests.value = all.list
+  selected.value = []
 }
 
 function countByStatus(status) {
@@ -257,6 +282,7 @@ async function resetFilters() {
 
 function openDispose(row) {
   disposeDialog.row = row
+  disposeDialog.rows = [row]
   disposeDialog.form.final_residual_value = row.estimated_residual_value || 0
   disposeDialog.form.disposal_method = row.status === '已处置' ? normalizeDisposeMethod(row.disposal_method) : ''
   disposeDialog.form.retirement_date = row.retirement_date || todayText()
@@ -267,8 +293,24 @@ function openDispose(row) {
   disposeDialog.visible = true
 }
 
+function openBatchDispose() {
+  const rows = batchDisposableRows.value
+  if (!rows.length) return ElMessage.warning('请选择待处置、审批中或已通过的报废记录')
+  disposeDialog.row = null
+  disposeDialog.rows = rows
+  disposeDialog.form.final_residual_value = rows.reduce((sum, item) => sum + Number(item.estimated_residual_value || 0), 0)
+  disposeDialog.form.disposal_method = ''
+  disposeDialog.form.retirement_date = todayText()
+  disposeDialog.form.retirement_approval_no = ''
+  disposeDialog.form.dispose_recipient_user_id = ''
+  disposeDialog.form.dispose_recipient_name = ''
+  disposeDialog.form.disposal_remark = ''
+  disposeDialog.visible = true
+}
+
 async function dispose() {
-  if (!disposeDialog.row) return
+  const rows = disposeDialogRows.value
+  if (!rows.length) return
   if (!disposeDialog.form.retirement_date) return ElMessage.warning('请选择退役时间')
   if (!disposeDialog.form.retirement_approval_no.trim()) return ElMessage.warning('请填写退役审批单号')
   if (!disposeDialog.form.disposal_method) return ElMessage.warning('请选择实际处置方式')
@@ -278,10 +320,20 @@ async function dispose() {
   }
   if (!disposeDialog.form.disposal_remark.trim()) return ElMessage.warning('请填写实际处置说明')
   const recipientText = disposeDialog.form.disposal_method === '员工领用' ? `，报废领走人：${disposeDialog.form.dispose_recipient_name || disposeDialog.form.dispose_recipient_user_id}` : ''
-  await ElMessageBox.confirm(`确认登记 ${disposeDialog.row.asset_id} 的报废处置？退役时间：${disposeDialog.form.retirement_date}，实际处置方式：${disposeDialog.form.disposal_method}${recipientText}。登记后资产状态保持已报废，报废单标记为已处置。`, '确认登记', { type: 'warning' })
-  await disposeScrapRequest(disposeDialog.row.id, disposeDialog.form)
+  const targetText = rows.length > 1 ? `${rows.length} 台资产` : `${rows[0].asset_no || rows[0].asset_id}`
+  await ElMessageBox.confirm(`确认登记 ${targetText} 的报废处置？退役时间：${disposeDialog.form.retirement_date}，实际处置方式：${disposeDialog.form.disposal_method}${recipientText}。登记后资产状态保持已报废，报废单标记为已处置。`, '确认登记', { type: 'warning' })
+  if (rows.length > 1) {
+    const result = await batchDisposeScrapRequests(rows.map(row => row.id), disposeDialog.form)
+    if (result.failed) {
+      ElMessage.warning(`退役登记完成 ${result.success} 条，失败 ${result.failed} 条：${result.errors[0]?.message || '请查看记录状态'}`)
+    } else {
+      ElMessage.success(`已完成 ${result.success} 台资产退役登记`)
+    }
+  } else {
+    await disposeScrapRequest(rows[0].id, disposeDialog.form)
+    ElMessage.success('报废资产已处置归档')
+  }
   disposeDialog.visible = false
-  ElMessage.success('报废资产已处置归档')
   await load()
 }
 
@@ -294,6 +346,10 @@ function normalizeDisposeMethod(method) {
   if (['报废', '变卖', '员工领用'].includes(method)) return method
   if (['出售', '转卖'].includes(method)) return '变卖'
   return '报废'
+}
+
+function isDisposable(row) {
+  return row && !['已处置', '已驳回'].includes(row.status)
 }
 
 function userLabel(user) {
