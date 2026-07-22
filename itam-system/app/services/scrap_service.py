@@ -68,6 +68,8 @@ class ScrapService:
         for row in rows:
             asset = assets.get(row.asset_id)
             row.asset_no = asset.asset_no if asset else row.asset_id
+            row.registration_no = row.request_no
+            row.flow_no = row.retirement_flow_no or row.request_no
         return {"list": rows, "total": total, "page": max(page, 1), "page_size": page_size or total}
 
     @staticmethod
@@ -179,6 +181,7 @@ class ScrapService:
         retirement_approval_no = (payload.get("retirement_approval_no") or "").strip()
         if not retirement_approval_no:
             raise ValueError("请填写退役审批单号")
+        retirement_flow_no = (payload.get("retirement_flow_no") or "").strip()
         disposal_remark = (payload.get("disposal_remark") or "").strip()
         recipient_user_id = (payload.get("dispose_recipient_user_id") or "").strip()
         recipient_name = (payload.get("dispose_recipient_name") or "").strip()
@@ -205,6 +208,7 @@ class ScrapService:
         request.disposal_method = disposal_method
         request.retirement_date = payload.get("retirement_date") or request.retirement_date or datetime.utcnow()
         request.retirement_approval_no = retirement_approval_no
+        request.retirement_flow_no = retirement_flow_no or request.retirement_flow_no or request.request_no
         final_residual_value = payload.get("final_residual_value")
         request.final_residual_value = float(
             request.estimated_residual_value or 0 if final_residual_value is None else final_residual_value
@@ -237,6 +241,7 @@ class ScrapService:
                     new_owner=recipient_label if request.disposal_method in {"员工领用", "变卖"} else operator,
                     location=asset.location,
                     extra={
+                        "retirement_flow_no": request.retirement_flow_no or request.request_no,
                         "disposal_method": request.disposal_method or "",
                         "retirement_date": request.retirement_date.isoformat() if request.retirement_date else "",
                         "retirement_approval_no": request.retirement_approval_no or "",
@@ -280,3 +285,8 @@ class ScrapService:
     def generate_no(db: Session) -> str:
         year = datetime.utcnow().year
         return NumberService.next(db, f"scrap:{year}", f"SC-{year}-", 4)
+
+    @staticmethod
+    def generate_retirement_flow_no(db: Session) -> str:
+        year = datetime.utcnow().year
+        return NumberService.next(db, f"retirement_flow:{year}", f"RT-{year}-", 4)

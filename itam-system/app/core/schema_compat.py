@@ -72,6 +72,7 @@ def ensure_compatible_schema(engine) -> None:
         add_column(engine, columns, "stocktake_items", "reviewed_at", "DATETIME NULL")
     if "scrap_requests" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("scrap_requests")}
+        add_column(engine, columns, "scrap_requests", "retirement_flow_no", "VARCHAR(64) NULL")
         add_column(engine, columns, "scrap_requests", "retirement_date", "DATETIME NULL")
         add_column(engine, columns, "scrap_requests", "retirement_approval_no", "VARCHAR(128) NULL")
         add_column(engine, columns, "scrap_requests", "final_residual_value", "DECIMAL(12,2) DEFAULT 0")

@@ -10,6 +10,7 @@ class ScrapRequest(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     request_no = Column(String(64), unique=True, nullable=False, index=True)
+    retirement_flow_no = Column(String(64), nullable=True, index=True)
     asset_id = Column(String(64), nullable=False, index=True)
     asset_name = Column(String(128), nullable=False)
     asset_sn = Column(String(128), nullable=True)

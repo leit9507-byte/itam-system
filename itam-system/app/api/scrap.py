@@ -28,6 +28,7 @@ class ScrapDisposePayload(BaseModel):
     disposal_method: str | None = None
     retirement_date: datetime | None = None
     retirement_approval_no: str | None = None
+    retirement_flow_no: str | None = None
     dispose_recipient_user_id: str | None = None
     dispose_recipient_name: str | None = None
     disposal_remark: str | None = None
@@ -111,6 +112,8 @@ def batch_dispose_scrap_requests(payload: ScrapBatchDisposePayload, request: Req
                 value = round(total_value / len(request_ids), 2)
             residual_values[request_id] = value
             remaining -= value
+    if len(request_ids) > 1 and not data.get("retirement_flow_no"):
+        data["retirement_flow_no"] = ScrapService.generate_retirement_flow_no(db)
     rows = []
     errors = []
     for request_id in request_ids:

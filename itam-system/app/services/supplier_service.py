@@ -163,7 +163,9 @@ class SupplierService:
             asset = asset_map.get(item.asset_id)
             rows.append(
                 {
-                    "request_no": item.request_no,
+                    "request_no": item.retirement_flow_no or item.request_no,
+                    "registration_no": item.request_no,
+                    "retirement_flow_no": item.retirement_flow_no or "",
                     "asset_id": item.asset_id,
                     "asset_no": asset.asset_no if asset else item.asset_id,
                     "asset_name": item.asset_name or (asset.name if asset else ""),

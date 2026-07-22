@@ -48,7 +48,7 @@
       <el-alert v-if="selected.length" :title="`已选择 ${selected.length} 条报废记录，可退役登记 ${batchDisposableRows.length} 条`" type="info" show-icon :closable="false" class="selection-alert" />
       <el-table :data="requests" border stripe @selection-change="selected = $event">
         <el-table-column type="selection" width="48" />
-        <el-table-column prop="request_no" label="流程单号" width="140" />
+        <el-table-column prop="flow_no" label="流程单号" width="140" />
         <el-table-column prop="company" label="公司" width="120" show-overflow-tooltip />
         <el-table-column prop="asset_no" label="资产编号" width="140">
           <template #default="{ row }">{{ row.asset_no || '-' }}</template>
@@ -126,7 +126,7 @@
         :closable="false"
       />
       <el-table v-if="disposeDialogRows.length > 1" :data="disposeDialogRows" border stripe max-height="260" class="dispose-asset-summary">
-        <el-table-column prop="request_no" label="登记单号" width="140" />
+        <el-table-column prop="registration_no" label="登记单号" width="140" />
         <el-table-column prop="asset_no" label="资产编号" width="140">
           <template #default="{ row }">{{ row.asset_no || '-' }}</template>
         </el-table-column>

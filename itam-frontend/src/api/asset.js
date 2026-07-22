@@ -331,6 +331,7 @@ export async function disposeScrapRequest(requestId, payload = {}) {
     disposal_method: payload.disposal_method || '',
     retirement_date: dateToApi(payload.retirement_date),
     retirement_approval_no: payload.retirement_approval_no || '',
+    retirement_flow_no: payload.retirement_flow_no || '',
     dispose_recipient_user_id: payload.dispose_recipient_user_id || '',
     dispose_recipient_name: payload.dispose_recipient_name || '',
     disposal_remark: payload.disposal_remark || ''
@@ -345,6 +346,7 @@ export async function batchDisposeScrapRequests(requestIds, payload = {}) {
     final_residual_value_mode: payload.final_residual_value_mode || '',
     retirement_date: dateToApi(payload.retirement_date),
     retirement_approval_no: payload.retirement_approval_no || '',
+    retirement_flow_no: payload.retirement_flow_no || '',
     dispose_recipient_user_id: payload.dispose_recipient_user_id || '',
     dispose_recipient_name: payload.dispose_recipient_name || '',
     disposal_remark: payload.disposal_remark || ''
@@ -455,9 +457,14 @@ function mapBackendAsset(row) {
 }
 
 function mapScrapRequest(row) {
+  const requestNo = row.request_no || `SC-${row.id}`
+  const retirementFlowNo = row.retirement_flow_no || ''
   return {
     id: row.id,
-    request_no: row.request_no || `SC-${row.id}`,
+    request_no: requestNo,
+    registration_no: row.registration_no || requestNo,
+    retirement_flow_no: retirementFlowNo,
+    flow_no: row.flow_no || retirementFlowNo || requestNo,
     asset_id: row.asset_id,
     asset_no: row.asset_no || '',
     asset_name: row.asset_name,
