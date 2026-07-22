@@ -90,7 +90,7 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="createDialog" title="创建采购单" width="1160px">
+    <el-dialog v-model="createDialog" title="创建采购单" width="760px" class="purchase-create-dialog">
       <el-form :model="form" label-width="100px">
         <div class="header-form">
           <el-form-item label="采购单号"><el-input v-model="form.purchase_no" /></el-form-item>
@@ -117,36 +117,45 @@
         <strong>采购明细</strong>
         <el-button type="primary" plain @click="addLine">添加设备明细</el-button>
       </div>
-      <el-table :data="form.items" border>
-        <el-table-column label="产品档案" min-width="220">
-          <template #default="{ row }">
-            <el-select v-model="row.product_id" filterable placeholder="选择产品" style="width: 100%" @change="selectProduct(row)">
+      <div class="purchase-line-list">
+        <section v-for="(row, index) in form.items" :key="index" class="purchase-line-card">
+          <div class="line-card-head">
+            <strong>设备明细 {{ index + 1 }}</strong>
+            <el-button link type="danger" :disabled="form.items.length === 1" @click="removeLine(index)">删除</el-button>
+          </div>
+          <el-form-item label="产品档案">
+            <el-select v-model="row.product_id" filterable placeholder="选择产品档案自动填充" style="width: 100%" @change="selectProduct(row)">
               <el-option v-for="item in products" :key="item.id" :label="`${item.product_name} / ${item.model}`" :value="item.id" />
             </el-select>
-          </template>
-        </el-table-column>
-        <el-table-column label="名称/型号" min-width="220">
-          <template #default="{ row }">
-            <div class="line-product">
-              <el-input v-model="row.product_name" placeholder="产品名称" />
-              <el-input v-model="row.model" placeholder="型号" />
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="类型" width="130"><template #default="{ row }"><el-input v-model="row.category" /></template></el-table-column>
-        <el-table-column label="品牌" width="130"><template #default="{ row }"><el-input v-model="row.brand" /></template></el-table-column>
-        <el-table-column label="数量" width="150"><template #default="{ row }"><el-input-number v-model="row.quantity" :min="1" :step="1" :precision="0" class="quantity-input" /></template></el-table-column>
-        <el-table-column label="单价" width="140"><template #default="{ row }"><el-input-number v-model="row.unit_price" :min="0" style="width: 100%" /></template></el-table-column>
-        <el-table-column label="采购原因" min-width="190"><template #default="{ row }"><el-input v-model="row.purchase_reason" /></template></el-table-column>
-        <el-table-column label="入库地址" width="180">
-          <template #default="{ row }">
+          </el-form-item>
+          <el-form-item label="产品名称">
+            <el-input v-model="row.product_name" placeholder="例如 ThinkPad X1 Carbon" />
+          </el-form-item>
+          <el-form-item label="型号">
+            <el-input v-model="row.model" placeholder="例如 X1 Carbon Gen 12" />
+          </el-form-item>
+          <el-form-item label="类型">
+            <el-input v-model="row.category" placeholder="例如 笔记本电脑" />
+          </el-form-item>
+          <el-form-item label="品牌">
+            <el-input v-model="row.brand" placeholder="例如 Lenovo / Apple / Dell" />
+          </el-form-item>
+          <el-form-item label="数量">
+            <el-input-number v-model="row.quantity" :min="1" :step="1" :precision="0" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="单价">
+            <el-input-number v-model="row.unit_price" :min="0" :precision="2" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="采购原因">
+            <el-input v-model="row.purchase_reason" type="textarea" :rows="2" placeholder="说明采购用途、替换原因或项目需求" />
+          </el-form-item>
+          <el-form-item label="入库地址">
             <el-select v-model="row.warehouse" filterable clearable placeholder="选择入库地址" style="width: 100%">
               <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
             </el-select>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="80"><template #default="{ $index }"><el-button link type="danger" @click="removeLine($index)">删除</el-button></template></el-table-column>
-      </el-table>
+          </el-form-item>
+        </section>
+      </div>
       <template #footer>
         <span class="amount">合计：¥{{ totalAmount.toLocaleString() }}</span>
         <el-button @click="createDialog = false">取消</el-button>
@@ -342,8 +351,8 @@ function openReceive(row) {
 
 .header-form {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: 1fr;
+  gap: 2px;
 }
 
 .wide-field {
@@ -355,7 +364,44 @@ function openReceive(row) {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 12px 0;
+  margin: 8px 0 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.purchase-create-dialog :deep(.el-dialog__body) {
+  max-height: 72vh;
+  overflow: auto;
+  padding-top: 18px;
+}
+
+.purchase-create-dialog :deep(.el-form-item) {
+  margin-bottom: 12px;
+}
+
+.purchase-line-list {
+  display: grid;
+  gap: 12px;
+}
+
+.purchase-line-card {
+  padding: 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #fbfdff;
+}
+
+.line-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.line-card-head strong {
+  color: var(--text);
+  font-size: 15px;
 }
 
 .inner-table,
@@ -380,13 +426,22 @@ function openReceive(row) {
 }
 
 @media (max-width: 980px) {
-  .header-form,
   .filter-grid {
     grid-template-columns: 1fr;
   }
 
   .wide-field {
     grid-column: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .purchase-create-dialog :deep(.el-dialog) {
+    width: calc(100vw - 20px) !important;
+  }
+
+  .purchase-create-dialog :deep(.el-form-item__label) {
+    width: 86px !important;
   }
 }
 </style>
