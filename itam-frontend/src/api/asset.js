@@ -342,6 +342,7 @@ export async function batchDisposeScrapRequests(requestIds, payload = {}) {
     request_ids: requestIds,
     final_residual_value: Number(payload.final_residual_value || 0),
     disposal_method: payload.disposal_method || '',
+    final_residual_value_mode: payload.final_residual_value_mode || '',
     retirement_date: dateToApi(payload.retirement_date),
     retirement_approval_no: payload.retirement_approval_no || '',
     dispose_recipient_user_id: payload.dispose_recipient_user_id || '',
