@@ -11,8 +11,8 @@
       </div>
     </div>
 
-    <el-dialog v-model="productDialog.visible" :title="productForm.id ? '编辑产品' : '创建产品'" width="920px" class="product-dialog" destroy-on-close>
-      <el-form :model="productForm" label-width="96px">
+    <el-dialog v-model="productDialog.visible" :title="productForm.id ? '编辑产品' : '创建产品'" width="560px" class="product-dialog" destroy-on-close>
+      <el-form :model="productForm" label-width="108px">
         <div class="product-form">
           <el-form-item label="产品名称" required>
             <el-input v-model.trim="productForm.product_name" placeholder="例如 ThinkPad X1 Carbon" />
@@ -23,7 +23,17 @@
             </el-select>
           </el-form-item>
           <el-form-item label="品牌">
-            <el-input v-model.trim="productForm.brand" placeholder="例如 Lenovo、Apple、Dell" />
+            <el-select
+              v-model="productForm.brand"
+              filterable
+              allow-create
+              default-first-option
+              clearable
+              placeholder="选择品牌或输入新品牌"
+              style="width: 100%"
+            >
+              <el-option v-for="item in brandOptions" :key="item" :label="item" :value="item" />
+            </el-select>
           </el-form-item>
           <el-form-item label="型号">
             <el-input v-model.trim="productForm.model" placeholder="例如 X1 Carbon Gen 12" />
@@ -115,6 +125,14 @@ const filters = reactive({ keyword: '', device_type: '' })
 const pagination = reactive({ page: 1, pageSize: 10 })
 
 const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
+const brandOptions = computed(() => {
+  const brands = new Set()
+  products.value.forEach(item => {
+    const brand = String(item.brand || '').trim()
+    if (brand) brands.add(brand)
+  })
+  return Array.from(brands).sort((a, b) => a.localeCompare(b, 'zh-CN'))
+})
 const filteredProducts = computed(() => {
   const q = filters.keyword.toLowerCase()
   return products.value.filter(item => {
@@ -203,8 +221,8 @@ async function removeProduct(row) {
 <style scoped>
 .product-form {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
 }
 
 .product-dialog :deep(.el-dialog__body) {
@@ -254,7 +272,7 @@ async function removeProduct(row) {
 
 @media (max-width: 1180px) {
   .product-form {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
