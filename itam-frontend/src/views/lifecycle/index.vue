@@ -11,7 +11,7 @@
           <el-radio-button label="daily_inventory">日常出入库</el-radio-button>
           <el-radio-button label="other">其他操作</el-radio-button>
         </el-radio-group>
-        <el-input v-model="keyword" clearable placeholder="搜索资产ID/名称/公司/操作人" style="width: 280px" @input="refresh" />
+        <el-input v-model="keyword" clearable placeholder="搜索资产编号/名称/公司/操作人" style="width: 280px" @input="refresh" />
         <el-date-picker
           v-model="dateRange"
           type="daterange"
@@ -30,7 +30,9 @@
       <el-table :data="items" border stripe empty-text="暂无生命周期记录">
         <el-table-column prop="time" label="时间" width="170" />
         <el-table-column prop="company" label="公司" width="140" show-overflow-tooltip />
-        <el-table-column prop="asset_id" label="资产ID" width="130" />
+        <el-table-column prop="asset_no" label="资产编号" width="140">
+          <template #default="{ row }">{{ row.asset_no || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="asset_name" label="资产名称" min-width="180" />
         <el-table-column prop="category_label" label="分类" width="120" />
         <el-table-column prop="type_label" label="动作" width="150" />

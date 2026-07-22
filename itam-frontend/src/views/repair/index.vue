@@ -84,7 +84,9 @@
       </template>
       <el-table :data="records" border stripe empty-text="暂无维修记录">
         <el-table-column prop="id" label="维修单号" width="140" />
-        <el-table-column prop="asset_id" label="资产ID" width="120" />
+        <el-table-column prop="asset_no" label="资产编号" width="140">
+          <template #default="{ row }">{{ row.asset_no || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="asset_name" label="资产名称" min-width="180" />
         <el-table-column prop="asset_model" label="型号" width="130" show-overflow-tooltip />
         <el-table-column prop="sn" label="序列号" width="150" />

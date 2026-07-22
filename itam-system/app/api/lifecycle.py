@@ -44,6 +44,7 @@ def list_lifecycles(
         query = query.filter(
             or_(
                 Lifecycle.asset_id.like(pattern),
+                Asset.asset_no.like(pattern),
                 Lifecycle.action_type.like(pattern),
                 Lifecycle.operator.like(pattern),
                 Lifecycle.remark.like(pattern),
@@ -69,6 +70,7 @@ def lifecycle_out(lifecycle: Lifecycle, asset: Asset) -> dict:
     return {
         "id": lifecycle.id,
         "asset_id": lifecycle.asset_id,
+        "asset_no": asset.asset_no,
         "asset_name": asset.name,
         "company": asset.company,
         "type": lifecycle.action_type,

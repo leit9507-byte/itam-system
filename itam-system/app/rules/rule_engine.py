@@ -139,6 +139,7 @@ class RuleEngine:
     def _violation(self, asset: Asset, rule_code: str, rule: dict, message: str, target_type: str = "asset") -> dict:
         return {
             "asset_id": asset.asset_id,
+            "asset_no": asset.asset_no,
             "rule": rule_code,
             "type": rule.get("name") or rule_code,
             "audit_scope": rule.get("audit_scope", "asset"),

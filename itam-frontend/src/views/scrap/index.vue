@@ -44,7 +44,9 @@
       <el-table :data="requests" border stripe>
         <el-table-column prop="request_no" label="流程单号" width="140" />
         <el-table-column prop="company" label="公司" width="120" show-overflow-tooltip />
-        <el-table-column prop="asset_id" label="资产ID" width="120" />
+        <el-table-column prop="asset_no" label="资产编号" width="140">
+          <template #default="{ row }">{{ row.asset_no || '-' }}</template>
+        </el-table-column>
         <el-table-column label="资产历史信息" min-width="260">
           <template #default="{ row }">
             <div class="asset-info">

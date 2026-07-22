@@ -239,6 +239,7 @@ class RepairService:
             "id": record.id,
             "repair_no": record.repair_no,
             "asset_id": record.asset_id,
+            "asset_no": asset.asset_no if asset else None,
             "repair_time": record.repair_time,
             "repair_type": record.repair_type,
             "fault_reason": record.fault_reason,

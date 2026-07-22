@@ -247,6 +247,7 @@ def ensure_company_data(db: Session) -> None:
 def asset_row(asset: Asset) -> dict:
     return {
         "asset_id": asset.asset_id,
+        "asset_no": asset.asset_no,
         "company": normalize_company(asset.company),
         "name": asset.name,
         "category": asset.category,

@@ -113,7 +113,9 @@
     <el-card shadow="never">
       <template #header>差异明细</template>
       <el-table :data="pagedAbnormalItems" border stripe empty-text="当前任务暂无盘点差异">
-        <el-table-column prop="asset_id" label="资产ID" width="120" />
+        <el-table-column prop="asset_no" label="资产编号" width="140">
+          <template #default="{ row }">{{ row.asset_no || row.asset_id || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="name" label="资产名称" min-width="180" />
         <el-table-column prop="sn" label="序列号" width="150" />
         <el-table-column prop="book_location" label="账面位置" width="160" />
@@ -191,7 +193,9 @@
         <span class="scan-tip">扫描确认后，系统按账面位置登记实盘位置；未扫描项目在完成盘点时自动记为盘亏。</span>
       </div>
       <el-table v-loading="itemLoading" :data="taskItems" border stripe row-key="asset_id">
-        <el-table-column prop="asset_id" label="资产ID" width="120" />
+        <el-table-column prop="asset_no" label="资产编号" width="140">
+          <template #default="{ row }">{{ row.asset_no || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="name" label="资产名称" min-width="160" />
         <el-table-column prop="sn" label="序列号" width="140" />
         <el-table-column prop="book_location" label="账面位置" width="160" />

@@ -3,7 +3,7 @@
     <div class="page-header asset-detail-header">
       <div>
         <h2 class="page-title">资产详情</h2>
-        <p class="page-subtitle">{{ detail.asset?.asset_id }} / {{ detail.asset?.name }}</p>
+        <p class="page-subtitle">{{ detail.asset?.asset_no || '-' }} / {{ detail.asset?.name }}</p>
       </div>
       <div class="header-actions">
         <el-button type="primary" @click="openEdit">编辑资产</el-button>
@@ -37,8 +37,8 @@
           <template #header>基本信息</template>
           <div class="basic-info-layout">
             <el-descriptions class="basic-info-table" :column="2" border>
-              <el-descriptions-item label="ID">{{ detail.asset?.display_id || '-' }}</el-descriptions-item>
-              <el-descriptions-item label="资产编码">{{ detail.asset?.asset_id || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="序号">{{ detail.asset?.display_id || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="资产编号">{{ detail.asset?.asset_no || '-' }}</el-descriptions-item>
               <el-descriptions-item label="所属公司">{{ detail.asset?.company || '-' }}</el-descriptions-item>
               <el-descriptions-item label="状态">
                 <div class="status-tags">

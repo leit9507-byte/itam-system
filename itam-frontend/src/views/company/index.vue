@@ -73,7 +73,9 @@
         </div>
       </template>
       <el-table v-loading="assetLoading" :data="currentAssets" border stripe empty-text="请选择一个公司查看资产明细">
-        <el-table-column prop="asset_id" label="资产ID" width="130" />
+        <el-table-column prop="asset_no" label="资产编号" width="140">
+          <template #default="{ row }">{{ row.asset_no || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="name" label="资产名称" min-width="170" />
         <el-table-column prop="category" label="类型" width="110" />
         <el-table-column label="产品信息" min-width="180">

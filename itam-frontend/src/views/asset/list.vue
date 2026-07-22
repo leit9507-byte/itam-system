@@ -250,8 +250,7 @@
       />
       <el-table v-if="batch.type === 'scrap'" :data="batch.assets" border stripe max-height="300" class="scrap-confirm-table">
         <el-table-column prop="display_id" label="序号" width="80" />
-        <el-table-column prop="asset_id" label="资产ID" min-width="120" />
-        <el-table-column prop="asset_no" label="资产标签" min-width="160" />
+        <el-table-column prop="asset_no" label="资产编号" min-width="160" />
         <el-table-column prop="name" label="资产名称" min-width="180" show-overflow-tooltip />
         <el-table-column prop="sn" label="序列号" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">{{ row.sn || '-' }}</template>
@@ -305,8 +304,8 @@
     <el-dialog v-model="repairDialog.visible" :title="repairDialog.assets.length > 1 ? '批量新增维修记录' : '新增维修记录'" width="620px">
       <el-alert v-if="repairDialog.assets.length > 1" :title="`本次将为 ${repairDialog.assets.length} 个资产创建维修记录，并更新为维修中。`" type="warning" show-icon :closable="false" class="dialog-alert" />
       <el-descriptions v-else-if="repairDialog.asset" :column="2" border class="repair-asset">
-        <el-descriptions-item label="资产ID">{{ repairDialog.asset.display_id || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="资产编码">{{ repairDialog.asset.asset_id }}</el-descriptions-item>
+        <el-descriptions-item label="序号">{{ repairDialog.asset.display_id || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="资产编号">{{ repairDialog.asset.asset_no || '-' }}</el-descriptions-item>
         <el-descriptions-item label="资产名称">{{ repairDialog.asset.name }}</el-descriptions-item>
         <el-descriptions-item label="序列号">{{ repairDialog.asset.sn || '-' }}</el-descriptions-item>
         <el-descriptions-item label="当前状态">{{ statusMap[repairDialog.asset.status]?.label || repairDialog.asset.status }}</el-descriptions-item>
@@ -426,8 +425,7 @@ const assetColumnDefs = [
   { key: 'company', prop: 'company', label: '公司', width: 140, tooltip: true },
   { key: 'category', prop: 'category', label: '类型', width: 110 },
   { key: 'product', label: '产品信息' },
-  { key: 'asset_id', prop: 'asset_id', label: '资产ID', width: 120 },
-  { key: 'asset_no', prop: 'asset_no', label: '资产标签', width: 160 },
+  { key: 'asset_no', prop: 'asset_no', label: '资产编号', width: 160 },
   { key: 'sn', prop: 'sn', label: '序列号', width: 150 },
   { key: 'purchase_supplier_name', prop: 'purchase_supplier_name', label: '供应商', width: 150, tooltip: true },
   { key: 'price', label: '价值' },
@@ -446,7 +444,6 @@ const DEFAULT_ASSET_COLUMN_ORDER = [
   'company',
   'category',
   'product',
-  'asset_id',
   'asset_no',
   'sn',
   'purchase_supplier_name',

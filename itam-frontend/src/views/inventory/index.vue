@@ -112,7 +112,7 @@
         <el-form-item label="数量"><el-input-number v-model="operateDialog.form.quantity" :min="1" style="width:100%" /></el-form-item>
         <el-form-item label="人员"><el-input v-model="operateDialog.form.assignee_name" placeholder="分配/归还人员" /></el-form-item>
         <el-form-item label="部门"><el-input v-model="operateDialog.form.dept_id" /></el-form-item>
-        <el-form-item label="资产ID"><el-input v-model="operateDialog.form.asset_id" :placeholder="isLicensePage ? '许可证绑定设备时填写' : '组件装配/配件绑定到资产时填写'" /></el-form-item>
+        <el-form-item label="资产编号"><el-input v-model="operateDialog.form.asset_id" :placeholder="isLicensePage ? '许可证绑定设备时填写' : '组件装配/配件绑定到资产时填写'" /></el-form-item>
         <el-form-item label="位置">
           <el-select v-model="operateDialog.form.location" filterable clearable placeholder="选择位置" style="width: 100%">
             <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
@@ -132,7 +132,7 @@
         <el-table-column prop="action_label" label="动作" width="110" />
         <el-table-column prop="quantity" label="数量" width="80" />
         <el-table-column prop="assignee_name" label="人员" width="120" />
-        <el-table-column prop="asset_id" label="资产ID" width="130" />
+        <el-table-column prop="asset_id" label="资产编号" width="130" />
         <el-table-column prop="operator" label="操作人" width="110" />
         <el-table-column prop="remark" label="备注" min-width="160" show-overflow-tooltip />
       </el-table>

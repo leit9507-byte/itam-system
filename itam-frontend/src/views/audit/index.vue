@@ -126,7 +126,9 @@
             <div class="asset-expand">
               <div class="asset-expand-title">涉及资产 {{ row.assets.length }} 台</div>
               <el-table :data="row.assets" size="small" border>
-                <el-table-column prop="asset_id" label="资产ID" width="130" />
+                <el-table-column prop="asset_no" label="资产编号" width="140">
+                  <template #default="{ row: asset }">{{ asset.asset_no || '-' }}</template>
+                </el-table-column>
                 <el-table-column prop="asset_name" label="资产名称" min-width="150" />
                 <el-table-column prop="dept" label="部门" width="120" />
                 <el-table-column prop="price" label="金额" width="120">
@@ -166,7 +168,9 @@
       </el-table>
 
       <el-table v-else :data="pagedAssetRows" border stripe empty-text="当前无资产审计命中记录">
-        <el-table-column prop="asset_id" label="资产ID" width="130" />
+        <el-table-column prop="asset_no" label="资产编号" width="140">
+          <template #default="{ row }">{{ row.asset_no || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="asset_name" label="资产名称" min-width="160" />
         <el-table-column prop="type" label="风险类型" min-width="150" />
         <el-table-column prop="severity" label="等级" width="90">
@@ -292,13 +296,15 @@
         <el-descriptions-item label="风险类型">{{ responseDrawer.row?.type }}</el-descriptions-item>
         <el-descriptions-item label="责任人">{{ responseDrawer.row?.owner }}</el-descriptions-item>
         <el-descriptions-item v-if="responseDrawer.row?.is_person_group" label="涉及资产">{{ responseDrawer.row?.asset_count }} 台 / ￥{{ formatValue(responseDrawer.row?.total_price) }}</el-descriptions-item>
-        <el-descriptions-item v-else label="资产">{{ responseDrawer.row?.asset_id }} / {{ responseDrawer.row?.asset_name }}</el-descriptions-item>
+        <el-descriptions-item v-else label="资产">{{ responseDrawer.row?.asset_no || '-' }} / {{ responseDrawer.row?.asset_name }}</el-descriptions-item>
       </el-descriptions>
 
       <div v-if="responseDrawer.row?.is_person_group" class="drawer-assets">
         <div class="asset-expand-title">本次统一答复覆盖以下资产</div>
         <el-table :data="pagedResponseAssets" size="small" border>
-          <el-table-column prop="asset_id" label="资产ID" width="130" />
+          <el-table-column prop="asset_no" label="资产编号" width="140">
+            <template #default="{ row }">{{ row.asset_no || '-' }}</template>
+          </el-table-column>
           <el-table-column prop="asset_name" label="资产名称" min-width="150" />
           <el-table-column prop="price" label="金额" width="110">
             <template #default="{ row }">￥{{ formatValue(row.price) }}</template>

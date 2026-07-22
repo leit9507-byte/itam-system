@@ -9,7 +9,9 @@
         </div>
       </template>
       <el-table :data="result?.violations || []" border>
-        <el-table-column prop="asset_id" label="资产ID" width="120" />
+        <el-table-column prop="asset_no" label="资产编号" width="140">
+          <template #default="{ row }">{{ row.asset_no || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="type" label="违规类型" width="180" />
         <el-table-column prop="severity" label="级别" width="120">
           <template #default="{ row }">

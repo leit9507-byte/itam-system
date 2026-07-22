@@ -62,7 +62,13 @@ class ScrapService:
         query = query.order_by(ScrapRequest.id.desc())
         if page_size and page_size > 0:
             query = query.offset((max(page, 1) - 1) * page_size).limit(page_size)
-        return {"list": query.all(), "total": total, "page": max(page, 1), "page_size": page_size or total}
+        rows = query.all()
+        asset_ids = [row.asset_id for row in rows if row.asset_id]
+        assets = {asset.asset_id: asset for asset in db.query(Asset).filter(Asset.asset_id.in_(asset_ids)).all()} if asset_ids else {}
+        for row in rows:
+            asset = assets.get(row.asset_id)
+            row.asset_no = asset.asset_no if asset else row.asset_id
+        return {"list": rows, "total": total, "page": max(page, 1), "page_size": page_size or total}
 
     @staticmethod
     def apply_data_scope(query, user_context: dict | None):

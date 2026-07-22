@@ -263,7 +263,12 @@ def list_task_items(
         .limit(page_size)
         .all()
     )
-    return {"list": [serialize_item(item) for item in rows], "total": total, "page": page, "page_size": page_size}
+    asset_ids = [item.asset_id for item in rows if item.asset_id]
+    asset_numbers = {
+        asset.asset_id: asset.asset_no
+        for asset in db.query(Asset).filter(Asset.asset_id.in_(asset_ids)).all()
+    } if asset_ids else {}
+    return {"list": [serialize_item(item, asset_numbers.get(item.asset_id)) for item in rows], "total": total, "page": page, "page_size": page_size}
 
 
 def scoped_assets(db: Session, scope: str, target: str | list[str] | None, user_context: dict | None = None, include_scrapped: bool = False):
@@ -373,9 +378,10 @@ def visible_asset_id_set(db: Session, request: Request) -> set[str]:
     return {row[0] for row in AssetService.apply_data_scope(db.query(Asset), user_context_from_request(request)).with_entities(Asset.asset_id).all()}
 
 
-def serialize_item(item: StocktakeItem) -> dict:
+def serialize_item(item: StocktakeItem, asset_no: str | None = None) -> dict:
     return {
         "asset_id": item.asset_id,
+        "asset_no": asset_no or item.asset_id,
         "name": item.name or "",
         "sn": item.sn or "",
         "book_location": item.book_location or "",
