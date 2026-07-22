@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import asset, audit, company, dashboard, files, identity, inventory, lifecycle, location, notification, ops, product, purchase, repair, reporting, scan_binding, scrap, stocktake, supplier, todo
+from app.api import asset, audit, company, dashboard, files, identity, inventory, lifecycle, location, notification, ops, product, purchase, repair, reporting, scan_binding, scrap, settings, stocktake, supplier, todo
 from app.core.database import Base, engine
 from app.core.schema_compat import ensure_compatible_schema
 from app.core.config import get_settings
@@ -128,6 +128,7 @@ def create_app() -> FastAPI:
     app.include_router(inventory.router)
     app.include_router(identity.router)
     app.include_router(notification.router)
+    app.include_router(settings.router)
     app.include_router(audit.router)
     app.include_router(files.router)
     app.include_router(reporting.router)

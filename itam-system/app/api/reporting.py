@@ -138,7 +138,7 @@ def get_audit_report_archive(db: Session, report_no: str, request: Request) -> A
 @router.get("/assets.csv")
 def export_assets_csv(request: Request, db: Session = Depends(get_db)):
     rows = [
-        [asset.asset_id, asset.asset_no, asset.name, asset.category, asset.brand, asset.model, asset.sn, asset.status, asset.owner_user_id, asset.dept_id, asset.location, asset.purchase_price, AssetResidualService.calculate_asset(asset)]
+        [asset.asset_id, asset.asset_no, asset.name, asset.category, asset.brand, asset.model, asset.sn, asset.status, asset.owner_user_id, asset.dept_id, asset.location, asset.purchase_price, AssetResidualService.calculate_asset(asset, db=db)]
         for asset in scoped_assets_query(db, request).order_by(Asset.asset_id.asc()).all()
     ]
     return csv_response("assets.csv", ["asset_id", "asset_no", "name", "category", "brand", "model", "sn", "status", "owner_user_id", "dept_id", "location", "purchase_price", "current_residual_value"], rows)
@@ -160,7 +160,7 @@ def export_department_assets_csv(request: Request, db: Session = Depends(get_db)
             asset.owner_user_id or "",
             asset.location or "",
             money(asset.purchase_price),
-            money(AssetResidualService.calculate_asset(asset)),
+            money(AssetResidualService.calculate_asset(asset, db=db)),
             date_text(asset.created_at),
         ]
         for asset in scoped_assets_query(db, request).order_by(Asset.dept_id.asc(), Asset.asset_id.asc()).all()
@@ -190,7 +190,7 @@ def export_person_holdings_csv(request: Request, db: Session = Depends(get_db)):
             asset.status or "",
             asset.location or "",
             money(asset.purchase_price),
-            money(AssetResidualService.calculate_asset(asset)),
+            money(AssetResidualService.calculate_asset(asset, db=db)),
             date_text(asset.created_at),
         ])
     return csv_response("person-holdings.csv", ["人员ID", "姓名", "部门", "资产ID", "资产编号", "名称", "类型", "状态", "位置", "资产价值", "当前残值", "创建时间"], rows)

@@ -32,6 +32,7 @@
         <el-menu-item v-if="canRead('rbac')" index="/permission">权限管理</el-menu-item>
         <el-menu-item v-if="canRead('identity')" index="/personnel">人员管理</el-menu-item>
         <el-menu-item v-if="canRead('identity')" index="/notification">消息通知</el-menu-item>
+        <el-menu-item v-if="canRead('asset')" index="/residual-rule">残值规则</el-menu-item>
         <el-menu-item v-if="canRead('ops')" index="/ops">运维面板</el-menu-item>
         <el-menu-item v-if="canRead('ops')" index="/operation-log">日志中心</el-menu-item>
       </el-sub-menu>
@@ -56,7 +57,7 @@ const store = useAppStore()
 
 const assetGroupVisible = computed(() => canAny(['asset', 'purchase', 'repair']))
 const configGroupVisible = computed(() => canAny(['asset', 'catalog', 'supplier', 'identity']))
-const systemGroupVisible = computed(() => canAny(['identity', 'rbac', 'ops']))
+const systemGroupVisible = computed(() => canAny(['identity', 'rbac', 'asset', 'ops']))
 const reportGroupVisible = computed(() => canAny(['audit', 'report', 'asset']))
 
 onMounted(() => {

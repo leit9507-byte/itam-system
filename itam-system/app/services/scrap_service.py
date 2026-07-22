@@ -109,7 +109,7 @@ class ScrapService:
             disposal_method=None,
             retirement_date=payload.get("retirement_date"),
             retirement_approval_no=payload.get("retirement_approval_no") or "",
-            estimated_residual_value=AssetResidualService.calculate_asset(asset),
+            estimated_residual_value=AssetResidualService.calculate_asset(asset, db=db),
             status="待处置",
         )
         from_status = asset.status

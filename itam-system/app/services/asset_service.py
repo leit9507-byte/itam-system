@@ -233,7 +233,7 @@ class AssetService:
         LifecycleService.record(db, asset.asset_id, "CREATE", None, asset.status, operator)
         db.commit()
         db.refresh(asset)
-        return AssetService.to_out(asset, user)
+        return AssetService.to_out(asset, user, db)
 
     @staticmethod
     def import_assets(db: Session, payload: AssetBatchImport) -> dict:
@@ -305,13 +305,14 @@ class AssetService:
         db.commit()
         for asset in [*created_assets, *updated_assets]:
             db.refresh(asset)
+        residual_config = AssetResidualService.get_config(db)
 
         return {
             "created": len(created_assets),
             "updated": len(updated_assets),
             "skipped": skipped,
             "errors": errors,
-            "assets": [AssetService.to_out(asset) for asset in [*created_assets, *updated_assets]],
+            "assets": [AssetService.to_out(asset, db=db, residual_config=residual_config) for asset in [*created_assets, *updated_assets]],
         }
 
     @staticmethod
@@ -777,9 +778,10 @@ class AssetService:
         assets = query.all()
         rows = []
         offset_base = (max(page, 1) - 1) * page_size if page_size and page_size > 0 else 0
+        residual_config = AssetResidualService.get_config(db)
         for index, asset in enumerate(assets):
             user = users.get(asset.owner_user_id or "")
-            row = AssetService.to_out(asset, user)
+            row = AssetService.to_out(asset, user, db, residual_config)
             row["display_id"] = max(total - offset_base - index, 1)
             # 展示层归一化：负责人/部门与用户目录保持一致，持久化同步由写路径的 sync_owner_department 负责
             if user:
@@ -794,7 +796,7 @@ class AssetService:
     def get_asset(db: Session, asset_id: str, user_context: dict | None = None) -> dict:
         asset = AssetService.get_scoped_asset(db, asset_id, user_context)
         user = AssetService.users_by_identity(db).get(asset.owner_user_id or "")
-        row = AssetService.to_out(asset, user)
+        row = AssetService.to_out(asset, user, db)
         row["display_id"] = AssetService.asset_display_id(db, asset)
         if user:
             row["owner_user_id"] = user.user_id
@@ -931,7 +933,7 @@ class AssetService:
         asset = AssetService.apply_asset_update(db, asset_id, payload, operator, user_context)
         db.commit()
         db.refresh(asset)
-        return AssetService.to_out(asset)
+        return AssetService.to_out(asset, db=db)
 
     @staticmethod
     def apply_asset_update(db: Session, asset_id: str, payload: AssetUpdate, operator: str = "system", user_context: dict | None = None) -> Asset:
@@ -993,7 +995,8 @@ class AssetService:
             db.commit()
             for asset in rows:
                 db.refresh(asset)
-            return {"success": len(rows), "failed": 0, "assets": [AssetService.to_out(asset) for asset in rows], "errors": []}
+            residual_config = AssetResidualService.get_config(db)
+            return {"success": len(rows), "failed": 0, "assets": [AssetService.to_out(asset, db=db, residual_config=residual_config) for asset in rows], "errors": []}
         except (AssetValidationError, ValueError) as exc:
             db.rollback()
             errors = [{"asset_id": asset_id, "message": str(exc)} for asset_id in unique_ids]
@@ -1149,7 +1152,7 @@ class AssetService:
         db.commit()
         db.refresh(asset)
         AssetService.notify_status_change(db, asset, from_status, to_status, operator, previous_user, previous_owner_user_id, user)
-        return AssetService.to_out(asset, user)
+        return AssetService.to_out(asset, user, db)
 
     @staticmethod
     def checkout_asset(db: Session, asset_id: str, payload: AssetCheckoutCreate, operator: str = "system", user_context: dict | None = None) -> Asset:
@@ -1681,7 +1684,7 @@ class AssetService:
         return mapping
 
     @staticmethod
-    def to_out(asset: Asset, user: UserDirectory | None = None) -> dict:
+    def to_out(asset: Asset, user: UserDirectory | None = None, db: Session | None = None, residual_config: dict | None = None) -> dict:
         user = user or None
         return {
             "asset_id": asset.asset_id,
@@ -1694,7 +1697,7 @@ class AssetService:
             "sn": asset.sn,
             "config": asset.config,
             "purchase_price": asset.purchase_price,
-            "current_residual_value": AssetResidualService.calculate_asset(asset),
+            "current_residual_value": AssetResidualService.calculate_asset(asset, db=db, residual_config=residual_config),
             "purchase_date": asset.purchase_date,
             "purchase_approval_no": asset.purchase_approval_no,
             "purchase_supplier_name": asset.purchase_supplier_name,

@@ -176,4 +176,4 @@ class ScanBindingService:
         if not asset:
             return {"bound": False, "scan_key": scan_key}
         user = AssetService.users_by_identity(db).get(asset.owner_user_id or "")
-        return {"bound": True, "scan_key": scan_key, "asset": AssetService.to_out(asset, user), "binding": ScanBindingService.to_out(row)}
+        return {"bound": True, "scan_key": scan_key, "asset": AssetService.to_out(asset, user, db), "binding": ScanBindingService.to_out(row)}
