@@ -400,7 +400,7 @@ const topTodos = computed(() => {
 
 const actionCards = computed(() => [
   { label: '采购验收', value: lifecycleValue('待采购') + lifecycleValue('待验收'), caption: '采购单和待验收入库', path: '/purchase', tone: 'blue', icon: Files },
-  { label: '领用归还', value: inUseAssets.value, caption: '员工资产流转', path: '/checkout', tone: 'green', icon: CircleCheck },
+  { label: '借用登记', value: inUseAssets.value, caption: '员工资产流转', path: '/checkout', tone: 'green', icon: CircleCheck },
   { label: '维修跟进', value: repairAssets.value, caption: `费用 ¥${formatCompact(data.maintenance?.monthCost || 0)}`, path: '/repair', tone: 'purple', icon: Tools },
   { label: '报废处置', value: pendingScrapAssets.value, caption: '待报废和退役登记', path: '/scrap', tone: 'orange', icon: Delete }
 ])

@@ -10,7 +10,7 @@
       <el-sub-menu v-if="assetGroupVisible" index="/asset">
         <template #title><el-icon><Monitor /></el-icon><span>资产运营</span></template>
         <el-menu-item v-if="canRead('asset')" index="/asset/list">资产台账</el-menu-item>
-        <el-menu-item v-if="canRead('asset')" index="/checkout">领用归还</el-menu-item>
+        <el-menu-item v-if="canRead('asset')" index="/checkout">借用登记</el-menu-item>
         <el-menu-item v-if="canRead('purchase')" index="/purchase">采购入库</el-menu-item>
         <el-menu-item v-if="canRead('asset')" index="/stocktake">资产盘点</el-menu-item>
         <el-menu-item v-if="canRead('repair')" index="/repair">维修管理</el-menu-item>
