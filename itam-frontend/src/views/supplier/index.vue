@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">供应商管理</h2>
-        <p class="page-subtitle">管理供应商档案，并查询每个供应商采购过的设备明细</p>
+        <p class="page-subtitle">管理供应商档案，查询采购设备和报废变卖回收资产</p>
       </div>
       <el-button type="primary" @click="openCreate">新增供应商</el-button>
     </div>
@@ -21,8 +21,12 @@
           <el-table-column prop="level" label="等级" width="90" />
           <el-table-column prop="purchase_count" label="采购单" width="90" />
           <el-table-column prop="device_count" label="设备数" width="90" />
+          <el-table-column prop="recycle_count" label="回收数" width="90" />
           <el-table-column prop="total_amount" label="采购金额" width="130">
             <template #default="{ row }">¥{{ Number(row.total_amount || 0).toLocaleString() }}</template>
+          </el-table-column>
+          <el-table-column prop="recycle_amount" label="回收金额" width="130">
+            <template #default="{ row }">¥{{ Number(row.recycle_amount || 0).toLocaleString() }}</template>
           </el-table-column>
         </el-table>
         <div class="pagination-bar">
@@ -41,40 +45,66 @@
       <el-card shadow="never">
         <template #header>
           <div class="card-header">
-            <span>{{ currentSupplier?.name || '供应商采购设备' }}</span>
-            <el-tag type="info">{{ devices.length }} 条明细</el-tag>
+            <span>{{ currentSupplier?.name || '供应商明细' }}</span>
+            <el-tag type="info">{{ activeDetailTotal }} 条明细</el-tag>
           </div>
         </template>
         <div v-if="currentSupplier" class="supplier-summary">
           <el-statistic title="采购单数" :value="currentSupplier.purchase_count" />
           <el-statistic title="采购设备数" :value="currentSupplier.device_count" />
           <el-statistic title="采购金额" :value="currentSupplier.total_amount" prefix="¥" />
+          <el-statistic title="回收资产数" :value="currentSupplier.recycle_count" />
+          <el-statistic title="回收金额" :value="currentSupplier.recycle_amount" prefix="¥" />
         </div>
-        <el-table :data="devices" border stripe empty-text="请选择供应商或当前供应商暂无采购设备">
-          <el-table-column prop="purchase_no" label="采购单号" width="150" />
-          <el-table-column prop="product_name" label="设备名称" min-width="170" />
-          <el-table-column prop="category" label="类型" width="110" />
-          <el-table-column prop="brand" label="品牌" width="110" />
-          <el-table-column prop="model" label="型号" width="130" />
-          <el-table-column prop="quantity" label="数量" width="80" />
-          <el-table-column prop="unit_price" label="单价" width="120">
-            <template #default="{ row }">¥{{ Number(row.unit_price || 0).toLocaleString() }}</template>
-          </el-table-column>
-          <el-table-column prop="total_amount" label="金额" width="130">
-            <template #default="{ row }">¥{{ Number(row.total_amount || 0).toLocaleString() }}</template>
-          </el-table-column>
-          <el-table-column prop="warehouse" label="入库仓库" width="130" />
-          <el-table-column prop="status" label="采购状态" width="110" />
-        </el-table>
+        <el-tabs v-model="activeTab" class="supplier-tabs" @tab-change="handleTabChange">
+          <el-tab-pane label="采购设备" name="purchase">
+            <el-table :data="devices" border stripe empty-text="请选择供应商或当前供应商暂无采购设备">
+              <el-table-column prop="purchase_no" label="采购单号" width="150" />
+              <el-table-column prop="product_name" label="设备名称" min-width="170" />
+              <el-table-column prop="category" label="类型" width="110" />
+              <el-table-column prop="brand" label="品牌" width="110" />
+              <el-table-column prop="model" label="型号" width="130" />
+              <el-table-column prop="quantity" label="数量" width="80" />
+              <el-table-column prop="unit_price" label="单价" width="120">
+                <template #default="{ row }">¥{{ Number(row.unit_price || 0).toLocaleString() }}</template>
+              </el-table-column>
+              <el-table-column prop="total_amount" label="金额" width="130">
+                <template #default="{ row }">¥{{ Number(row.total_amount || 0).toLocaleString() }}</template>
+              </el-table-column>
+              <el-table-column prop="warehouse" label="入库地址" width="130" />
+              <el-table-column prop="status" label="采购状态" width="110" />
+            </el-table>
+          </el-tab-pane>
+          <el-tab-pane label="回收资产" name="recycle">
+            <el-table :data="recycledAssets" border stripe empty-text="请选择供应商或当前供应商暂无回收资产">
+              <el-table-column prop="request_no" label="处置单号" width="140" />
+              <el-table-column prop="asset_no" label="资产编号" width="140" />
+              <el-table-column prop="asset_name" label="资产名称" min-width="180" show-overflow-tooltip />
+              <el-table-column prop="category" label="类型" width="110" />
+              <el-table-column prop="brand" label="品牌" width="110" />
+              <el-table-column prop="model" label="型号" width="130" />
+              <el-table-column prop="sn" label="序列号" width="140" show-overflow-tooltip />
+              <el-table-column prop="purchase_price" label="采购原值" width="120">
+                <template #default="{ row }">¥{{ Number(row.purchase_price || 0).toLocaleString() }}</template>
+              </el-table-column>
+              <el-table-column prop="final_residual_value" label="回收金额" width="120">
+                <template #default="{ row }">¥{{ Number(row.final_residual_value || 0).toLocaleString() }}</template>
+              </el-table-column>
+              <el-table-column prop="retirement_date" label="退役时间" width="120" />
+              <el-table-column prop="disposed_at" label="处置时间" width="120" />
+              <el-table-column prop="disposal_remark" label="处置说明" min-width="180" show-overflow-tooltip />
+            </el-table>
+          </el-tab-pane>
+        </el-tabs>
         <div class="pagination-bar">
           <el-pagination
-            v-model:current-page="devicePagination.page"
-            v-model:page-size="devicePagination.pageSize"
+            v-model:current-page="activePagination.page"
+            v-model:page-size="activePagination.pageSize"
             :page-sizes="[10, 20, 50, 100]"
-            :total="devicePagination.total"
+            :total="activePagination.total"
             layout="total, sizes, prev, pager, next, jumper"
-            @size-change="handleDevicePageSizeChange"
-            @current-change="loadDevices"
+            @size-change="handleDetailPageSizeChange"
+            @current-change="loadActiveDetails"
           />
         </div>
       </el-card>
@@ -103,16 +133,21 @@
 
 <script setup>
 import { ElMessage } from 'element-plus'
-import { onMounted, reactive, ref } from 'vue'
-import { getSupplierPurchaseDevices, getSuppliersPaged, saveSupplier } from '../../api/supplier'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { getSupplierPurchaseDevices, getSupplierRecycledAssets, getSuppliersPaged, saveSupplier } from '../../api/supplier'
 
 const suppliers = ref([])
 const devices = ref([])
+const recycledAssets = ref([])
 const currentSupplier = ref(null)
 const keyword = ref('')
+const activeTab = ref('purchase')
 const dialog = reactive({ visible: false, form: defaultForm() })
 const supplierPagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const devicePagination = reactive({ page: 1, pageSize: 10, total: 0 })
+const recyclePagination = reactive({ page: 1, pageSize: 10, total: 0 })
+const activePagination = computed(() => activeTab.value === 'recycle' ? recyclePagination : devicePagination)
+const activeDetailTotal = computed(() => activePagination.value.total)
 
 onMounted(load)
 
@@ -127,7 +162,9 @@ async function refreshSuppliers() {
   supplierPagination.page = 1
   currentSupplier.value = null
   devices.value = []
+  recycledAssets.value = []
   devicePagination.total = 0
+  recyclePagination.total = 0
   await load()
 }
 
@@ -135,7 +172,8 @@ async function selectSupplier(row) {
   if (!row) return
   currentSupplier.value = row
   devicePagination.page = 1
-  await loadDevices()
+  recyclePagination.page = 1
+  await loadActiveDetails()
 }
 
 async function loadDevices() {
@@ -145,14 +183,29 @@ async function loadDevices() {
   devicePagination.total = result.total
 }
 
+async function loadRecycledAssets() {
+  if (!currentSupplier.value) return
+  const result = await getSupplierRecycledAssets(currentSupplier.value.name, { page: recyclePagination.page, page_size: recyclePagination.pageSize })
+  recycledAssets.value = result.list
+  recyclePagination.total = result.total
+}
+
+function loadActiveDetails() {
+  return activeTab.value === 'recycle' ? loadRecycledAssets() : loadDevices()
+}
+
+async function handleTabChange() {
+  await loadActiveDetails()
+}
+
 function handleSupplierPageSizeChange() {
   supplierPagination.page = 1
   load()
 }
 
-function handleDevicePageSizeChange() {
-  devicePagination.page = 1
-  loadDevices()
+function handleDetailPageSizeChange() {
+  activePagination.value.page = 1
+  loadActiveDetails()
 }
 
 function openCreate() {
@@ -170,6 +223,7 @@ async function save() {
   ElMessage.success('供应商已保存')
   supplierPagination.page = 1
   currentSupplier.value = null
+  recycledAssets.value = []
   await load()
 }
 
@@ -199,9 +253,13 @@ function defaultForm() {
 
 .supplier-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.supplier-tabs {
+  margin-top: 4px;
 }
 
 .supplier-summary :deep(.el-statistic) {

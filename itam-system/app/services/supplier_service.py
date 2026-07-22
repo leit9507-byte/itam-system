@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models.asset import Asset
 from app.models.purchase import Purchase
+from app.models.scrap import ScrapRequest
 from app.models.supplier import Supplier
 from app.services.number_service import NumberService
 from app.schemas.supplier import SupplierSave
@@ -114,8 +115,10 @@ class SupplierService:
     def ensure_from_business_data(db: Session) -> None:
         purchases = db.query(Purchase).all()
         assets = db.query(Asset).all()
+        scraps = db.query(ScrapRequest).filter(ScrapRequest.disposal_method == "变卖").all()
         names = {purchase.supplier_name for purchase in purchases if purchase.supplier_name}
         names.update(asset.purchase_supplier_name for asset in assets if asset.purchase_supplier_name)
+        names.update(scrap.dispose_recipient_name for scrap in scraps if scrap.dispose_recipient_name)
         changed = False
         for name in names:
             if not db.query(Supplier).filter(Supplier.name == name).first():
@@ -128,8 +131,10 @@ class SupplierService:
     def with_stats(db: Session, supplier: Supplier) -> dict:
         purchases = SupplierService.purchase_query(db, supplier.name).all()
         assets = SupplierService.asset_query(db, supplier.name).all()
+        recycled_assets = SupplierService.recycled_assets_query(db, supplier.name).all()
         purchase_amount = sum(purchase.total_amount or 0 for purchase in purchases)
         asset_amount = sum(asset.purchase_price or 0 for asset in assets)
+        recycled_amount = sum(scrap.final_residual_value or 0 for scrap in recycled_assets)
         return {
             "id": supplier.id,
             "supplier_no": supplier.supplier_no,
@@ -143,8 +148,44 @@ class SupplierService:
             "purchase_count": len(purchases),
             "device_count": sum(sum(item.quantity or 0 for item in purchase.items) for purchase in purchases) + len(assets),
             "total_amount": purchase_amount + asset_amount,
+            "recycle_count": len(recycled_assets),
+            "recycle_amount": recycled_amount,
             "last_purchase_no": purchases[-1].purchase_no if purchases else "",
         }
+
+    @staticmethod
+    def recycled_assets(db: Session, supplier_name: str, page: int = 1, page_size: int = 20) -> dict:
+        rows = []
+        requests = SupplierService.recycled_assets_query(db, supplier_name).order_by(ScrapRequest.disposed_at.desc(), ScrapRequest.id.desc()).all()
+        asset_ids = [item.asset_id for item in requests if item.asset_id]
+        asset_map = {asset.asset_id: asset for asset in db.query(Asset).filter(Asset.asset_id.in_(asset_ids)).all()} if asset_ids else {}
+        for item in requests:
+            asset = asset_map.get(item.asset_id)
+            rows.append(
+                {
+                    "request_no": item.request_no,
+                    "asset_id": item.asset_id,
+                    "asset_no": asset.asset_no if asset else item.asset_id,
+                    "asset_name": item.asset_name or (asset.name if asset else ""),
+                    "category": item.category or (asset.category if asset else ""),
+                    "brand": item.brand or (asset.brand if asset else ""),
+                    "model": item.model or (asset.model if asset else ""),
+                    "sn": item.asset_sn or (asset.sn if asset else ""),
+                    "purchase_price": item.purchase_price or (asset.purchase_price if asset else 0),
+                    "estimated_residual_value": item.estimated_residual_value or 0,
+                    "final_residual_value": item.final_residual_value or 0,
+                    "retirement_date": item.retirement_date,
+                    "retirement_approval_no": item.retirement_approval_no or "",
+                    "disposed_at": item.disposed_at,
+                    "disposal_remark": item.disposal_remark or "",
+                    "status": item.status,
+                }
+            )
+        total = len(rows)
+        if page_size and page_size > 0:
+            start = (max(page, 1) - 1) * page_size
+            rows = rows[start : start + page_size]
+        return {"list": rows, "total": total, "page": max(page, 1), "page_size": page_size or total}
 
     @staticmethod
     def purchase_query(db: Session, supplier_name: str):
@@ -157,6 +198,13 @@ class SupplierService:
         if supplier_name == "未指定供应商":
             return db.query(Asset).filter((Asset.purchase_supplier_name.is_(None)) | (Asset.purchase_supplier_name == ""))
         return db.query(Asset).filter(Asset.purchase_supplier_name == supplier_name)
+
+    @staticmethod
+    def recycled_assets_query(db: Session, supplier_name: str):
+        query = db.query(ScrapRequest).filter(ScrapRequest.disposal_method == "变卖", ScrapRequest.status == "已处置")
+        if supplier_name == "未指定供应商":
+            return query.filter((ScrapRequest.dispose_recipient_name.is_(None)) | (ScrapRequest.dispose_recipient_name == ""))
+        return query.filter(ScrapRequest.dispose_recipient_name == supplier_name)
 
     @staticmethod
     def generate_supplier_no(db: Session) -> str:

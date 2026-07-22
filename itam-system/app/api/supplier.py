@@ -27,3 +27,8 @@ def update_supplier(supplier_id: int, payload: SupplierSave, db: Session = Depen
 @router.get("/{supplier_name}/devices")
 def supplier_devices(supplier_name: str, page: int = 1, page_size: int = 20, db: Session = Depends(get_db)):
     return SupplierService.purchase_devices(db, supplier_name, page, page_size)
+
+
+@router.get("/{supplier_name}/recycled-assets")
+def supplier_recycled_assets(supplier_name: str, page: int = 1, page_size: int = 20, db: Session = Depends(get_db)):
+    return SupplierService.recycled_assets(db, supplier_name, page, page_size)

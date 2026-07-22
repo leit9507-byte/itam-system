@@ -48,6 +48,37 @@ export async function getSupplierPurchaseDevices(supplierName, filters = {}) {
   }
 }
 
+export async function getSupplierRecycledAssets(supplierName, filters = {}) {
+  const result = await request.get(`/supplier/${encodeURIComponent(supplierName)}/recycled-assets`, {
+    params: {
+      page: filters.page || undefined,
+      page_size: filters.page_size ?? filters.pageSize ?? undefined
+    }
+  })
+  const { rows, total } = normalizePagedResult(result)
+  return {
+    list: rows.map(item => ({
+      request_no: item.request_no || '',
+      asset_id: item.asset_id || '',
+      asset_no: item.asset_no || '',
+      asset_name: item.asset_name || '',
+      category: item.category || '',
+      brand: item.brand || '',
+      model: item.model || '',
+      sn: item.sn || '',
+      purchase_price: Number(item.purchase_price || 0),
+      estimated_residual_value: Number(item.estimated_residual_value || 0),
+      final_residual_value: Number(item.final_residual_value || 0),
+      retirement_date: formatDate(item.retirement_date),
+      retirement_approval_no: item.retirement_approval_no || '',
+      disposed_at: formatDate(item.disposed_at),
+      disposal_remark: item.disposal_remark || '',
+      status: item.status || ''
+    })),
+    total
+  }
+}
+
 export async function saveSupplier(payload) {
   clearCache('supplier:')
   const body = {
@@ -73,8 +104,16 @@ function mapSupplier(row) {
     purchase_count: Number(row.purchase_count || 0),
     device_count: Number(row.device_count || 0),
     total_amount: Number(row.total_amount || 0),
+    recycle_count: Number(row.recycle_count || 0),
+    recycle_amount: Number(row.recycle_amount || 0),
     last_purchase_no: row.last_purchase_no || ''
   }
+}
+
+function formatDate(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? String(value).slice(0, 10) : date.toISOString().slice(0, 10)
 }
 
 function normalizePagedResult(result) {
