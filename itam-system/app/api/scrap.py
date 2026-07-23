@@ -66,6 +66,33 @@ def list_scrap_requests(
     )
 
 
+@router.get("/flows")
+def list_scrap_flows(
+    page: int = 1,
+    page_size: int = 20,
+    status: str | None = None,
+    asset_id: str | None = None,
+    disposal_method: str | None = None,
+    created_from: date | None = None,
+    created_to: date | None = None,
+    request: Request = None,
+    db: Session = Depends(get_db),
+):
+    start = datetime.combine(created_from, time.min) if created_from else None
+    end = datetime.combine(created_to, time.max) if created_to else None
+    return ScrapService.list_flows(
+        db,
+        page=page,
+        page_size=page_size,
+        status=status,
+        asset_id=asset_id,
+        created_from=start,
+        created_to=end,
+        user_context=user_context_from_request(request),
+        disposal_method=disposal_method,
+    )
+
+
 @router.post("/{asset_id}/create")
 def create_scrap_request(asset_id: str, payload: ScrapPayload, request: Request, db: Session = Depends(get_db)):
     try:

@@ -324,6 +324,22 @@ export async function getScrapRequests(params = {}) {
   return { list: rows.map(mapScrapRequest), total }
 }
 
+export async function getScrapFlows(params = {}) {
+  const result = await request.get('/scrap/flows', {
+    params: {
+      status: params.status || undefined,
+      disposal_method: params.disposal_method || undefined,
+      asset_id: params.asset_id || undefined,
+      created_from: params.created_from || undefined,
+      created_to: params.created_to || undefined,
+      page: params.page || undefined,
+      page_size: params.page_size ?? params.pageSize ?? undefined
+    }
+  })
+  const { rows, total } = normalizePagedResult(result)
+  return { list: rows.map(mapScrapFlow), total }
+}
+
 export async function disposeScrapRequest(requestId, payload = {}) {
   return mapScrapRequest(await request.post(`/scrap/${requestId}/dispose`, {
     final_residual_value: Number(payload.final_residual_value || 0),
@@ -496,6 +512,47 @@ function mapScrapRequest(row) {
     created_at: formatDate(row.created_at),
     approver: row.approver || '',
     approved_at: formatDate(row.approved_at)
+  }
+}
+
+function mapScrapFlow(row) {
+  const items = (row.items || []).map(mapScrapRequest)
+  const flowNo = row.flow_no || row.retirement_flow_no || row.request_no || ''
+  return {
+    id: row.id || flowNo,
+    flow_no: flowNo,
+    request_no: row.request_no || flowNo,
+    registration_no: row.registration_no || items[0]?.registration_no || '',
+    retirement_flow_no: row.retirement_flow_no || '',
+    company: row.company || '',
+    asset_no: `${Number(row.quantity || items.length || 0)} 台资产`,
+    asset_name: row.asset_summary || '',
+    category: '退役单',
+    brand: '',
+    model: '',
+    sn: '',
+    purchase_supplier_name: [...new Set(items.map(item => item.purchase_supplier_name).filter(Boolean))].join('，'),
+    purchase_approval_no: [...new Set(items.map(item => item.purchase_approval_no).filter(Boolean))].join('，'),
+    purchase_price: items.reduce((sum, item) => sum + Number(item.purchase_price || 0), 0),
+    owner_user_id: [...new Set(items.map(item => item.owner_user_id).filter(Boolean))].join('，'),
+    dept_id: [...new Set(items.map(item => item.dept_id).filter(Boolean))].join('，'),
+    location: [...new Set(items.map(item => item.location).filter(Boolean))].join('，'),
+    reason: [...new Set(items.map(item => item.reason).filter(Boolean))].join('；'),
+    quantity: Number(row.quantity || items.length || 0),
+    asset_summary: row.asset_summary || items.map(item => `${item.asset_name || item.asset_id}(${item.asset_no || item.asset_id})`).join('，'),
+    status: row.status || '',
+    disposal_method: row.disposal_method || '',
+    retirement_date: formatDate(row.retirement_date),
+    retirement_approval_no: row.retirement_approval_no || '',
+    dispose_recipient_user_id: row.dispose_recipient_user_id || '',
+    dispose_recipient_name: row.dispose_recipient_name || '',
+    disposal_remark: row.disposal_remark || '',
+    estimated_residual_value: Number(row.estimated_residual_value || 0),
+    final_residual_value: Number(row.final_residual_value || 0),
+    disposed_by: row.disposed_by || '',
+    disposed_at: formatDate(row.disposed_at),
+    created_at: formatDate(row.created_at),
+    items
   }
 }
 

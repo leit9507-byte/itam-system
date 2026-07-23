@@ -45,12 +45,44 @@
     </el-card>
 
     <el-card shadow="never">
-      <el-alert v-if="selected.length" :title="`已选择 ${selected.length} 条报废记录，可退役登记 ${batchDisposableRows.length} 条`" type="info" show-icon :closable="false" class="selection-alert" />
+      <el-alert v-if="selected.length" :title="`已选择 ${selected.length} 张退役单，可退役登记 ${batchDisposableRows.length} 台资产`" type="info" show-icon :closable="false" class="selection-alert" />
       <el-table :data="requests" border stripe @selection-change="selected = $event">
         <el-table-column type="selection" width="48" />
+        <el-table-column type="expand">
+          <template #default="{ row }">
+            <el-table :data="row.items || []" border size="small" class="inner-table">
+              <el-table-column prop="registration_no" label="登记单号" width="140" />
+              <el-table-column prop="asset_no" label="资产编号" width="140">
+                <template #default="{ row: item }">{{ item.asset_no || '-' }}</template>
+              </el-table-column>
+              <el-table-column label="资产信息" min-width="260">
+                <template #default="{ row: item }">
+                  <div class="asset-info">
+                    <strong>{{ item.asset_name || '-' }}</strong>
+                    <span>{{ item.category || '-' }} / {{ item.brand || '-' }} / {{ item.model || '-' }}</span>
+                    <span>SN：{{ item.sn || '-' }}</span>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column prop="owner_user_id" label="责任人" width="130">
+                <template #default="{ row: item }">{{ item.owner_user_id || '-' }}</template>
+              </el-table-column>
+              <el-table-column prop="dept_id" label="部门" width="140" show-overflow-tooltip />
+              <el-table-column prop="estimated_residual_value" label="预计残值" width="120">
+                <template #default="{ row: item }">￥{{ item.estimated_residual_value.toLocaleString() }}</template>
+              </el-table-column>
+              <el-table-column prop="final_residual_value" label="实际残值" width="120">
+                <template #default="{ row: item }">￥{{ item.final_residual_value.toLocaleString() }}</template>
+              </el-table-column>
+              <el-table-column prop="status" label="状态" width="100">
+                <template #default="{ row: item }"><el-tag :type="statusType(item.status)">{{ item.status }}</el-tag></template>
+              </el-table-column>
+            </el-table>
+          </template>
+        </el-table-column>
         <el-table-column prop="flow_no" label="流程单号" width="140" />
         <el-table-column prop="company" label="公司" width="120" show-overflow-tooltip />
-        <el-table-column prop="asset_no" label="资产编号" width="140">
+        <el-table-column prop="asset_no" label="资产数量" width="140">
           <template #default="{ row }">{{ row.asset_no || '-' }}</template>
         </el-table-column>
         <el-table-column label="资产历史信息" min-width="260">
@@ -100,7 +132,7 @@
         <el-table-column prop="created_at" label="创建日期" width="120" />
         <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link :disabled="row.status === '已处置' || row.status === '已驳回'" @click="openDispose(row)">登记处置</el-button>
+            <el-button type="primary" link :disabled="!flowDisposableRows(row).length" @click="openDispose(row)">登记处置</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -209,7 +241,7 @@
 <script setup>
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { batchDisposeScrapRequests, disposeScrapRequest, getScrapRequests } from '../../api/asset'
+import { batchDisposeScrapRequests, disposeScrapRequest, getScrapFlows, getScrapRequests } from '../../api/asset'
 import { getSuppliers } from '../../api/supplier'
 import { getUsers } from '../../api/user'
 
@@ -244,7 +276,7 @@ const disposalMethodOptions = [
 const totalResidual = computed(() => allRequests.value.reduce((sum, item) => sum + Number(item.estimated_residual_value || 0), 0))
 const pendingDisposalCount = computed(() => allRequests.value.filter(item => ['待处置', '审批中', '已通过'].includes(item.status)).length)
 const activeSuppliers = computed(() => suppliers.value.filter(item => item.status !== '停用'))
-const batchDisposableRows = computed(() => selected.value.filter(isDisposable))
+const batchDisposableRows = computed(() => selected.value.flatMap(flowDisposableRows))
 const disposeDialogRows = computed(() => disposeDialog.rows?.length ? disposeDialog.rows : (disposeDialog.row ? [disposeDialog.row] : []))
 const disposeDialogTitle = computed(() => disposeDialogRows.value.length > 1 ? `批量退役登记 / ${disposeDialogRows.value.length} 台资产` : (disposeDialog.row ? `报废处置登记 / ${disposeDialog.row.asset_no || disposeDialog.row.asset_id}` : '报废处置登记'))
 const singleDisposeDescription = computed(() => disposeDialog.row ? `${disposeDialog.row.asset_no || disposeDialog.row.asset_id} / ${disposeDialog.row.asset_name || '-'}；确认后资产状态保持已报废，报废单标记为已处置。` : '')
@@ -277,7 +309,7 @@ async function load() {
     created_to: filters.createdRange?.[1] || ''
   }
   const [paged, all] = await Promise.all([
-    getScrapRequests({ ...params, page: pagination.page, page_size: pagination.pageSize }),
+    getScrapFlows({ ...params, page: pagination.page, page_size: pagination.pageSize }),
     getScrapRequests({ ...params, page: 1, page_size: SCRAP_SUMMARY_LIMIT })
   ])
   requests.value = paged.list
@@ -312,15 +344,18 @@ async function resetFilters() {
 }
 
 function openDispose(row) {
-  disposeDialog.row = row
-  disposeDialog.rows = [row]
-  disposeDialog.form.final_residual_value = row.estimated_residual_value || 0
-  disposeDialog.form.disposal_method = row.status === '已处置' ? normalizeDisposeMethod(row.disposal_method) : ''
-  disposeDialog.form.retirement_date = row.retirement_date || todayText()
-  disposeDialog.form.retirement_approval_no = row.retirement_approval_no || ''
-  disposeDialog.form.dispose_recipient_user_id = row.dispose_recipient_user_id || ''
-  disposeDialog.form.dispose_recipient_name = row.dispose_recipient_name || ''
-  disposeDialog.form.disposal_remark = row.disposal_remark || ''
+  const rows = flowDisposableRows(row)
+  if (!rows.length) return ElMessage.warning('当前退役单没有可登记处置的资产')
+  const first = rows[0]
+  disposeDialog.row = rows.length === 1 ? first : null
+  disposeDialog.rows = rows
+  disposeDialog.form.final_residual_value = rows.reduce((sum, item) => sum + Number(item.estimated_residual_value || 0), 0)
+  disposeDialog.form.disposal_method = rows.length === 1 && first.status === '已处置' ? normalizeDisposeMethod(first.disposal_method) : ''
+  disposeDialog.form.retirement_date = first.retirement_date || todayText()
+  disposeDialog.form.retirement_approval_no = first.retirement_approval_no || ''
+  disposeDialog.form.dispose_recipient_user_id = first.dispose_recipient_user_id || ''
+  disposeDialog.form.dispose_recipient_name = first.dispose_recipient_name || ''
+  disposeDialog.form.disposal_remark = first.disposal_remark || ''
   disposeDialog.visible = true
 }
 
@@ -390,6 +425,11 @@ function normalizeDisposeMethod(method) {
 
 function isDisposable(row) {
   return row && !['已处置', '已驳回'].includes(row.status)
+}
+
+function flowDisposableRows(row) {
+  const rows = row?.items?.length ? row.items : (row ? [row] : [])
+  return rows.filter(isDisposable)
 }
 
 function userLabel(user) {

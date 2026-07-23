@@ -73,6 +73,116 @@ class ScrapService:
         return {"list": rows, "total": total, "page": max(page, 1), "page_size": page_size or total}
 
     @staticmethod
+    def list_flows(
+        db: Session,
+        page: int = 1,
+        page_size: int = 20,
+        status: str | None = None,
+        asset_id: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+        user_context: dict | None = None,
+        disposal_method: str | None = None,
+    ) -> dict:
+        result = ScrapService.list_requests(
+            db,
+            page=1,
+            page_size=0,
+            status=status,
+            asset_id=asset_id,
+            created_from=created_from,
+            created_to=created_to,
+            user_context=user_context,
+            disposal_method=disposal_method,
+        )
+        groups: dict[str, list[ScrapRequest]] = {}
+        for row in result["list"]:
+            groups.setdefault(row.retirement_flow_no or row.request_no, []).append(row)
+
+        flows = [ScrapService.flow_row(flow_no, rows) for flow_no, rows in groups.items()]
+        flows.sort(key=lambda item: item["sort_id"], reverse=True)
+        total = len(flows)
+        clean_page = max(page, 1)
+        if page_size and page_size > 0:
+            start = (clean_page - 1) * page_size
+            flows = flows[start : start + page_size]
+        return {"list": flows, "total": total, "page": clean_page, "page_size": page_size or total}
+
+    @staticmethod
+    def flow_row(flow_no: str, rows: list[ScrapRequest]) -> dict:
+        rows = sorted(rows, key=lambda item: item.id or 0, reverse=True)
+        first = rows[0]
+        unique_statuses = {row.status for row in rows if row.status}
+        unique_methods = {row.disposal_method for row in rows if row.disposal_method}
+        unique_companies = {row.company for row in rows if row.company}
+        item_dicts = [ScrapService.request_row(row) for row in rows]
+        return {
+            "id": flow_no,
+            "flow_no": flow_no,
+            "retirement_flow_no": first.retirement_flow_no or "",
+            "registration_no": first.request_no,
+            "request_no": flow_no,
+            "company": next(iter(unique_companies), "") if len(unique_companies) <= 1 else "多公司",
+            "quantity": len(rows),
+            "asset_summary": "，".join([f"{row.asset_name or row.asset_id}({row.asset_no or row.asset_id})" for row in rows[:3]]) + ("…" if len(rows) > 3 else ""),
+            "status": next(iter(unique_statuses), "") if len(unique_statuses) <= 1 else "混合",
+            "disposal_method": next(iter(unique_methods), "") if len(unique_methods) <= 1 else "混合",
+            "retirement_date": first.retirement_date,
+            "retirement_approval_no": first.retirement_approval_no or "",
+            "dispose_recipient_user_id": first.dispose_recipient_user_id or "",
+            "dispose_recipient_name": first.dispose_recipient_name or "",
+            "disposal_remark": first.disposal_remark or "",
+            "estimated_residual_value": sum(float(row.estimated_residual_value or 0) for row in rows),
+            "final_residual_value": sum(float(row.final_residual_value or 0) for row in rows),
+            "created_at": first.created_at,
+            "disposed_at": first.disposed_at,
+            "disposed_by": first.disposed_by or "",
+            "items": item_dicts,
+            "sort_id": max(row.id or 0 for row in rows),
+        }
+
+    @staticmethod
+    def request_row(row: ScrapRequest) -> dict:
+        return {
+            "id": row.id,
+            "request_no": row.request_no,
+            "registration_no": row.request_no,
+            "retirement_flow_no": row.retirement_flow_no or "",
+            "flow_no": row.retirement_flow_no or row.request_no,
+            "asset_id": row.asset_id,
+            "asset_no": getattr(row, "asset_no", "") or row.asset_id,
+            "asset_name": row.asset_name,
+            "asset_sn": row.asset_sn,
+            "company": row.company,
+            "category": row.category,
+            "brand": row.brand,
+            "model": row.model,
+            "owner_user_id": row.owner_user_id,
+            "dept_id": row.dept_id,
+            "location": row.location,
+            "purchase_price": row.purchase_price or 0,
+            "purchase_date": row.purchase_date,
+            "purchase_approval_no": row.purchase_approval_no,
+            "purchase_supplier_name": row.purchase_supplier_name,
+            "applicant": row.applicant,
+            "reason": row.reason,
+            "disposal_method": row.disposal_method,
+            "retirement_date": row.retirement_date,
+            "retirement_approval_no": row.retirement_approval_no,
+            "estimated_residual_value": row.estimated_residual_value or 0,
+            "final_residual_value": row.final_residual_value or 0,
+            "disposal_remark": row.disposal_remark,
+            "dispose_recipient_user_id": row.dispose_recipient_user_id,
+            "dispose_recipient_name": row.dispose_recipient_name,
+            "disposed_by": row.disposed_by,
+            "disposed_at": row.disposed_at,
+            "status": row.status,
+            "approver": row.approver,
+            "approved_at": row.approved_at,
+            "created_at": row.created_at,
+        }
+
+    @staticmethod
     def apply_data_scope(query, user_context: dict | None):
         if can_view_all_data(user_context):
             return query
