@@ -20,7 +20,6 @@ from app.services.asset_service import AssetService
 class DashboardService:
     CATEGORY_NAMES = ["笔记本电脑", "台式机", "Mac设备", "显示器", "服务器", "存储设备", "网络设备", "软件授权", "其他"]
     LIFECYCLE_NAMES = {
-        "pending_purchase": "待采购",
         "pending_acceptance": "待验收",
         "in_stock": "库存中",
         "in_use": "已领用",
@@ -340,7 +339,6 @@ class DashboardService:
     def lifecycle_distribution(status_counts, purchases: list[Purchase]) -> list[dict]:
         count = lambda status: int(status_counts.get(status, 0))
         return [
-            {"name": DashboardService.LIFECYCLE_NAMES["pending_purchase"], "value": sum(1 for item in purchases if item.status == "created")},
             {"name": DashboardService.LIFECYCLE_NAMES["pending_acceptance"], "value": count("pending_acceptance") + sum(1 for item in purchases if item.status == "pending_acceptance")},
             {"name": DashboardService.LIFECYCLE_NAMES["in_stock"], "value": count("in_stock")},
             {"name": DashboardService.LIFECYCLE_NAMES["in_use"], "value": count("in_use")},

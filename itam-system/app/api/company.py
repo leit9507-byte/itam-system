@@ -33,7 +33,6 @@ def stored_company(value: str | None) -> str | None:
 
 
 ASSET_STATUS_LABELS = {
-    "pending_purchase": "待采购",
     "pending_acceptance": "待验收",
     "in_stock": "在库",
     "in_use": "在用",

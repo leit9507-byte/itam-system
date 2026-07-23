@@ -424,7 +424,7 @@ const repairDialog = reactive({ visible: false, asset: null, assets: [], form: d
 const columnDialog = reactive({ visible: false })
 const workflowHint = ref('')
 const assignedStatuses = ['in_use', 'borrowed']
-const unassignedStatuses = ['pending_purchase', 'pending_acceptance', 'in_stock', 'idle', 'ready_scrap']
+const unassignedStatuses = ['pending_acceptance', 'in_stock', 'idle', 'ready_scrap']
 const ASSET_COLUMN_ORDER_KEY = 'itam_asset_list_column_order_v6'
 const ASSET_COLUMN_VISIBILITY_KEY = 'itam_asset_list_column_visibility_v1'
 const assetColumnDefs = [
@@ -799,7 +799,7 @@ function validateStatusOwner(row) {
     return false
   }
   if (unassignedStatuses.includes(row.status) && hasAssetOwner(row)) {
-    ElMessage.warning('有使用人的资产不能直接调整为待采购、待验收、在库、闲置或待报废；请先执行入库回收并清空使用人')
+    ElMessage.warning('有使用人的资产不能直接调整为待验收、在库、闲置或待报废；请先执行入库回收并清空使用人')
     return false
   }
   return true

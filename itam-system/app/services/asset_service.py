@@ -43,13 +43,13 @@ class AssetValidationError(ValueError):
 class AssetService:
     DEFAULT_COMPANY = "未设置公司"
     ASSIGNED_STATUSES = {"in_use", "borrowed"}
-    UNASSIGNED_STATUSES = {"pending_purchase", "pending_acceptance", "in_stock", "idle", "ready_scrap"}
-    WORKFLOW_STATUSES = {"pending_purchase", "pending_acceptance", "pending_scrap", "scrapped", "disposed", "lost"}
+    UNASSIGNED_STATUSES = {"pending_acceptance", "in_stock", "idle", "ready_scrap"}
+    WORKFLOW_STATUSES = {"pending_acceptance", "pending_scrap", "scrapped", "disposed", "lost"}
     TERMINAL_STATUSES = {"scrapped", "disposed", "lost"}
     CHECKOUT_ALLOWED_FROM = {"in_stock", "idle"}
     CHECKIN_ALLOWED_FROM = {"in_use", "borrowed", "out_stock", "repair"}
     VALID_STATUSES = {
-        "pending_purchase", "pending_acceptance", "in_stock", "idle", "in_use",
+        "pending_acceptance", "in_stock", "idle", "in_use",
         "borrowed", "out_stock", "repair", "ready_scrap", "pending_scrap",
         "scrapped", "disposed", "lost",
     }
@@ -153,9 +153,9 @@ class AssetService:
         has_owner = bool(AssetService.normalize_blank(asset.owner_user_id))
         has_location = bool(AssetService.normalize_blank(asset.location))
         if status_changed and status in AssetService.WORKFLOW_STATUSES and not allow_workflow_statuses:
-            raise AssetValidationError("待采购、待验收、待处置登记、已报废状态由流程控制，不能通过导入或手工状态变更直接设置")
+            raise AssetValidationError("待验收、待处置登记、已报废、已丢失状态由流程控制，不能通过导入或手工状态变更直接设置")
         if status in AssetService.UNASSIGNED_STATUSES and has_owner:
-            raise AssetValidationError("待采购、待验收、在库、闲置、待报废状态不能填写使用人/责任人；请清空使用人，或把状态改为 in_use、borrowed、out_stock")
+            raise AssetValidationError("待验收、在库、闲置、待报废状态不能填写使用人/责任人；请清空使用人，或把状态改为 in_use、borrowed、out_stock")
         if status in AssetService.ASSIGNED_STATUSES and not has_owner:
             raise AssetValidationError("在用、借出状态必须填写使用人/责任人")
         if status == "out_stock" and not has_owner and not has_location:
@@ -1553,7 +1553,6 @@ class AssetService:
     @staticmethod
     def status_label(value: str | None) -> str:
         return {
-            "pending_purchase": "待采购",
             "pending_acceptance": "待验收",
             "in_stock": "在库",
             "in_use": "在用",

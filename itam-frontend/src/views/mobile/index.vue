@@ -905,7 +905,7 @@ async function submitRepairJob(job) {
 }
 
 function statusLabel(value) {
-  return ({ pending_purchase: '待采购', pending_acceptance: '待验收', in_stock: '在库', in_use: '在用', idle: '闲置', borrowed: '借出', repair: '维修中', out_stock: '已出库', ready_scrap: '待报废', pending_scrap: '待处置登记', scrapped: '已报废', disposed: '已处置', lost: '已丢失' })[value] || value
+  return ({ pending_acceptance: '待验收', in_stock: '在库', in_use: '在用', idle: '闲置', borrowed: '借出', repair: '维修中', out_stock: '已出库', ready_scrap: '待报废', pending_scrap: '待处置登记', scrapped: '已报废', disposed: '已处置', lost: '已丢失' })[value] || value
 }
 
 function setScanFeedback(tone, title, detail) {

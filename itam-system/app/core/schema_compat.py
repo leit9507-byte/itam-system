@@ -43,6 +43,7 @@ def ensure_compatible_schema(engine) -> None:
         add_column(engine, columns, "assets", "remark", "TEXT NULL")
         with engine.begin() as conn:
             conn.execute(text("UPDATE assets SET company = '未设置公司' WHERE company IS NULL OR company = ''"))
+            conn.execute(text("UPDATE assets SET status = 'pending_acceptance' WHERE status = 'pending_purchase'"))
             conn.execute(text("UPDATE assets SET status = 'scrapped' WHERE status = 'disposed'"))
 
     if "audit_rules" in inspector.get_table_names():

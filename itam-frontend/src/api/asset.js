@@ -1,7 +1,6 @@
 import request from '../utils/request'
 
 export const assetStatuses = [
-  { label: '待采购', value: 'pending_purchase', type: 'info' },
   { label: '待验收', value: 'pending_acceptance', type: 'info' },
   { label: '在库', value: 'in_stock', type: 'primary' },
   { label: '在用', value: 'in_use', type: 'success' },
@@ -17,7 +16,7 @@ export const assetStatuses = [
 ]
 
 export const statusMap = Object.fromEntries(assetStatuses.map(item => [item.value, item]))
-export const editableAssetStatuses = assetStatuses.filter(item => !['pending_purchase', 'pending_acceptance', 'pending_scrap', 'scrapped', 'disposed', 'lost'].includes(item.value))
+export const editableAssetStatuses = assetStatuses.filter(item => !['pending_acceptance', 'pending_scrap', 'scrapped', 'disposed', 'lost'].includes(item.value))
 const DETAIL_CONTEXT_LIMIT = 500
 const IMPORT_TIMEOUT_MS = 180000
 

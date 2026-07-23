@@ -8,7 +8,6 @@ import request from '../utils/request'
 const DASHBOARD_SOURCE_LIMIT = 1000
 const categoryNames = ['笔记本电脑', '台式机', 'Mac设备', '显示器', '服务器', '存储设备', '网络设备', '软件授权', '其他']
 const lifecycleNames = {
-  pending_purchase: '待采购',
   pending_acceptance: '待验收',
   in_stock: '库存中',
   in_use: '已领用',
@@ -381,7 +380,6 @@ function legacyBuildPurchaseTrend(purchases, dateRange) {
 function buildLifecycleDistribution(assets, purchases, statusCounts = null) {
   const count = status => statusCounts ? Number(statusCounts[status] || 0) : countStatus(assets, status)
   return [
-    { name: lifecycleNames.pending_purchase, value: purchases.filter(item => item.status === 'created').length },
     { name: lifecycleNames.pending_acceptance, value: count('pending_acceptance') + purchases.filter(item => item.status === 'pending_acceptance').length },
     { name: lifecycleNames.in_stock, value: count('in_stock') },
     { name: lifecycleNames.in_use, value: count('in_use') },

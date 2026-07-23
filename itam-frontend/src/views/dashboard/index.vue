@@ -99,7 +99,7 @@
               <strong>{{ formatValue(item.value) }}</strong>
               <em>{{ percent(item.value, totalAssets) }}</em>
             </div>
-            <p class="status-note">其他包含待采购、待验收、借出、已出库、已报废、已处置等未展开状态。</p>
+            <p class="status-note">其他包含待验收、借出、已出库、已报废、已处置等未展开状态。</p>
           </div>
         </div>
       </article>
@@ -256,7 +256,7 @@
             <template #default="{ row }">{{ percent(row.value, totalAssets) }}</template>
           </el-table-column>
         </el-table>
-        <p class="dialog-note">其他包含待采购、待验收、借出、已出库、已报废、已处置等未展开状态。</p>
+        <p class="dialog-note">其他包含待验收、借出、已出库、已报废、已处置等未展开状态。</p>
       </template>
 
       <el-table v-else-if="detailDialog.type === 'category'" :data="categoryDetailRows" border stripe>
@@ -399,7 +399,7 @@ const topTodos = computed(() => {
 })
 
 const actionCards = computed(() => [
-  { label: '采购验收', value: lifecycleValue('待采购') + lifecycleValue('待验收'), caption: '采购单和待验收入库', path: '/purchase', tone: 'blue', icon: Files },
+  { label: '采购验收', value: lifecycleValue('待验收'), caption: '待验收入库', path: '/purchase', tone: 'blue', icon: Files },
   { label: '借用登记', value: inUseAssets.value, caption: '员工资产流转', path: '/checkout', tone: 'green', icon: CircleCheck },
   { label: '维修跟进', value: repairAssets.value, caption: `费用 ¥${formatCompact(data.maintenance?.monthCost || 0)}`, path: '/repair', tone: 'purple', icon: Tools },
   { label: '报废处置', value: pendingScrapAssets.value, caption: '待报废和退役登记', path: '/scrap', tone: 'orange', icon: Delete }
