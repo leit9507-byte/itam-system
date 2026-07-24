@@ -394,7 +394,7 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import { computed, defineComponent, h, onMounted, reactive, ref, resolveComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { assetStatuses, batchCheckinAssets, batchCheckoutAssets, batchUpdateAssets, createScrapRequest, downloadAssetImportTemplate, editableAssetStatuses, getAssets, importAssets, previewAssetsFromExcel, previewAssetsFromText, statusMap, updateAsset } from '../../api/asset'
+import { assetStatuses, batchCheckinAssets, batchCheckoutAssets, batchCreateScrapRequests, batchUpdateAssets, downloadAssetImportTemplate, editableAssetStatuses, getAssets, importAssets, previewAssetsFromExcel, previewAssetsFromText, statusMap, updateAsset } from '../../api/asset'
 import { getCompanies } from '../../api/company'
 import { getLocations } from '../../api/location'
 import { getDeviceTypes, getProducts } from '../../api/product'
@@ -1122,13 +1122,15 @@ async function submitBatch() {
     const result = await batchCheckoutAssets(assetIds, batch.form)
     results = normalizeBatchResult(result, assetIds)
   } else {
-    for (const asset of batch.assets) {
-      try {
-        await createScrapRequest(asset.asset_id, {})
-        results.push({ asset_id: asset.asset_id, ok: true })
-      } catch (error) {
-        results.push({ asset_id: asset.asset_id, ok: false, message: error.userMessage || error?.response?.data?.detail || error.message })
-      }
+    const result = await batchCreateScrapRequests(assetIds, {})
+    const errorMap = new Map((result.errors || []).map(item => [item.asset_id, item.message]))
+    results = assetIds.map(asset_id => ({
+      asset_id,
+      ok: !errorMap.has(asset_id),
+      message: errorMap.get(asset_id) || ''
+    }))
+    if (result.retirement_flow_no) {
+      ElMessage.success(`已创建报废处置登记流程 ${result.retirement_flow_no}`)
     }
   }
   if (results.some(item => !item.ok)) {

@@ -199,9 +199,15 @@ class ScrapService:
         asset = AssetService.get_scoped_asset(db, asset_id, user_context)
         existed = db.query(ScrapRequest).filter(ScrapRequest.asset_id == asset_id, ScrapRequest.status.in_(["待处置", "审批中", "已通过"])).first()
         if existed:
+            retirement_flow_no = (payload.get("retirement_flow_no") or "").strip()
+            if retirement_flow_no and not existed.retirement_flow_no:
+                existed.retirement_flow_no = retirement_flow_no
+                db.commit()
+                db.refresh(existed)
             return existed
         request = ScrapRequest(
             request_no=ScrapService.generate_no(db),
+            retirement_flow_no=(payload.get("retirement_flow_no") or "").strip() or None,
             asset_id=asset.asset_id,
             asset_name=asset.name,
             asset_sn=asset.sn,
@@ -242,6 +248,7 @@ class ScrapService:
                 new_owner=request.applicant or "-",
                 location=asset.location,
                 extra={
+                    "retirement_flow_no": request.retirement_flow_no or request.request_no,
                     "retirement_date": request.retirement_date.isoformat() if request.retirement_date else "",
                     "retirement_approval_no": request.retirement_approval_no or "",
                     "estimated_residual_value": request.estimated_residual_value or 0,

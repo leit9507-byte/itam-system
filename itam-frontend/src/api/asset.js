@@ -308,6 +308,23 @@ export async function createScrapRequest(assetId, payload = {}) {
   return mapScrapRequest(await request.post(`/scrap/${assetId}/create`, { ...payload, operator: payload.operator || '资产管理员' }))
 }
 
+export async function batchCreateScrapRequests(assetIds, payload = {}) {
+  const result = await request.post('/scrap/batch-create', {
+    asset_ids: assetIds,
+    reason: payload.reason || '',
+    applicant: payload.applicant || '',
+    retirement_flow_no: payload.retirement_flow_no || '',
+    operator: payload.operator || '资产管理员'
+  })
+  return {
+    success: Number(result.success || 0),
+    failed: Number(result.failed || 0),
+    retirement_flow_no: result.retirement_flow_no || '',
+    list: (result.list || []).map(mapScrapRequest),
+    errors: result.errors || []
+  }
+}
+
 export async function getScrapRequests(params = {}) {
   const result = await request.get('/scrap/list', {
     params: {

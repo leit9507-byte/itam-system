@@ -19,8 +19,13 @@ class ScrapPayload(BaseModel):
     disposal_method: str | None = None
     retirement_date: datetime | None = None
     retirement_approval_no: str | None = None
+    retirement_flow_no: str | None = None
     estimated_residual_value: float = 0
     operator: str = "资产管理员"
+
+
+class ScrapBatchCreatePayload(ScrapPayload):
+    asset_ids: list[str] = Field(default_factory=list)
 
 
 class ScrapDisposePayload(BaseModel):
@@ -100,6 +105,33 @@ def create_scrap_request(asset_id: str, payload: ScrapPayload, request: Request,
         return row
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/batch-create")
+def batch_create_scrap_requests(payload: ScrapBatchCreatePayload, request: Request, db: Session = Depends(get_db)):
+    asset_ids = list(dict.fromkeys([str(item).strip() for item in payload.asset_ids if str(item).strip()]))
+    if not asset_ids:
+        raise HTTPException(status_code=400, detail="请选择需要提交报废处置登记的资产")
+    data = payload.model_dump(exclude={"asset_ids"})
+    if len(asset_ids) > 1 and not data.get("retirement_flow_no"):
+        data["retirement_flow_no"] = ScrapService.generate_retirement_flow_no(db)
+    operator = operator_from_request(request)
+    user_context = user_context_from_request(request)
+    rows = []
+    errors = []
+    for asset_id in asset_ids:
+        try:
+            row = ScrapService.create_request(db, asset_id, data, operator, user_context)
+            rows.append(row)
+        except ValueError as exc:
+            errors.append({"asset_id": asset_id, "message": str(exc)})
+    return {
+        "success": len(rows),
+        "failed": len(errors),
+        "retirement_flow_no": data.get("retirement_flow_no") or (rows[0].retirement_flow_no if rows else ""),
+        "list": rows,
+        "errors": errors,
+    }
 
 
 @router.post("/{request_id}/dispose")
