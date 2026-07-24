@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">公司管理</h2>
-        <p class="page-subtitle">维护公司主数据，点击详情查看公司资产清单和状态分布</p>
+        <p class="page-subtitle">维护公司主数据，点击公司名称查看资产清单和状态分布</p>
       </div>
       <div class="toolbar">
         <el-input v-model="keyword" clearable placeholder="搜索公司/资产/部门" style="width: 260px" @input="resetCompanyPage" />
@@ -52,11 +52,6 @@
         <el-table-column prop="pending_scrap_count" label="待处置" width="90" />
         <el-table-column prop="scrapped_count" label="已报废" width="90" />
         <el-table-column prop="lost_count" label="已丢失" width="90" />
-        <el-table-column label="详情" width="110" fixed="right">
-          <template #default="{ row }">
-            <el-button type="primary" link @click="goDetail(row)">查看详情</el-button>
-          </template>
-        </el-table-column>
       </el-table>
       <div class="pagination-bar">
         <el-pagination

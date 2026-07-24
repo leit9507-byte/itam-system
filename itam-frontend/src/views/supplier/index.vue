@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">供应商管理</h2>
-        <p class="page-subtitle">维护供应商档案，进入详情查看采购信息和回收资产。</p>
+        <p class="page-subtitle">维护供应商档案，点击供应商名称查看采购信息和回收资产。</p>
       </div>
       <el-button type="primary" @click="openCreate">新增供应商</el-button>
     </div>
@@ -55,11 +55,6 @@
           </el-table-column>
           <el-table-column prop="recycle_amount" label="回收金额" width="150">
             <template #default="{ row }">￥{{ Number(row.recycle_amount || 0).toLocaleString() }}</template>
-          </el-table-column>
-          <el-table-column label="详情" width="110" fixed="right">
-            <template #default="{ row }">
-              <el-button link type="primary" @click="goDetail(row)">查看详情</el-button>
-            </template>
           </el-table-column>
         </el-table>
         <div class="pagination-bar">

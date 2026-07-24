@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">位置管理</h2>
-        <p class="page-subtitle">维护办公区、会议室、公共区域和仓库位置，点击详情查看位置资产</p>
+        <p class="page-subtitle">维护办公区、会议室、公共区域和仓库位置，点击位置名称查看位置资产</p>
       </div>
       <el-button type="primary" @click="openCreate">新增位置</el-button>
     </div>
@@ -27,11 +27,6 @@
         </el-table-column>
         <el-table-column prop="status" label="状态" width="100" />
         <el-table-column prop="description" label="说明" min-width="180" show-overflow-tooltip />
-        <el-table-column label="详情" width="110" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="goDetail(row)">查看详情</el-button>
-          </template>
-        </el-table-column>
       </el-table>
       <div class="pagination-bar">
         <el-pagination

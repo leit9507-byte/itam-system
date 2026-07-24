@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">部门管理</h2>
-        <p class="page-subtitle">按人员目录和资产归属汇总部门，点击详情查看人员和资产清单</p>
+        <p class="page-subtitle">按人员目录和资产归属汇总部门，点击部门名称查看人员和资产清单</p>
       </div>
       <el-button :loading="loading" @click="load">刷新</el-button>
     </div>
@@ -25,7 +25,11 @@
     <el-card shadow="never">
       <el-table v-loading="loading" :data="pagedDepartments" border stripe empty-text="暂无部门数据">
         <el-table-column prop="dept_id" label="部门编码" min-width="150" />
-        <el-table-column prop="dept_name" label="部门名称" min-width="180" />
+        <el-table-column label="部门名称" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-button link type="primary" class="entity-link" @click="goDetail(row)">{{ row.dept_name }}</el-button>
+          </template>
+        </el-table-column>
         <el-table-column prop="user_count" label="人员数" width="100" />
         <el-table-column prop="active_user_count" label="在职人员" width="110" />
         <el-table-column prop="asset_count" label="资产数" width="100" />
@@ -35,11 +39,6 @@
         <el-table-column label="状态" width="110">
           <template #default="{ row }">
             <el-tag :type="row.active_user_count ? 'success' : 'info'">{{ row.active_user_count ? '使用中' : '暂无在职' }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="详情" width="110" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="goDetail(row)">查看详情</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -138,3 +137,11 @@ function goDetail(row) {
   router.push({ name: 'DepartmentDetail', query: { dept_id: row.dept_id, name: row.dept_name } })
 }
 </script>
+
+<style scoped>
+.entity-link {
+  padding: 0;
+  white-space: normal;
+  text-align: left;
+}
+</style>
