@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">公司管理</h2>
-        <p class="page-subtitle">维护公司主数据，并按公司查看资产数量、资产原值和状态分布</p>
+        <p class="page-subtitle">维护公司主数据，点击详情查看公司资产清单和状态分布</p>
       </div>
       <div class="toolbar">
         <el-input v-model="keyword" clearable placeholder="搜索公司/资产/部门" style="width: 260px" @input="resetCompanyPage" />
@@ -26,8 +26,13 @@
           <el-tag type="info">{{ filteredCompanies.length }} 家公司</el-tag>
         </div>
       </template>
-      <el-table :data="pagedCompanies" border stripe highlight-current-row @row-click="selectCompany">
-        <el-table-column prop="name" label="公司" min-width="180" />
+      <el-table :data="pagedCompanies" border stripe>
+        <el-table-column label="公司" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-button link type="primary" class="entity-link" @click="goDetail(row)">{{ row.name }}</el-button>
+            <div class="entity-meta">{{ [row.code, row.contact].filter(Boolean).join(' / ') || '未维护编码和联系人' }}</div>
+          </template>
+        </el-table-column>
         <el-table-column prop="code" label="编码" width="120" />
         <el-table-column prop="contact" label="联系人" width="120" />
         <el-table-column prop="status" label="状态" width="90">
@@ -47,10 +52,9 @@
         <el-table-column prop="pending_scrap_count" label="待处置" width="90" />
         <el-table-column prop="scrapped_count" label="已报废" width="90" />
         <el-table-column prop="lost_count" label="已丢失" width="90" />
-        <el-table-column label="操作" width="140" fixed="right">
+        <el-table-column label="详情" width="110" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link :disabled="row.virtual" @click.stop="openEdit(row)">编辑</el-button>
-            <el-button type="danger" link :disabled="row.virtual" @click.stop="removeCompany(row)">删除</el-button>
+            <el-button type="primary" link @click="goDetail(row)">查看详情</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -61,47 +65,6 @@
           :page-sizes="[10, 20, 50, 100]"
           :total="filteredCompanies.length"
           layout="total, sizes, prev, pager, next, jumper"
-        />
-      </div>
-    </el-card>
-
-    <el-card shadow="never">
-      <template #header>
-        <div class="card-header">
-          <span>{{ currentCompany?.name || '公司资产明细' }}</span>
-          <el-tag v-if="currentCompany" type="success">{{ currentCompany.asset_count }} 台资产</el-tag>
-        </div>
-      </template>
-      <el-table v-loading="assetLoading" :data="currentAssets" border stripe empty-text="请选择一个公司查看资产明细">
-        <el-table-column prop="asset_no" label="资产编号" width="140">
-          <template #default="{ row }">{{ row.asset_no || '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="name" label="资产名称" min-width="170" />
-        <el-table-column prop="category" label="类型" width="110" />
-        <el-table-column label="产品信息" min-width="180">
-          <template #default="{ row }">{{ row.brand || '-' }} / {{ row.model || '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="sn" label="序列号" width="140" />
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="statusMap[row.status]?.type || 'info'">{{ row.status_label || statusMap[row.status]?.label || row.status }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="dept_id" label="部门" width="150" show-overflow-tooltip />
-        <el-table-column prop="purchase_supplier_name" label="供应商" width="140" show-overflow-tooltip />
-        <el-table-column prop="purchase_price" label="原值" width="120">
-          <template #default="{ row }">¥{{ formatValue(row.purchase_price) }}</template>
-        </el-table-column>
-      </el-table>
-      <div class="pagination-bar">
-        <el-pagination
-          v-model:current-page="assetPagination.page"
-          v-model:page-size="assetPagination.pageSize"
-          :page-sizes="[10, 20, 50, 100]"
-          :total="assetTotal"
-          layout="total, sizes, prev, pager, next, jumper"
-          @current-change="loadCompanyAssets"
-          @size-change="handleAssetPageSizeChange"
         />
       </div>
     </el-card>
@@ -133,20 +96,16 @@
 </template>
 
 <script setup>
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { statusMap } from '../../api/asset'
-import { createCompany, deleteCompany, getCompanies, getCompanyAssets, updateCompany } from '../../api/company'
+import { useRouter } from 'vue-router'
+import { createCompany, getCompanies, updateCompany } from '../../api/company'
 
+const router = useRouter()
 const companies = ref([])
-const currentCompany = ref(null)
-const currentAssets = ref([])
-const assetTotal = ref(0)
-const assetLoading = ref(false)
 const keyword = ref('')
 const dialog = reactive({ visible: false, form: defaultForm() })
 const companyPagination = reactive({ page: 1, pageSize: 10 })
-const assetPagination = reactive({ page: 1, pageSize: 10 })
 
 const filteredCompanies = computed(() => {
   const text = keyword.value.trim().toLowerCase()
@@ -168,10 +127,6 @@ onMounted(load)
 
 async function load() {
   companies.value = await getCompanies()
-  if (!currentCompany.value) currentCompany.value = companies.value[0] || null
-  else currentCompany.value = companies.value.find(item => item.id === currentCompany.value.id || item.name === currentCompany.value.name) || companies.value[0] || null
-  assetPagination.page = 1
-  await loadCompanyAssets()
 }
 
 function defaultForm() {
@@ -201,63 +156,16 @@ async function submitCompany() {
   await load()
 }
 
-async function removeCompany(row) {
-  if (row.virtual) return
-  try {
-    await ElMessageBox.confirm(`确定删除公司“${row.name}”吗？该公司下的资产会调整为“未设置公司”。`, '删除公司', {
-      type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消'
-    })
-  } catch {
-    return
-  }
-  await deleteCompany(row.id)
-  if (currentCompany.value?.id === row.id) currentCompany.value = null
-  ElMessage.success('公司已删除，相关资产已调整为未设置公司')
-  await load()
-}
-
-async function selectCompany(row) {
-  currentCompany.value = row
-  assetPagination.page = 1
-  await loadCompanyAssets()
-}
-
-async function loadCompanyAssets() {
-  if (!currentCompany.value) {
-    currentAssets.value = []
-    assetTotal.value = 0
-    return
-  }
-  assetLoading.value = true
-  try {
-    const result = await getCompanyAssets({
-      company: currentCompany.value.name,
-      keyword: keyword.value,
-      page: assetPagination.page,
-      pageSize: assetPagination.pageSize
-    })
-    currentAssets.value = result.list
-    assetTotal.value = result.total
-  } finally {
-    assetLoading.value = false
-  }
-}
-
-async function handleAssetPageSizeChange() {
-  assetPagination.page = 1
-  await loadCompanyAssets()
-}
-
 function formatValue(value) {
   return Number(value || 0).toLocaleString()
 }
 
 function resetCompanyPage() {
   companyPagination.page = 1
-  assetPagination.page = 1
-  loadCompanyAssets()
+}
+
+function goDetail(row) {
+  router.push({ name: 'CompanyDetail', query: { name: row.name } })
 }
 
 function paginate(rows, pagination) {
@@ -285,5 +193,18 @@ function paginate(rows, pagination) {
   display: flex;
   justify-content: flex-end;
   margin-top: 14px;
+}
+
+.entity-link {
+  padding: 0;
+  white-space: normal;
+  text-align: left;
+}
+
+.entity-meta {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 4px;
 }
 </style>

@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">位置管理</h2>
-        <p class="page-subtitle">维护办公区、会议室、公共区域和仓库位置，支持资产出库到公用位置</p>
+        <p class="page-subtitle">维护办公区、会议室、公共区域和仓库位置，点击详情查看位置资产</p>
       </div>
       <el-button type="primary" @click="openCreate">新增位置</el-button>
     </div>
@@ -13,7 +13,12 @@
         <el-input v-model="keyword" clearable placeholder="搜索位置名称" style="width: 280px" @input="refresh" />
       </div>
       <el-table :data="pagedLocations" border stripe>
-        <el-table-column prop="name" label="位置名称" min-width="180" />
+        <el-table-column label="位置名称" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-button link type="primary" class="entity-link" @click="goDetail(row)">{{ row.name }}</el-button>
+            <div class="entity-meta">{{ [row.code, row.owner_dept].filter(Boolean).join(' / ') || '未维护编码和负责部门' }}</div>
+          </template>
+        </el-table-column>
         <el-table-column prop="code" label="位置编码" width="130" />
         <el-table-column prop="type" label="类型" width="120" />
         <el-table-column prop="owner_dept" label="负责部门" width="150" />
@@ -22,10 +27,9 @@
         </el-table-column>
         <el-table-column prop="status" label="状态" width="100" />
         <el-table-column prop="description" label="说明" min-width="180" show-overflow-tooltip />
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="详情" width="110" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="danger" @click="remove(row)">删除</el-button>
+            <el-button link type="primary" @click="goDetail(row)">查看详情</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -71,9 +75,11 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { createLocation, deleteLocation, getLocations, updateLocation } from '../../api/location'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { createLocation, getLocations, updateLocation } from '../../api/location'
 
+const router = useRouter()
 const locations = ref([])
 const keyword = ref('')
 const dialog = reactive({ visible: false, form: defaultForm() })
@@ -120,11 +126,8 @@ async function save() {
   await load()
 }
 
-async function remove(row) {
-  await ElMessageBox.confirm(`确认删除位置「${row.name}」？已有资产使用的位置不能删除。`, '删除位置', { type: 'warning' })
-  await deleteLocation(row.id)
-  ElMessage.success('位置已删除')
-  await load()
+function goDetail(row) {
+  router.push({ name: 'LocationDetail', query: { name: row.name } })
 }
 </script>
 
@@ -133,5 +136,18 @@ async function remove(row) {
   display: flex;
   justify-content: flex-end;
   margin-top: 14px;
+}
+
+.entity-link {
+  padding: 0;
+  white-space: normal;
+  text-align: left;
+}
+
+.entity-meta {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 4px;
 }
 </style>

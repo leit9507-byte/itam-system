@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">部门管理</h2>
-        <p class="page-subtitle">按人员目录和资产归属汇总部门、人数和资产分布</p>
+        <p class="page-subtitle">按人员目录和资产归属汇总部门，点击详情查看人员和资产清单</p>
       </div>
       <el-button :loading="loading" @click="load">刷新</el-button>
     </div>
@@ -37,9 +37,9 @@
             <el-tag :type="row.active_user_count ? 'success' : 'info'">{{ row.active_user_count ? '使用中' : '暂无在职' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="详情" width="110" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="goAssets(row)">查看资产</el-button>
+            <el-button link type="primary" @click="goDetail(row)">查看详情</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -134,7 +134,7 @@ async function load() {
   }
 }
 
-function goAssets(row) {
-  router.push({ path: '/asset/list', query: { keyword: row.dept_id === '未绑定' ? '' : row.dept_id } })
+function goDetail(row) {
+  router.push({ name: 'DepartmentDetail', query: { dept_id: row.dept_id, name: row.dept_name } })
 }
 </script>

@@ -56,7 +56,7 @@
           <el-table-column prop="recycle_amount" label="回收金额" width="150">
             <template #default="{ row }">￥{{ Number(row.recycle_amount || 0).toLocaleString() }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="110" fixed="right">
+          <el-table-column label="详情" width="110" fixed="right">
             <template #default="{ row }">
               <el-button link type="primary" @click="goDetail(row)">查看详情</el-button>
             </template>
