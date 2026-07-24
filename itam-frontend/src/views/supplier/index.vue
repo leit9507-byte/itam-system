@@ -3,10 +3,33 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">供应商管理</h2>
-        <p class="page-subtitle">维护供应商档案和采购回收统计。</p>
+        <p class="page-subtitle">维护供应商档案，进入详情查看采购信息和回收资产。</p>
       </div>
       <el-button type="primary" @click="openCreate">新增供应商</el-button>
     </div>
+
+    <section class="summary-grid">
+      <el-card shadow="never" class="summary-card">
+        <span>供应商总数</span>
+        <strong>{{ supplierPagination.total }}</strong>
+      </el-card>
+      <el-card shadow="never" class="summary-card">
+        <span>当前页采购单数</span>
+        <strong>{{ summary.purchaseCount }}</strong>
+      </el-card>
+      <el-card shadow="never" class="summary-card">
+        <span>当前页采购设备数</span>
+        <strong>{{ summary.deviceCount }}</strong>
+      </el-card>
+      <el-card shadow="never" class="summary-card">
+        <span>当前页采购金额</span>
+        <strong>￥{{ summary.totalAmount.toLocaleString() }}</strong>
+      </el-card>
+      <el-card shadow="never" class="summary-card">
+        <span>当前页回收金额</span>
+        <strong>￥{{ summary.recycleAmount.toLocaleString() }}</strong>
+      </el-card>
+    </section>
 
     <section class="supplier-layout">
       <el-card shadow="never">
@@ -17,7 +40,12 @@
           </div>
         </template>
         <el-table :data="suppliers" border stripe>
-          <el-table-column prop="name" label="供应商" min-width="220" />
+          <el-table-column label="供应商" min-width="260" show-overflow-tooltip>
+            <template #default="{ row }">
+              <el-button link type="primary" class="supplier-link" @click="goDetail(row)">{{ row.name }}</el-button>
+              <div class="supplier-meta">{{ [row.contact, row.phone].filter(Boolean).join(' / ') || '未维护联系人' }}</div>
+            </template>
+          </el-table-column>
           <el-table-column prop="level" label="等级" width="100" />
           <el-table-column prop="purchase_count" label="采购单" width="100" />
           <el-table-column prop="device_count" label="设备数" width="100" />
@@ -27,6 +55,11 @@
           </el-table-column>
           <el-table-column prop="recycle_amount" label="回收金额" width="150">
             <template #default="{ row }">￥{{ Number(row.recycle_amount || 0).toLocaleString() }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="110" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="goDetail(row)">查看详情</el-button>
+            </template>
           </el-table-column>
         </el-table>
         <div class="pagination-bar">
@@ -66,13 +99,22 @@
 
 <script setup>
 import { ElMessage } from 'element-plus'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { getSuppliersPaged, saveSupplier } from '../../api/supplier'
 
+const router = useRouter()
 const suppliers = ref([])
 const keyword = ref('')
 const dialog = reactive({ visible: false, form: defaultForm() })
 const supplierPagination = reactive({ page: 1, pageSize: 10, total: 0 })
+const summary = computed(() => suppliers.value.reduce((acc, item) => {
+  acc.purchaseCount += Number(item.purchase_count || 0)
+  acc.deviceCount += Number(item.device_count || 0)
+  acc.totalAmount += Number(item.total_amount || 0)
+  acc.recycleAmount += Number(item.recycle_amount || 0)
+  return acc
+}, { purchaseCount: 0, deviceCount: 0, totalAmount: 0, recycleAmount: 0 }))
 
 onMounted(load)
 
@@ -95,6 +137,10 @@ function handleSupplierPageSizeChange() {
 function openCreate() {
   dialog.form = defaultForm()
   dialog.visible = true
+}
+
+function goDetail(row) {
+  router.push({ name: 'SupplierDetail', query: { name: row.name } })
 }
 
 async function save() {
@@ -125,11 +171,48 @@ function defaultForm() {
   grid-template-columns: 1fr;
 }
 
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.summary-card :deep(.el-card__body) {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+}
+
+.summary-card span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.summary-card strong {
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1.1;
+}
+
 .card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.supplier-link {
+  max-width: 100%;
+  padding: 0;
+  white-space: normal;
+  text-align: left;
+}
+
+.supplier-meta {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 4px;
 }
 
 .pagination-bar {
@@ -138,7 +221,17 @@ function defaultForm() {
   margin-top: 14px;
 }
 
+@media (max-width: 1280px) {
+  .summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 720px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
   .card-header {
     align-items: stretch;
     flex-direction: column;
