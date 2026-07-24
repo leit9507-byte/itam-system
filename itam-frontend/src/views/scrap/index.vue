@@ -164,6 +164,14 @@
         show-icon
         :closable="false"
       />
+      <div v-if="disposeDialogRows.length > 1" class="batch-fill-bar">
+        <el-date-picker v-model="disposeDialog.batch.retirement_date" type="date" value-format="YYYY-MM-DD" placeholder="统一退役时间" style="width: 160px" />
+        <el-input v-model="disposeDialog.batch.retirement_approval_no" clearable placeholder="统一审批单号" style="width: 220px" />
+        <el-button @click="applyCommonFields">同步到全部</el-button>
+        <el-button type="primary" plain @click="applyMethodToAll('报废')">全部报废</el-button>
+        <el-button type="warning" plain @click="applyMethodToAll('变卖')">全部变卖</el-button>
+        <el-button plain @click="applyMethodToAll('员工领用')">全部员工领用</el-button>
+      </div>
       <el-table v-if="disposeDialogRows.length > 1" :data="disposeDialogRows" border stripe max-height="420" class="dispose-asset-summary">
         <el-table-column prop="registration_no" label="登记单号" width="140" />
         <el-table-column prop="asset_no" label="资产编号" width="140">
@@ -334,7 +342,11 @@ const disposeDialog = reactive({
     dispose_recipient_name: '',
     disposal_remark: ''
   },
-  itemForms: {}
+  itemForms: {},
+  batch: {
+    retirement_date: '',
+    retirement_approval_no: ''
+  }
 })
 const SCRAP_SUMMARY_LIMIT = 500
 const disposalMethodOptions = [
@@ -424,6 +436,7 @@ function openDispose(row) {
   disposeDialog.form.dispose_recipient_user_id = first.dispose_recipient_user_id || ''
   disposeDialog.form.dispose_recipient_name = first.dispose_recipient_name || ''
   disposeDialog.form.disposal_remark = first.disposal_remark || ''
+  resetBatchFill(first.retirement_date || todayText(), first.retirement_approval_no || '')
   disposeDialog.visible = true
 }
 
@@ -440,6 +453,7 @@ function openBatchDispose(method = '') {
   disposeDialog.form.dispose_recipient_user_id = ''
   disposeDialog.form.dispose_recipient_name = ''
   disposeDialog.form.disposal_remark = method === '变卖' ? '批量变卖处置，按资产预计残值比例分摊变卖金额' : ''
+  resetBatchFill(todayText(), '')
   disposeDialog.visible = true
 }
 
@@ -506,6 +520,41 @@ function resetItemForms(rows, method = '') {
       disposal_remark: row.disposal_remark || ''
     }
   })
+}
+
+function resetBatchFill(retirementDate = todayText(), approvalNo = '') {
+  disposeDialog.batch.retirement_date = retirementDate
+  disposeDialog.batch.retirement_approval_no = approvalNo
+}
+
+function applyCommonFields() {
+  const rows = disposeDialogRows.value
+  if (!rows.length) return
+  rows.forEach(row => {
+    const form = itemForm(row)
+    if (disposeDialog.batch.retirement_date) form.retirement_date = disposeDialog.batch.retirement_date
+    if (disposeDialog.batch.retirement_approval_no) form.retirement_approval_no = disposeDialog.batch.retirement_approval_no
+  })
+  ElMessage.success('已同步到全部资产')
+}
+
+function applyMethodToAll(method) {
+  disposeDialogRows.value.forEach(row => {
+    const form = itemForm(row)
+    form.disposal_method = method
+    if (method === '报废') {
+      form.dispose_recipient_user_id = ''
+      form.dispose_recipient_name = ''
+      if (!form.disposal_remark) form.disposal_remark = '报废销毁或环保回收'
+    } else if (method === '变卖') {
+      form.dispose_recipient_user_id = ''
+      if (!form.disposal_remark) form.disposal_remark = '批量变卖处置'
+    } else if (method === '员工领用') {
+      form.dispose_recipient_name = ''
+      if (!form.disposal_remark) form.disposal_remark = '报废资产由员工领走'
+    }
+  })
+  ElMessage.success(`已将全部资产设置为${method}`)
 }
 
 function itemForm(row) {
@@ -624,6 +673,14 @@ function statusType(status) {
 
 .dispose-asset-summary {
   margin-top: 16px;
+}
+
+.batch-fill-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
 }
 
 .dispose-dialog :deep(.el-dialog__body) {
