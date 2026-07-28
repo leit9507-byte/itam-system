@@ -72,6 +72,46 @@ class CoreWorkflowTest(unittest.TestCase):
         row = AssetService.get_scoped_asset(self.db, "ITAM-000001", context)
         self.assertEqual(row.dept_id, "D2")
 
+    def test_edit_allows_unchanged_legacy_status_owner_mismatch(self):
+        asset = self.add_asset(status="in_stock")
+        asset.owner_user_id = "legacy-owner"
+        self.db.commit()
+
+        result = AssetService.update_asset(
+            self.db,
+            asset.asset_id,
+            AssetUpdate(name="Updated asset", status="in_stock", owner_user_id="legacy-owner"),
+            "tester",
+            {"role": "admin"},
+        )
+
+        self.assertEqual(result["name"], "Updated asset")
+        self.assertEqual(result["owner_user_id"], "legacy-owner")
+
+    def test_terminal_asset_allows_metadata_edit_when_workflow_fields_are_unchanged(self):
+        asset = self.add_asset(status="disposed")
+        asset.owner_user_id = "legacy-owner"
+        asset.dept_id = "D1"
+        asset.location = "archive"
+        self.db.commit()
+
+        result = AssetService.update_asset(
+            self.db,
+            asset.asset_id,
+            AssetUpdate(
+                name="Archived asset",
+                status="disposed",
+                owner_user_id="legacy-owner",
+                dept_id="D1",
+                location="archive",
+            ),
+            "tester",
+            {"role": "admin"},
+        )
+
+        self.assertEqual(result["name"], "Archived asset")
+        self.assertEqual(result["status"], "disposed")
+
     def test_asset_rename_updates_checkout_and_scan_binding(self):
         asset = self.add_asset()
         self.db.add(AssetCheckout(asset_id=asset.asset_id, checkout_type="in_use", checked_out_by="tester"))

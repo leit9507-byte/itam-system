@@ -942,14 +942,29 @@ class AssetService:
         data = payload.model_dump(exclude_unset=True)
         if "status" in data and data["status"] != asset.status:
             raise AssetValidationError("asset status must be changed through checkout, checkin, repair, or scrap workflow")
-        if asset.status in AssetService.TERMINAL_STATUSES and any(key in data for key in {"status", "owner_user_id", "dept_id", "location"}):
+        status_changed = "status" in data and data["status"] != asset.status
+        owner_changed = (
+            "owner_user_id" in data
+            and AssetService.normalize_blank(data["owner_user_id"]) != AssetService.normalize_blank(asset.owner_user_id)
+        )
+        dept_changed = (
+            "dept_id" in data
+            and AssetService.normalize_blank(data["dept_id"]) != AssetService.normalize_blank(asset.dept_id)
+        )
+        location_changed = (
+            "location" in data
+            and AssetService.normalize_blank(data["location"]) != AssetService.normalize_blank(asset.location)
+        )
+        if asset.status in AssetService.TERMINAL_STATUSES and any(
+            (status_changed, owner_changed, dept_changed, location_changed)
+        ):
             raise AssetValidationError("已报废/已处置资产不能再修改状态、责任人、部门或位置")
         new_asset_id = AssetService.normalize_blank(data.pop("asset_id", None))
         original_values = AssetService.snapshot_asset(asset)
         if new_asset_id and new_asset_id != asset_id:
             AssetService.rename_asset_id(db, asset, asset_id, new_asset_id, operator)
         old_status = asset.status
-        should_validate_status_owner = bool({"status", "owner_user_id"} & data.keys())
+        should_validate_status_owner = status_changed or owner_changed
         for key, value in data.items():
             if key == "asset_no":
                 value = AssetService.normalize_asset_no(value)

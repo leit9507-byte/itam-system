@@ -138,7 +138,7 @@
       </el-form>
       <template #footer>
         <el-button @click="editDialog.visible = false">取消</el-button>
-        <el-button type="primary" @click="submitEdit">保存调整</el-button>
+        <el-button type="primary" :loading="editDialog.saving" @click="submitEdit">保存调整</el-button>
       </template>
     </el-dialog>
 
@@ -419,7 +419,7 @@ const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const batch = reactive({ visible: false, type: 'inbound', assets: [], form: defaultBatchForm() })
 const batchEdit = reactive({ visible: false, form: defaultBatchEditForm(), fields: defaultBatchEditFields() })
 const importDialog = reactive({ visible: false, loading: false, importing: false, overwrite: false, content: '', preview: null, result: null })
-const editDialog = reactive({ visible: false, form: {} })
+const editDialog = reactive({ visible: false, saving: false, form: {} })
 const repairDialog = reactive({ visible: false, asset: null, assets: [], form: defaultRepairForm() })
 const columnDialog = reactive({ visible: false })
 const workflowHint = ref('')
@@ -794,6 +794,9 @@ function hasAssetOwner(row) {
 }
 
 function validateStatusOwner(row) {
+  const statusChanged = row.original_status != null && row.status !== row.original_status
+  const ownerChanged = row.original_owner_user_id != null && String(row.owner_user_id || '') !== String(row.original_owner_user_id || '')
+  if (!statusChanged && !ownerChanged) return true
   if (assignedStatuses.includes(row.status) && !hasAssetOwner(row)) {
     ElMessage.warning('在用、借出或已出库状态必须先选择使用人')
     return false
@@ -810,12 +813,21 @@ function goDetail(row) {
 }
 
 function openEdit(row) {
-  editDialog.form = { ...row, original_asset_id: row.asset_id, owner_user_id: row.owner_user_id || row.owner, dept_id: row.dept_id || row.dept }
+  const ownerUserId = row.owner_user_id || row.owner || ''
+  editDialog.form = {
+    ...row,
+    original_asset_id: row.asset_id,
+    original_status: row.status,
+    original_owner_user_id: ownerUserId,
+    owner_user_id: ownerUserId,
+    dept_id: row.dept_id || row.dept
+  }
   searchUsers('')
   editDialog.visible = true
 }
 
 async function submitEdit() {
+  if (editDialog.saving) return
   const oldAssetId = editDialog.form.original_asset_id || editDialog.form.asset_id
   const newAssetId = String(editDialog.form.asset_id || '').trim()
   if (!newAssetId) return ElMessage.warning('资产编码不能为空')
@@ -824,10 +836,15 @@ async function submitEdit() {
     if (!confirmed) return
   }
   if (!validateStatusOwner(editDialog.form)) return
-  await updateAsset(oldAssetId, { ...editDialog.form, asset_id: newAssetId })
-  editDialog.visible = false
-  ElMessage.success('资产信息已更新')
-  await loadAssets()
+  editDialog.saving = true
+  try {
+    await updateAsset(oldAssetId, { ...editDialog.form, asset_id: newAssetId })
+    editDialog.visible = false
+    ElMessage.success('资产信息已更新')
+    await loadAssets()
+  } finally {
+    editDialog.saving = false
+  }
 }
 
 function openBatchEdit() {
@@ -1192,7 +1209,7 @@ const AssetEditFields = defineComponent({
         field('所属公司', h(resolveSelect(), { modelValue: props.form.company, 'onUpdate:modelValue': value => (props.form.company = value), filterable: true, clearable: true, style: 'width:100%' }, () => props.companies.map(item => h(resolveOption(), { key: item.id || item.name, label: item.name, value: item.name })))),
         field('序列号', h(resolveInput(), { modelValue: props.form.sn, 'onUpdate:modelValue': value => (props.form.sn = value) })),
         field('设备类型', h(resolveSelect(), { modelValue: props.form.category, 'onUpdate:modelValue': value => (props.form.category = value), filterable: true, allowCreate: true, defaultFirstOption: true, style: 'width:100%' }, () => props.categories.map(item => h(resolveOption(), { key: item, label: item, value: item })))),
-        field('状态', h(resolveSelect(), { modelValue: props.form.status, 'onUpdate:modelValue': value => (props.form.status = value), disabled: isWorkflowLockedStatus(props.form.status), style: 'width:100%' }, () => manualStatusOptions(props.form.status).map(item => h(resolveOption(), { key: item.value, label: item.label, value: item.value, disabled: item.disabled })))),
+        field('状态（流程控制）', h(resolveSelect(), { modelValue: props.form.status, disabled: true, style: 'width:100%' }, () => manualStatusOptions(props.form.status).map(item => h(resolveOption(), { key: item.value, label: item.label, value: item.value, disabled: item.disabled })))),
         field('品牌', h(resolveInput(), { modelValue: props.form.brand, 'onUpdate:modelValue': value => (props.form.brand = value) })),
         field('型号', h(resolveInput(), { modelValue: props.form.model, 'onUpdate:modelValue': value => (props.form.model = value) })),
         field('规格', h(resolveInput(), { modelValue: props.form.spec, 'onUpdate:modelValue': value => (props.form.spec = value) })),
