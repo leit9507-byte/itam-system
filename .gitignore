@@ -17,6 +17,7 @@ __pycache__/
 *.db
 audit_report.html
 artifacts/
+outputs/
 uploads/qrcodes/*.png
 itam-system/uploads/qrcodes/*.png
 itam-system/uploads/reports/*.pdf
