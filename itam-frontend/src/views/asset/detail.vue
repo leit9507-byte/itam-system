@@ -255,9 +255,9 @@
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12">
-            <el-form-item label="状态">
-              <el-select v-model="editDialog.form.status" style="width: 100%">
-                <el-option v-for="item in editableAssetStatuses" :key="item.value" :label="item.label" :value="item.value" />
+            <el-form-item label="状态（流程控制）">
+              <el-select v-model="editDialog.form.status" disabled style="width: 100%">
+                <el-option v-for="item in editStatusOptions" :key="item.value" :label="item.label" :value="item.value" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -282,7 +282,7 @@
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :sm="12"><el-form-item label="部门"><el-input v-model="editDialog.form.dept_id" /></el-form-item></el-col>
+          <el-col :xs="24" :sm="12"><el-form-item label="部门"><el-input v-model="editDialog.form.dept_id" disabled /></el-form-item></el-col>
           <el-col :xs="24" :sm="12">
             <el-form-item label="位置">
               <el-select v-model="editDialog.form.location" filterable clearable style="width: 100%">
@@ -327,6 +327,14 @@ const locations = ref([])
 const users = ref([])
 const filteredUsers = ref([])
 const editDialog = reactive({ visible: false, saving: false, form: {} })
+const editStatusOptions = computed(() => {
+  const current = editDialog.form.status
+  const options = [...editableAssetStatuses]
+  if (current && !options.some(item => item.value === current) && statusMap[current]) {
+    options.push(statusMap[current])
+  }
+  return options
+})
 const scanBindings = ref([])
 const scanBindingSaving = ref(false)
 const scanForm = reactive({ scan_raw: '', scan_type: 'qrcode', remark: '', force: false })
@@ -459,11 +467,14 @@ function handleTimelineSizeChange() {
 
 function openEdit() {
   if (!detail.asset) return
+  const ownerUserId = detail.asset.owner_user_id || detail.asset.owner || ''
   editDialog.form = {
     ...detail.asset,
     product_id: resolveProductId(detail.asset),
     original_asset_id: detail.asset.asset_id,
-    owner_user_id: detail.asset.owner_user_id || detail.asset.owner || '',
+    original_status: detail.asset.status,
+    original_owner_user_id: ownerUserId,
+    owner_user_id: ownerUserId,
     dept_id: detail.asset.dept_id || detail.asset.dept || ''
   }
   searchUsers('')
@@ -497,12 +508,27 @@ function applyProductToEdit(productId) {
 }
 
 async function submitEdit() {
+  if (editDialog.saving) return
   const oldAssetId = editDialog.form.original_asset_id || detail.asset?.asset_id
   const newAssetId = String(editDialog.form.asset_id || '').trim()
   if (!newAssetId) return ElMessage.warning('资产编码不能为空')
   editDialog.form.asset_no = editDialog.form.asset_no || newAssetId
-  if (['in_use', 'borrowed'].includes(editDialog.form.status) && !editDialog.form.owner_user_id) return ElMessage.warning('在用或借出资产必须选择责任人')
-  if (['in_stock', 'idle', 'ready_scrap'].includes(editDialog.form.status) && editDialog.form.owner_user_id) return ElMessage.warning('在库、闲置、待报废资产不能绑定责任人')
+  const statusChanged = editDialog.form.status !== editDialog.form.original_status
+  const ownerChanged = String(editDialog.form.owner_user_id || '') !== String(editDialog.form.original_owner_user_id || '')
+  if ((statusChanged || ownerChanged) && ['in_use', 'borrowed'].includes(editDialog.form.status) && !editDialog.form.owner_user_id) {
+    return ElMessage.warning('在用或借出资产必须选择责任人')
+  }
+  if ((statusChanged || ownerChanged) && ['in_stock', 'idle', 'ready_scrap'].includes(editDialog.form.status) && editDialog.form.owner_user_id) {
+    return ElMessage.warning('在库、闲置、待报废资产不能绑定责任人')
+  }
+  if (newAssetId !== oldAssetId) {
+    const confirmed = await ElMessageBox.confirm(
+      `确认将资产编码从 ${oldAssetId} 修改为 ${newAssetId}？相关生命周期、附件、维修、报废、盘点和审计记录会同步更新。`,
+      '修改资产编码',
+      { type: 'warning' }
+    ).then(() => true).catch(() => false)
+    if (!confirmed) return
+  }
   editDialog.saving = true
   try {
     await updateAsset(oldAssetId, { ...editDialog.form, asset_id: newAssetId })
