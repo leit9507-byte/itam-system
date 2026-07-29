@@ -213,12 +213,19 @@
       </el-space>
     </el-card>
 
-    <el-drawer v-model="rulesDrawer.visible" title="审计规则设置" size="900px">
+    <el-drawer v-model="rulesDrawer.visible" :title="`${scopeLabel(rulesDrawer.scope)}规则设置`" size="900px">
+      <el-segmented
+        v-model="rulesDrawer.scope"
+        :options="ruleScopeOptions"
+        class="rule-scope-switch"
+        @change="handleDrawerScopeChange"
+      />
       <div class="rule-help">
         <strong>规则说明：</strong>
-        人员审计用于检查人员配置标准、离职回收和借用回收；设备类型可多选，多选后按这些类型合并统计。
+        <span v-if="rulesDrawer.scope === 'person'">人员审计用于检查人员配置标准、离职回收和借用回收；设备类型可多选，多选后按这些类型合并统计。</span>
+        <span v-else>资产审计用于检查采购金额、长期闲置、超期服役和设备故障；每条风险按单台资产形成审计明细。</span>
       </div>
-      <div class="drawer-actions">
+      <div v-if="rulesDrawer.scope === 'person'" class="drawer-actions">
         <el-button type="primary" :icon="Plus" @click="addPersonCountRule">新增人员数量规则</el-button>
       </div>
       <el-table :data="pagedDrawerRules" border>
@@ -227,9 +234,6 @@
             <el-input v-if="!isBuiltinRule(row.rule_code)" v-model="row.name" size="small" maxlength="40" />
             <span v-else>{{ row.name }}</span>
           </template>
-        </el-table-column>
-        <el-table-column prop="audit_scope" label="对象" width="90">
-          <template #default="{ row }">{{ scopeLabel(row.audit_scope) }}</template>
         </el-table-column>
         <el-table-column label="启用" width="76">
           <template #default="{ row }"><el-switch v-model="row.enabled" /></template>
@@ -278,7 +282,7 @@
           v-model:current-page="drawerRulePagination.page"
           v-model:page-size="drawerRulePagination.pageSize"
           :page-sizes="[10, 20, 50, 100]"
-          :total="rulesDrawer.rules.length"
+          :total="drawerScopedRules.length"
           layout="total, sizes, prev, pager, next"
         />
       </div>
@@ -367,7 +371,11 @@ const categories = ref([])
 const scoreRef = ref(null)
 const idleRef = ref(null)
 const charts = []
-const rulesDrawer = reactive({ visible: false, saving: false, rules: [] })
+const rulesDrawer = reactive({ visible: false, saving: false, scope: 'person', rules: [] })
+const ruleScopeOptions = [
+  { label: '人员审计规则', value: 'person' },
+  { label: '资产审计规则', value: 'asset' }
+]
 const builtinRuleCodes = new Set([
   'USER_ASSET_COUNT_LIMIT',
   'OFFBOARDING_ASSET_NOT_RETURNED',
@@ -400,7 +408,8 @@ const scopedRules = computed(() => (result.value?.rules || []).filter(item => (i
 const personRows = computed(() => groupPersonViolations(result.value?.violations || [], result.value?.responses || []))
 const assetRows = computed(() => (result.value?.violations || []).filter(item => item.audit_scope === 'asset'))
 const pagedScopedRules = computed(() => paginate(scopedRules.value, rulePagination))
-const pagedDrawerRules = computed(() => paginate(rulesDrawer.rules, drawerRulePagination))
+const drawerScopedRules = computed(() => rulesDrawer.rules.filter(item => (item.audit_scope || 'asset') === rulesDrawer.scope))
+const pagedDrawerRules = computed(() => paginate(drawerScopedRules.value, drawerRulePagination))
 const pagedResponseAssets = computed(() => paginate(responseDrawer.row?.assets || [], responseAssetPagination))
 
 const filteredPersonRows = computed(() => {
@@ -457,8 +466,13 @@ function handleScopeChange() {
 
 async function openRules() {
   rulesDrawer.rules = (await getAuditRules()).map(item => ({ ...item }))
+  rulesDrawer.scope = activeScope.value
   drawerRulePagination.page = 1
   rulesDrawer.visible = true
+}
+
+function handleDrawerScopeChange() {
+  drawerRulePagination.page = 1
 }
 
 function addPersonCountRule() {
@@ -473,6 +487,7 @@ function addPersonCountRule() {
     audit_scope: 'person',
     description: '按责任人统计全部品类资产数量，超过阈值时命中。'
   })
+  rulesDrawer.scope = 'person'
   drawerRulePagination.page = 1
 }
 
@@ -836,6 +851,15 @@ function paginate(rows, pagination) {
 
 .response-form {
   padding-top: 4px;
+}
+
+.rule-scope-switch {
+  width: 100%;
+  margin-bottom: 14px;
+}
+
+:deep(.rule-scope-switch .el-segmented__item) {
+  flex: 1;
 }
 
 .rule-help {
