@@ -90,6 +90,8 @@ class AssetService:
         "payment_no",
         "remark",
         "scan_codes",
+        "status_time",
+        "borrow_due_date",
     ]
     CHANGE_FIELD_LABELS = {
         "asset_id": "资产编号",
@@ -244,10 +246,14 @@ class AssetService:
         errors: list[dict] = []
         skipped = 0
         scan_bindings_created = 0
+        checkout_records_created = 0
+        repair_records_created = 0
         scrap_requests_created = 0
 
         for index, row in enumerate(payload.items, start=1):
             row_scan_bindings_created = 0
+            row_checkout_records_created = 0
+            row_repair_records_created = 0
             row_scrap_requests_created = 0
             try:
                 with db.begin_nested():
@@ -305,17 +311,22 @@ class AssetService:
                         normalized.scan_codes,
                         payload.operator,
                     )
-                    row_scrap_requests_created = AssetService.ensure_import_scrap_request(
+                    workflow_counts = AssetService.ensure_import_status_workflow(
                         db,
                         asset,
-                        normalized.status,
+                        normalized,
                         payload.operator,
                     )
+                    row_checkout_records_created = workflow_counts["checkout"]
+                    row_repair_records_created = workflow_counts["repair"]
+                    row_scrap_requests_created = workflow_counts["scrap"]
                     if old_status is None:
                         created_assets.append(asset)
                     else:
                         updated_assets.append(asset)
                 scan_bindings_created += row_scan_bindings_created
+                checkout_records_created += row_checkout_records_created
+                repair_records_created += row_repair_records_created
                 scrap_requests_created += row_scrap_requests_created
             except SQLAlchemyError as exc:
                 errors.append({"row": index, "message": f"数据库保存失败：{AssetService.db_error_message(exc)}", "data": row.model_dump()})
@@ -332,6 +343,8 @@ class AssetService:
             "updated": len(updated_assets),
             "skipped": skipped,
             "scan_bindings_created": scan_bindings_created,
+            "checkout_records_created": checkout_records_created,
+            "repair_records_created": repair_records_created,
             "scrap_requests_created": scrap_requests_created,
             "errors": errors,
             "assets": [AssetService.to_out(asset, db=db, residual_config=residual_config) for asset in [*created_assets, *updated_assets]],
@@ -383,8 +396,78 @@ class AssetService:
         return created
 
     @staticmethod
-    def ensure_import_scrap_request(db: Session, asset: Asset, status: str, operator: str) -> int:
-        if status not in {"pending_scrap", "scrapped"}:
+    def ensure_import_status_workflow(db: Session, asset: Asset, row: AssetImportRow, operator: str) -> dict[str, int]:
+        counts = {"checkout": 0, "repair": 0, "scrap": 0}
+        status_time = row.status_time or datetime.utcnow()
+
+        if row.status in {"in_use", "borrowed", "out_stock"}:
+            checkout = AssetService.open_checkout_for_asset(db, asset.asset_id)
+            if not checkout:
+                user = AssetService.find_user(db, asset.owner_user_id)
+                checkout = AssetCheckout(
+                    asset_id=asset.asset_id,
+                    checkout_type=row.status,
+                    assignee_user_id=AssetService.normalize_blank(asset.owner_user_id) or None,
+                    assignee_name=AssetService.user_label(user, asset.owner_user_id) if asset.owner_user_id else None,
+                    dept_id=asset.dept_id,
+                    location=asset.location,
+                    due_date=row.borrow_due_date if row.status == "borrowed" else None,
+                    status="open",
+                    checked_out_at=status_time,
+                    checked_out_by=operator,
+                    remark=AssetService.join_notes(row.remark, "资产批量导入自动生成状态流程"),
+                )
+                db.add(checkout)
+                AuditLogService.record_operation(
+                    db,
+                    "asset",
+                    "create_checkout_from_import",
+                    operator,
+                    "asset_checkout",
+                    asset.asset_id,
+                    f"批量导入自动创建{AssetService.status_label(row.status)}记录 {asset.asset_id}",
+                    {"asset_id": asset.asset_id, "checkout_type": row.status, "status_time": status_time},
+                )
+                counts["checkout"] = 1
+
+        if row.status == "repair":
+            active_repair = (
+                db.query(RepairRecord)
+                .filter(RepairRecord.asset_id == asset.asset_id, RepairRecord.finish_time.is_(None))
+                .first()
+            )
+            if not active_repair:
+                year = datetime.utcnow().year
+                repair = RepairRecord(
+                    repair_no=NumberService.next(db, f"repair:{year}", f"RP-{year}-", 4),
+                    asset_id=asset.asset_id,
+                    repair_time=status_time,
+                    repair_type="导入维修",
+                    fault_reason=row.remark or "批量导入同步的维修中资产，故障原因待补充",
+                    repair_cost=0,
+                    operator=operator,
+                    status="维修中",
+                    remark="由资产批量导入自动创建",
+                )
+                db.add(repair)
+                AuditLogService.record_operation(
+                    db,
+                    "repair",
+                    "create_from_import",
+                    operator,
+                    "repair",
+                    repair.repair_no,
+                    f"批量导入自动创建维修单 {asset.asset_id}",
+                    {"asset_id": asset.asset_id, "status_time": status_time},
+                )
+                counts["repair"] = 1
+
+        counts["scrap"] = AssetService.ensure_import_scrap_request(db, asset, row.status, status_time, operator)
+        return counts
+
+    @staticmethod
+    def ensure_import_scrap_request(db: Session, asset: Asset, status: str, status_time: datetime, operator: str) -> int:
+        if status not in {"ready_scrap", "pending_scrap", "scrapped", "disposed"}:
             return 0
         existed = db.query(ScrapRequest).filter(ScrapRequest.asset_id == asset.asset_id).first()
         if existed:
@@ -411,7 +494,12 @@ class AssetService:
             applicant=operator,
             reason="资产批量导入时状态为待处置或已报废，自动创建处置登记",
             estimated_residual_value=AssetResidualService.calculate_asset(asset, db=db),
-            status="待处置",
+            final_residual_value=AssetResidualService.calculate_asset(asset, db=db) if status == "disposed" else 0,
+            retirement_date=status_time if status == "disposed" else None,
+            disposal_remark="历史已处置资产批量导入，处置资料待补充" if status == "disposed" else None,
+            disposed_by=operator if status == "disposed" else None,
+            disposed_at=status_time if status == "disposed" else None,
+            status="已处置" if status == "disposed" else "待处置",
         )
         db.add(request)
         LifecycleService.record(
@@ -561,6 +649,8 @@ class AssetService:
                 "",
                 "关键岗位备用机",
                 "https://asset.example/nb-001",
+                "2026-06-24 09:00:00",
+                "",
             ]
         )
         sheet.append(
@@ -587,6 +677,8 @@ class AssetService:
                 "",
                 "设计部高色准显示器",
                 "QR-DP-001；QR-DP-001-LEGACY",
+                "2026-06-24 10:00:00",
+                "2026-07-24 18:00:00",
             ]
         )
 
@@ -628,6 +720,8 @@ class AssetService:
             "T": 22,
             "U": 28,
             "V": 36,
+            "W": 22,
+            "X": 22,
         }
         for column, width in widths.items():
             sheet.column_dimensions[column].width = width
@@ -668,6 +762,8 @@ class AssetService:
             ("payment_no", "否", "付款单号或财务凭证号"),
             ("remark", "否", "备注/特殊说明，例如备用机、涉密、借测、待补配件"),
             ("scan_codes", "否", "二维码扫码返回的原始内容；多个内容用换行、英文分号或中文分号分隔，导入后直接绑定资产"),
+            ("status_time", "否", "当前状态发生时间，格式 YYYY-MM-DD HH:MM:SS；留空使用导入时间"),
+            ("borrow_due_date", "借用状态", "计划归还时间，仅 borrowed 状态使用，格式 YYYY-MM-DD HH:MM:SS"),
         ]
         for row in rows:
             instruction.append(row)
@@ -801,6 +897,12 @@ class AssetService:
             remark=pick("remark", "备注", "特殊说明", "说明"),
             scan_codes=AssetService.normalize_scan_codes(
                 pick("scan_codes", "qr_codes", "scan_raw", "二维码内容", "二维码", "扫码内容")
+            ),
+            status_time=AssetService.parse_datetime(
+                pick("status_time", "状态时间", "状态发生时间", "流程时间")
+            ),
+            borrow_due_date=AssetService.parse_datetime(
+                pick("borrow_due_date", "计划归还时间", "借用到期时间", "预计归还时间")
             ),
         )
 

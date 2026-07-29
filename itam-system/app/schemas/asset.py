@@ -161,6 +161,8 @@ class AssetImportRow(AssetCreate):
     payment_no: Optional[str] = None
     remark: Optional[str] = None
     scan_codes: list[str] = Field(default_factory=list)
+    status_time: Optional[datetime] = None
+    borrow_due_date: Optional[datetime] = None
 
 
 class AssetBatchImport(BaseModel):
@@ -186,6 +188,8 @@ class AssetImportResult(BaseModel):
     updated: int = 0
     skipped: int
     scan_bindings_created: int = 0
+    checkout_records_created: int = 0
+    repair_records_created: int = 0
     scrap_requests_created: int = 0
     errors: list[AssetImportError]
     assets: list[AssetOut]

@@ -398,7 +398,7 @@
     </el-dialog>
 
     <el-dialog v-model="importDialog.visible" title="批量导入资产" width="1080px">
-      <el-alert title="支持在二维码内容列直接绑定扫码原文；导入已报废或待处置资产时会自动创建报废处置登记。" type="info" show-icon :closable="false" />
+      <el-alert title="导入会按资产状态自动补建借用/出库、维修或报废处置流程；重复导入不会重复建单。" type="info" show-icon :closable="false" />
       <div class="upload-row">
         <el-upload :show-file-list="false" accept=".xlsx,.xlsm" :before-upload="previewExcelImport">
           <el-button type="primary">上传并预览 Excel</el-button>
@@ -440,7 +440,7 @@
         v-if="importDialog.result && !importDialog.result.errors.length"
         icon="success"
         :title="`导入完成：新增 ${importDialog.result.created} 条，更新 ${importDialog.result.updated || 0} 条`"
-        :sub-title="`二维码新绑定 ${importDialog.result.scan_bindings_created || 0} 条，自动创建报废处置登记 ${importDialog.result.scrap_requests_created || 0} 条`"
+        :sub-title="`二维码 ${importDialog.result.scan_bindings_created || 0} 条，借用/出库 ${importDialog.result.checkout_records_created || 0} 条，维修 ${importDialog.result.repair_records_created || 0} 条，处置 ${importDialog.result.scrap_requests_created || 0} 条`"
       />
     </el-dialog>
   </div>
@@ -1071,9 +1071,9 @@ function locationLabel(item) {
 
 function fillImportExample() {
   importDialog.content = [
-    '资产编码,资产名称,设备类型,品牌,型号,序列号,价格,采购日期,采购审批单号,采购供应商,维保年限,使用人,部门,位置,状态,备注,二维码内容',
-    'ITAM-IMPORT-001,ThinkPad X1 Carbon,笔记本电脑,Lenovo,X1 Carbon Gen 12,SN-IMPORT-001,15000,2026-06-24,OA-20260624-001,联想授权供应商,3,U-ADMIN,IT,上海IT仓,in_use,关键岗位设备,https://asset.example/nb-001',
-    'ITAM-IMPORT-002,Dell U2723QE,显示器,Dell,U2723QE,SN-IMPORT-002,3999,2026-06-24,OA-20260624-001,Dell渠道商,3,,AUDIT,上海办公区,已报废,历史报废资产,QR-DP-001；QR-DP-001-LEGACY'
+    '资产编码,资产名称,设备类型,品牌,型号,序列号,价格,采购日期,采购审批单号,采购供应商,维保年限,使用人,部门,位置,状态,备注,二维码内容,状态发生时间,计划归还时间',
+    'ITAM-IMPORT-001,ThinkPad X1 Carbon,笔记本电脑,Lenovo,X1 Carbon Gen 12,SN-IMPORT-001,15000,2026-06-24,OA-20260624-001,联想授权供应商,3,U-ADMIN,IT,上海IT仓,in_use,关键岗位设备,https://asset.example/nb-001,2026-06-24 09:00:00,',
+    'ITAM-IMPORT-002,Dell U2723QE,显示器,Dell,U2723QE,SN-IMPORT-002,3999,2026-06-24,OA-20260624-001,Dell渠道商,3,,AUDIT,上海办公区,已报废,历史报废资产,QR-DP-001；QR-DP-001-LEGACY,2026-06-24 10:00:00,'
   ].join('\n')
   clearImportPreview()
 }
@@ -1134,7 +1134,7 @@ async function confirmImport() {
   try {
     const items = importDialog.preview.items.filter(item => item.valid).map(item => item.data)
     importDialog.result = await importAssets(items, 'frontend-confirm-import', importDialog.overwrite)
-    ElMessage.success(`导入完成：新增 ${importDialog.result.created} 条，更新 ${importDialog.result.updated || 0} 条，二维码绑定 ${importDialog.result.scan_bindings_created || 0} 条，自动建报废登记 ${importDialog.result.scrap_requests_created || 0} 条`)
+    ElMessage.success(`导入完成：新增 ${importDialog.result.created} 条，更新 ${importDialog.result.updated || 0} 条；自动建借用/出库 ${importDialog.result.checkout_records_created || 0} 条、维修 ${importDialog.result.repair_records_created || 0} 条、处置 ${importDialog.result.scrap_requests_created || 0} 条`)
     importDialog.preview = null
     await loadAssets()
   } catch (error) {

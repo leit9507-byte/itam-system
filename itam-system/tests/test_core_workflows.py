@@ -523,16 +523,32 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(row.scan_codes, ["QR-CODE-A", "QR-CODE-B"])
         self.assertEqual(row.status, "scrapped")
 
+    def test_row_mapping_parses_status_workflow_times(self):
+        row = AssetService.row_from_mapping(
+            {
+                "资产名称": "借用设备",
+                "设备类型": "笔记本电脑",
+                "状态": "借用",
+                "状态发生时间": "2026-07-01 09:30:00",
+                "计划归还时间": "2026-07-31 18:00:00",
+            }
+        )
+
+        self.assertEqual(row.status_time, datetime(2026, 7, 1, 9, 30))
+        self.assertEqual(row.borrow_due_date, datetime(2026, 7, 31, 18, 0))
+
     def test_import_template_contains_scan_codes_and_correct_status_column(self):
         workbook = load_workbook(BytesIO(AssetService.build_import_template()))
         sheet = workbook["资产导入"]
         example = workbook["填写示例"]
         headers = [cell.value for cell in sheet[1]]
 
-        self.assertEqual(headers[-1], "scan_codes")
+        self.assertIn("scan_codes", headers)
+        self.assertEqual(headers[-2:], ["status_time", "borrow_due_date"])
         self.assertEqual(example["B2"].value, "NB-001")
         self.assertEqual(example["C2"].value, "ThinkPad X1 Carbon")
         self.assertEqual(example["V2"].value, "https://asset.example/nb-001")
+        self.assertEqual(example["W2"].value, "2026-06-24 09:00:00")
         validations = [str(item.sqref) for item in sheet.data_validations.dataValidation]
         self.assertIn("M2:M500", validations)
 
@@ -570,6 +586,84 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(len(scraps), 1)
         self.assertEqual(scraps[0].status, "待处置")
         self.assertTrue(scraps[0].retirement_flow_no)
+
+    def test_import_creates_checkout_workflow_without_duplicates(self):
+        status_time = datetime(2026, 7, 1, 9, 30)
+        due_date = datetime(2026, 7, 31, 18, 0)
+        payload = AssetBatchImport(
+            overwrite=True,
+            items=[
+                AssetImportRow(
+                    asset_id="BORROW-IMPORT-001",
+                    name="导入借用设备",
+                    category="笔记本电脑",
+                    status="borrowed",
+                    owner_user_id="U-IMPORT",
+                    status_time=status_time,
+                    borrow_due_date=due_date,
+                )
+            ],
+        )
+
+        first = AssetService.import_assets(self.db, payload)
+        second = AssetService.import_assets(self.db, payload)
+        checkout = self.db.query(AssetCheckout).filter(AssetCheckout.asset_id == "BORROW-IMPORT-001").one()
+
+        self.assertEqual(first["checkout_records_created"], 1)
+        self.assertEqual(second["checkout_records_created"], 0)
+        self.assertEqual(checkout.checkout_type, "borrowed")
+        self.assertEqual(checkout.checked_out_at, status_time)
+        self.assertEqual(checkout.due_date, due_date)
+        self.assertEqual(checkout.status, "open")
+
+    def test_import_creates_repair_workflow_without_duplicates(self):
+        status_time = datetime(2026, 7, 2, 10, 0)
+        payload = AssetBatchImport(
+            overwrite=True,
+            items=[
+                AssetImportRow(
+                    asset_id="REPAIR-IMPORT-001",
+                    name="导入维修设备",
+                    category="显示器",
+                    status="repair",
+                    status_time=status_time,
+                    remark="屏幕无显示",
+                )
+            ],
+        )
+
+        first = AssetService.import_assets(self.db, payload)
+        second = AssetService.import_assets(self.db, payload)
+        repair = self.db.query(RepairRecord).filter(RepairRecord.asset_id == "REPAIR-IMPORT-001").one()
+
+        self.assertEqual(first["repair_records_created"], 1)
+        self.assertEqual(second["repair_records_created"], 0)
+        self.assertEqual(repair.repair_time, status_time)
+        self.assertEqual(repair.status, "维修中")
+        self.assertEqual(repair.fault_reason, "屏幕无显示")
+
+    def test_import_disposed_asset_creates_completed_disposal_record(self):
+        status_time = datetime(2026, 7, 3, 11, 0)
+        result = AssetService.import_assets(
+            self.db,
+            AssetBatchImport(
+                items=[
+                    AssetImportRow(
+                        asset_id="DISPOSED-IMPORT-001",
+                        name="历史已处置设备",
+                        category="显示器",
+                        status="disposed",
+                        status_time=status_time,
+                    )
+                ]
+            ),
+        )
+        request = self.db.query(ScrapRequest).filter(ScrapRequest.asset_id == "DISPOSED-IMPORT-001").one()
+
+        self.assertEqual(result["scrap_requests_created"], 1)
+        self.assertEqual(request.status, "已处置")
+        self.assertEqual(request.retirement_date, status_time)
+        self.assertEqual(request.disposed_at, status_time)
 
     def test_import_scan_binding_conflict_rolls_back_asset(self):
         self.add_asset(asset_id="BOUND-ASSET-001")
