@@ -122,19 +122,70 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="editDialog.visible" title="调整资产信息" width="900px">
+    <el-dialog v-model="editDialog.visible" title="调整资产信息" width="min(900px, calc(100vw - 24px))" class="asset-edit-dialog">
       <el-form :model="editDialog.form" label-width="112px">
-        <AssetEditFields
-          :form="editDialog.form"
-          :products="products"
-          :categories="categories"
-          :companies="realCompanies"
-          :suppliers="suppliers"
-          :locations="activeLocations"
-          :users="filteredUsers"
-          @search-users="searchUsers"
-          @select-user="userId => fillUserToForm(editDialog.form, userId)"
-        />
+        <div class="edit-grid">
+          <el-form-item label="产品档案">
+            <el-select v-model="editDialog.form.product_id" filterable clearable placeholder="选择产品后自动带出规格" style="width: 100%" @change="applyProductToEdit">
+              <el-option v-for="item in products" :key="item.id" :label="`${item.product_name} / ${item.model || '-'} / ${item.spec || '-'}`" :value="item.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="资产编码"><el-input v-model="editDialog.form.asset_id" placeholder="业务编码，例如 ITAM-000001" /></el-form-item>
+          <el-form-item label="资产名称"><el-input v-model="editDialog.form.name" /></el-form-item>
+          <el-form-item label="所属公司">
+            <el-select v-model="editDialog.form.company" filterable clearable style="width: 100%">
+              <el-option v-for="item in realCompanies" :key="item.id || item.name" :label="item.name" :value="item.name" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="序列号"><el-input v-model="editDialog.form.sn" /></el-form-item>
+          <el-form-item label="设备类型">
+            <el-select v-model="editDialog.form.category" filterable allow-create default-first-option style="width: 100%">
+              <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="状态（流程控制）">
+            <el-select v-model="editDialog.form.status" disabled style="width: 100%">
+              <el-option v-for="item in manualStatusOptions(editDialog.form.status)" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="品牌"><el-input v-model="editDialog.form.brand" /></el-form-item>
+          <el-form-item label="型号"><el-input v-model="editDialog.form.model" /></el-form-item>
+          <el-form-item label="规格"><el-input v-model="editDialog.form.spec" /></el-form-item>
+          <el-form-item label="价值"><el-input-number v-model="editDialog.form.price" :min="0" :precision="2" style="width: 100%" /></el-form-item>
+          <el-form-item label="采购时间"><el-date-picker v-model="editDialog.form.purchase_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item>
+          <el-form-item label="采购审批单号"><el-input v-model="editDialog.form.purchase_approval_no" /></el-form-item>
+          <el-form-item label="采购供应商">
+            <el-select v-model="editDialog.form.purchase_supplier_name" filterable clearable allow-create default-first-option style="width: 100%">
+              <el-option v-for="item in suppliers" :key="item.id || item.name" :label="item.name" :value="item.name" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="维保年限"><el-input-number v-model="editDialog.form.warranty_years" :min="0" :step="1" :precision="0" style="width: 100%" /></el-form-item>
+          <el-form-item label="维保到期"><el-input :model-value="warrantyExpirePreview(editDialog.form)" disabled placeholder="根据采购时间和维保年限自动计算" /></el-form-item>
+          <el-form-item label="退役年限"><el-input-number v-model="editDialog.form.retirement_years" :min="0" :step="1" :precision="0" style="width: 100%" /></el-form-item>
+          <el-form-item label="预计退役时间"><el-input :model-value="retirementDatePreview(editDialog.form)" disabled placeholder="根据采购时间和退役年限自动计算" /></el-form-item>
+          <el-form-item label="责任人">
+            <el-select
+              v-model="editDialog.form.owner_user_id"
+              filterable
+              remote
+              clearable
+              reserve-keyword
+              :remote-method="searchUsers"
+              style="width: 100%"
+              @visible-change="visible => visible && searchUsers('')"
+              @change="userId => fillUserToForm(editDialog.form, userId)"
+            >
+              <el-option v-for="user in filteredUsers" :key="user.user_id" :label="userLabel(user)" :value="user.user_id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="部门"><el-input v-model="editDialog.form.dept_id" disabled /></el-form-item>
+          <el-form-item label="位置">
+            <el-select v-model="editDialog.form.location" filterable clearable style="width: 100%">
+              <el-option v-for="item in activeLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="备注" class="edit-grid-wide"><el-input v-model="editDialog.form.remark" type="textarea" :rows="3" placeholder="特殊说明，例如备用机、涉密、借测、待补配件" /></el-form-item>
+        </div>
       </el-form>
       <template #footer>
         <el-button @click="editDialog.visible = false">取消</el-button>
@@ -391,7 +442,7 @@
 
 <script setup>
 import { ArrowDown } from '@element-plus/icons-vue'
-import { computed, defineComponent, h, onMounted, reactive, ref, resolveComponent } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { assetStatuses, batchCheckinAssets, batchCheckoutAssets, batchCreateScrapRequests, batchUpdateAssets, downloadAssetImportTemplate, editableAssetStatuses, getAssets, importAssets, previewAssetsFromExcel, previewAssetsFromText, statusMap, updateAsset } from '../../api/asset'
@@ -826,6 +877,22 @@ function openEdit(row) {
   editDialog.visible = true
 }
 
+function applyProductToEdit(productId) {
+  const product = products.value.find(item => item.id === productId)
+  if (!product) return
+  Object.assign(editDialog.form, {
+    product_id: product.id,
+    name: product.product_name || editDialog.form.name,
+    category: product.device_type || editDialog.form.category,
+    brand: product.brand || '',
+    model: product.model || '',
+    spec: product.spec || '',
+    price: Number(product.unit_price || editDialog.form.price || 0),
+    location: product.default_warehouse || editDialog.form.location || '',
+    retirement_years: product.retirement_years ?? editDialog.form.retirement_years
+  })
+}
+
 async function submitEdit() {
   if (editDialog.saving) return
   const oldAssetId = editDialog.form.original_asset_id || editDialog.form.asset_id
@@ -1174,71 +1241,6 @@ function manualStatusOptions(currentStatus) {
   }
   return options
 }
-
-const AssetEditFields = defineComponent({
-  props: {
-    form: { type: Object, required: true },
-    products: { type: Array, required: true },
-    categories: { type: Array, required: true },
-    companies: { type: Array, required: true },
-    suppliers: { type: Array, required: true },
-    locations: { type: Array, required: true },
-    users: { type: Array, required: true }
-  },
-  emits: ['search-users', 'select-user'],
-  setup(props, { emit }) {
-    function applyProduct(productId) {
-      const product = props.products.find(item => item.id === productId)
-      if (!product) return
-      props.form.product_id = product.id
-      props.form.name = product.product_name || props.form.name
-      props.form.category = product.device_type || props.form.category
-      props.form.brand = product.brand || ''
-      props.form.model = product.model || ''
-      props.form.spec = product.spec || ''
-      props.form.price = Number(product.unit_price || props.form.price || 0)
-      props.form.location = product.default_warehouse || props.form.location || ''
-      props.form.retirement_years = product.retirement_years ?? props.form.retirement_years
-    }
-
-    return () =>
-      h('div', { class: 'edit-grid' }, [
-        field('产品档案', h(resolveSelect(), { modelValue: props.form.product_id, 'onUpdate:modelValue': applyProduct, filterable: true, clearable: true, placeholder: '选择产品后自动带出规格', style: 'width:100%' }, () => props.products.map(item => h(resolveOption(), { key: item.id, label: `${item.product_name} / ${item.model || '-'} / ${item.spec || '-'}`, value: item.id })))),
-        field('资产编码', h(resolveInput(), { modelValue: props.form.asset_id, 'onUpdate:modelValue': value => { props.form.asset_id = value; props.form.asset_no = props.form.asset_no || value }, placeholder: '业务编码，例如 ITAM-000001' })),
-        field('资产名称', h(resolveInput(), { modelValue: props.form.name, 'onUpdate:modelValue': value => (props.form.name = value) })),
-        field('所属公司', h(resolveSelect(), { modelValue: props.form.company, 'onUpdate:modelValue': value => (props.form.company = value), filterable: true, clearable: true, style: 'width:100%' }, () => props.companies.map(item => h(resolveOption(), { key: item.id || item.name, label: item.name, value: item.name })))),
-        field('序列号', h(resolveInput(), { modelValue: props.form.sn, 'onUpdate:modelValue': value => (props.form.sn = value) })),
-        field('设备类型', h(resolveSelect(), { modelValue: props.form.category, 'onUpdate:modelValue': value => (props.form.category = value), filterable: true, allowCreate: true, defaultFirstOption: true, style: 'width:100%' }, () => props.categories.map(item => h(resolveOption(), { key: item, label: item, value: item })))),
-        field('状态（流程控制）', h(resolveSelect(), { modelValue: props.form.status, disabled: true, style: 'width:100%' }, () => manualStatusOptions(props.form.status).map(item => h(resolveOption(), { key: item.value, label: item.label, value: item.value, disabled: item.disabled })))),
-        field('品牌', h(resolveInput(), { modelValue: props.form.brand, 'onUpdate:modelValue': value => (props.form.brand = value) })),
-        field('型号', h(resolveInput(), { modelValue: props.form.model, 'onUpdate:modelValue': value => (props.form.model = value) })),
-        field('规格', h(resolveInput(), { modelValue: props.form.spec, 'onUpdate:modelValue': value => (props.form.spec = value) })),
-        field('价值', h(resolveInputNumber(), { modelValue: props.form.price, 'onUpdate:modelValue': value => (props.form.price = value), min: 0, style: 'width:100%' })),
-        field('采购时间', h(resolveDatePicker(), { modelValue: props.form.purchase_date, 'onUpdate:modelValue': value => (props.form.purchase_date = value), type: 'date', valueFormat: 'YYYY-MM-DD', style: 'width:100%' })),
-        field('采购审批单号', h(resolveInput(), { modelValue: props.form.purchase_approval_no, 'onUpdate:modelValue': value => (props.form.purchase_approval_no = value) })),
-        field('采购供应商', h(resolveSelect(), { modelValue: props.form.purchase_supplier_name, 'onUpdate:modelValue': value => (props.form.purchase_supplier_name = value), filterable: true, clearable: true, allowCreate: true, defaultFirstOption: true, style: 'width:100%' }, () => props.suppliers.map(item => h(resolveOption(), { key: item.id || item.name, label: item.name, value: item.name })))),
-        field('维保年限', h(resolveInputNumber(), { modelValue: props.form.warranty_years, 'onUpdate:modelValue': value => (props.form.warranty_years = value), min: 0, step: 1, precision: 0, style: 'width:100%' })),
-        field('维保到期', h(resolveInput(), { modelValue: warrantyExpirePreview(props.form), disabled: true, placeholder: '根据采购时间和维保年限自动计算' })),
-        field('退役年限', h(resolveInputNumber(), { modelValue: props.form.retirement_years, 'onUpdate:modelValue': value => (props.form.retirement_years = value), min: 0, step: 1, precision: 0, style: 'width:100%' })),
-        field('预计退役时间', h(resolveInput(), { modelValue: retirementDatePreview(props.form), disabled: true, placeholder: '根据采购时间和退役年限自动计算' })),
-        field('责任人', h(resolveSelect(), { modelValue: props.form.owner_user_id, 'onUpdate:modelValue': value => (props.form.owner_user_id = value), filterable: true, remote: true, clearable: true, reserveKeyword: true, remoteMethod: value => emit('search-users', value), style: 'width:100%', onChange: value => emit('select-user', value) }, () => props.users.map(user => h(resolveOption(), { key: user.user_id, label: `${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`, value: user.user_id })))),
-        field('部门', h(resolveInput(), { modelValue: props.form.dept_id, 'onUpdate:modelValue': value => (props.form.dept_id = value), disabled: true })),
-        field('位置', h(resolveSelect(), { modelValue: props.form.location, 'onUpdate:modelValue': value => (props.form.location = value), filterable: true, clearable: true, style: 'width:100%' }, () => props.locations.map(item => h(resolveOption(), { key: item.id || item.name, label: locationLabel(item), value: item.name })))),
-        field('备注', h(resolveInput(), { modelValue: props.form.remark, 'onUpdate:modelValue': value => (props.form.remark = value), type: 'textarea', rows: 3, placeholder: '特殊说明，例如备用机、涉密、借测、待补配件' }))
-      ])
-  }
-})
-
-function field(label, child) {
-  return h(resolveFormItem(), { label }, () => child)
-}
-
-function resolveFormItem() { return resolveComponent('ElFormItem') }
-function resolveInput() { return resolveComponent('ElInput') }
-function resolveInputNumber() { return resolveComponent('ElInputNumber') }
-function resolveSelect() { return resolveComponent('ElSelect') }
-function resolveOption() { return resolveComponent('ElOption') }
-function resolveDatePicker() { return resolveComponent('ElDatePicker') }
 </script>
 
 <style scoped>
@@ -1264,6 +1266,15 @@ function resolveDatePicker() { return resolveComponent('ElDatePicker') }
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.edit-grid-wide {
+  grid-column: 1 / -1;
+}
+
+:deep(.asset-edit-dialog .el-dialog__body) {
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
 }
 
 .batch-form,
