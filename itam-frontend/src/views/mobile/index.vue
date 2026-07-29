@@ -187,7 +187,59 @@
           <el-form-item label="盘点任务">
             <el-input :model-value="selectedTask ? `${selectedTask.name} (${selectedTask.id})` : '未选择任务'" disabled />
           </el-form-item>
-          <el-alert class="inline-alert" title="扫码读取到任务内资产后，系统会按账面位置自动登记为正常；无需手动填写实盘位置。" type="success" show-icon :closable="false" />
+          <el-alert
+            class="inline-alert"
+            :title="`账面使用人：${stocktakeOwnerLabel(currentStocktakeItem?.book_owner_user_id)}；账面位置：${currentStocktakeItem?.book_location || '-'}`"
+            type="info"
+            show-icon
+            :closable="false"
+          />
+          <el-form-item label="实盘使用人">
+            <el-select
+              v-model="form.owner_user_id"
+              filterable
+              remote
+              clearable
+              reserve-keyword
+              :remote-method="searchUsers"
+              :disabled="!canUpdateStocktakeOwner"
+              :placeholder="canUpdateStocktakeOwner ? '搜索实际使用人' : '当前状态不能直接调整使用人'"
+              class="mobile-select"
+              popper-class="mobile-select-popper"
+              style="width: 100%"
+              @visible-change="visible => visible && searchUsers('')"
+              @change="selectUser"
+            >
+              <el-option v-for="user in filteredUsers" :key="user.user_id" :label="`${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`" :value="user.user_id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="实盘位置">
+            <el-select
+              v-model="form.location"
+              filterable
+              remote
+              clearable
+              reserve-keyword
+              :remote-method="searchLocations"
+              placeholder="搜索实际位置"
+              class="mobile-select"
+              popper-class="mobile-select-popper"
+              style="width: 100%"
+              @visible-change="visible => visible && resetLocationOptions()"
+            >
+              <el-option v-for="item in visibleLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="同步资产台账">
+            <el-switch v-model="form.stocktake_update_asset" :disabled="!canReconcileStocktakeAsset" active-text="更新使用人和位置" />
+          </el-form-item>
+          <el-alert
+            class="inline-alert"
+            :title="form.stocktake_update_asset ? '提交后同步修正资产使用人、部门和位置，并记录生命周期与审计日志。' : '仅登记盘点结果，不修改资产台账。'"
+            :type="form.stocktake_update_asset ? 'warning' : 'info'"
+            show-icon
+            :closable="false"
+          />
           <el-alert v-if="currentStocktakeItem?.checked_at" class="inline-alert" :title="`该资产已登记：${currentStocktakeItem.result} / ${currentStocktakeItem.checked_at}`" type="info" show-icon :closable="false" />
         </template>
 
@@ -411,6 +463,8 @@ const fieldStatus = computed(() => {
   if (pendingJobs.value.length) return { tone: 'warning', title: '存在待提交', detail: `${pendingJobs.value.length} 条现场操作尚未同步，请点击重试或等待自动提交。` }
   return { tone: 'success', title: '在线作业', detail: '扫码和提交会实时同步到系统。' }
 })
+const canUpdateStocktakeOwner = computed(() => ['in_use', 'borrowed', 'out_stock'].includes(asset.value?.status))
+const canReconcileStocktakeAsset = computed(() => !['scrapped', 'disposed', 'lost'].includes(asset.value?.status))
 const showFieldStatus = computed(() => !isOnline.value || queueRetrying.value || pendingJobs.value.length > 0)
 
 onMounted(async () => {
@@ -442,6 +496,7 @@ function defaultForm() {
   return {
     task_id: '',
     stocktake_result: '正常',
+    stocktake_update_asset: false,
     location: '',
     owner_user_id: '',
     owner_name: '',
@@ -627,6 +682,9 @@ async function loadAsset() {
     asset.value = taskItemToAsset(taskItem)
     assetDialogVisible.value = true
     form.location = taskItem.book_location || ''
+    form.owner_user_id = taskItem.book_owner_user_id || ''
+    form.owner_name = stocktakeOwnerLabel(taskItem.book_owner_user_id, false)
+    form.stocktake_update_asset = false
     form.stocktake_result = '正常'
     setScanFeedback(
       taskItem.checked_at ? 'warning' : 'success',
@@ -837,7 +895,9 @@ async function runSubmitJob(job) {
 
 async function submitStocktakeJob(job) {
   const saved = await submitStocktakeItem(job.form.task_id, job.asset_id, {
-    actual_location: job.form.book_location || '',
+    actual_location: job.form.location || '',
+    actual_owner_user_id: job.form.owner_user_id,
+    update_asset_info: Boolean(job.form.stocktake_update_asset),
     result: '正常',
     checker: '移动端扫码',
     remark: job.form.remark,
@@ -846,15 +906,19 @@ async function submitStocktakeJob(job) {
     client_source: isFeishuClient() ? 'feishu_mobile' : 'mobile_browser'
   })
   applyStocktakeItem(saved)
-  ElMessage.success('扫码确认完成')
+  ElMessage.success(saved.asset_info_updated ? '盘点完成，资产信息已同步更新' : '扫码确认完成')
 }
 
 function taskItemToAsset(item) {
+  const owner = users.value.find(user => user.user_id === item.book_owner_user_id)
   return {
     asset_id: item.asset_id,
     name: item.name,
     sn: item.sn,
     status: item.book_status,
+    owner: item.book_owner_user_id || '',
+    owner_user_id: item.book_owner_user_id || '',
+    owner_name: owner?.display_name || '',
     location: item.book_location,
     warehouse: item.book_location,
     category: '',
@@ -919,6 +983,12 @@ function loadPendingJobs() {
   } catch {
     return []
   }
+}
+
+function stocktakeOwnerLabel(userId, emptyLabel = true) {
+  if (!userId) return emptyLabel ? '未分配' : ''
+  const user = users.value.find(item => item.user_id === userId)
+  return user ? `${user.display_name || user.username} (${user.username || user.user_id})` : userId
 }
 
 function savePendingJobs() {

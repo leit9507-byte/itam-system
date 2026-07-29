@@ -9,8 +9,10 @@ from app.core.database import get_db
 from app.core.security import operator_from_request, user_context_from_request
 from app.models.asset import Asset
 from app.models.stocktake import StocktakeItem, StocktakeScanLog, StocktakeTask
+from app.models.user import UserDirectory
+from app.schemas.asset import AssetUpdate
 from app.services.audit_log_service import AuditLogService
-from app.services.asset_service import AssetService
+from app.services.asset_service import AssetService, AssetValidationError
 from app.services.notification_service import NotificationService
 from app.services.number_service import NumberService
 
@@ -29,6 +31,8 @@ class StocktakeTaskCreate(BaseModel):
 
 class StocktakeItemSubmit(BaseModel):
     actual_location: str | None = None
+    actual_owner_user_id: str | None = None
+    update_asset_info: bool = False
     result: str = "正常"
     checker: str | None = None
     remark: str | None = None
@@ -86,6 +90,7 @@ def create_task(payload: StocktakeTaskCreate, request: Request, db: Session = De
                 sn=asset.sn,
                 book_location=asset.location or "",
                 book_status=asset.status,
+                book_owner_user_id=asset.owner_user_id or "",
                 result="未盘",
             )
         )
@@ -126,14 +131,88 @@ def submit_item(task_id: str, asset_id: str, payload: StocktakeItemSubmit, reque
     if not item or item.asset_id not in visible_asset_ids:
         raise HTTPException(status_code=404, detail="该资产不在当前盘点任务范围内")
     ensure_task_accepts_items(task, visible_asset_ids)
-    item.actual_location = payload.actual_location or ""
-    item.result = payload.result
-    item.checker = operator_from_request(request)
+    asset = AssetService.get_scoped_asset(db, item.asset_id, user_context_from_request(request))
+    operator = operator_from_request(request)
+    if item.book_owner_user_id is None:
+        item.book_owner_user_id = asset.owner_user_id or ""
+    actual_location = (payload.actual_location or "").strip()
+    actual_owner_user_id = (
+        AssetService.normalize_blank(payload.actual_owner_user_id)
+        if payload.actual_owner_user_id is not None
+        else AssetService.normalize_blank(item.book_owner_user_id)
+    )
+    if actual_owner_user_id:
+        user = db.query(UserDirectory).filter(UserDirectory.user_id == actual_owner_user_id, UserDirectory.status == "active").first()
+        if not user:
+            raise HTTPException(status_code=400, detail="选择的使用人不存在或已离职")
+
+    location_mismatch = actual_location != (item.book_location or "").strip()
+    owner_mismatch = actual_owner_user_id != AssetService.normalize_blank(item.book_owner_user_id)
+    item.actual_location = actual_location
+    item.actual_owner_user_id = actual_owner_user_id
+    item.result = normalize_stocktake_result(payload.result, owner_mismatch, location_mismatch)
+    item.checker = operator
     item.checked_at = datetime.utcnow()
     item.remark = payload.remark or ""
-    item.review_status = "无需复核" if item.result == "正常" else "待复核"
+    item.asset_info_updated = False
+
+    updated_fields: list[str] = []
+    owner_needs_update = actual_owner_user_id != AssetService.normalize_blank(asset.owner_user_id)
+    location_needs_update = actual_location != (asset.location or "").strip()
+    if payload.update_asset_info:
+        updates: dict = {}
+        if owner_needs_update:
+            updates["owner_user_id"] = actual_owner_user_id
+            updated_fields.append("使用人")
+        if location_needs_update:
+            updates["location"] = actual_location
+            updated_fields.append("位置")
+        if updates:
+            try:
+                AssetService.apply_asset_update(
+                    db,
+                    asset.asset_id,
+                    AssetUpdate(**updates),
+                    operator,
+                    user_context_from_request(request),
+                    source=f"stocktake:{task.id}",
+                )
+            except AssetValidationError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            item.asset_info_updated = True
+            correction_note = f"盘点时已同步更新资产{'、'.join(updated_fields)}"
+            item.remark = "；".join(part for part in [item.remark, correction_note] if part)
+        elif owner_mismatch or location_mismatch:
+            item.remark = "；".join(part for part in [item.remark, "已核对当前资产台账，无需重复更新"] if part)
+
+    if item.result == "正常":
+        item.review_status = "无需复核"
+    elif payload.update_asset_info:
+        item.review_status = "已确认"
+        item.review_note = item.remark
+        item.reviewed_by = operator
+        item.reviewed_at = datetime.utcnow()
+    else:
+        item.review_status = "待复核"
     record_scan_log(db, task.id, item.asset_id, payload.scan_raw, payload.parsed_code or asset_id, item.result, payload.client_source, item.checker, "扫码登记")
-    AuditLogService.record_operation(db, "stocktake", "scan_submit", item.checker or "system", "stocktake_item", item.asset_id, f"{task.id} 扫码登记 {item.asset_id}")
+    AuditLogService.record_operation(
+        db,
+        "stocktake",
+        "scan_submit",
+        item.checker or "system",
+        "stocktake_item",
+        item.asset_id,
+        f"{task.id} 扫码登记 {item.asset_id}",
+        {
+            "result": item.result,
+            "book_owner_user_id": item.book_owner_user_id or "",
+            "actual_owner_user_id": item.actual_owner_user_id or "",
+            "book_location": item.book_location or "",
+            "actual_location": item.actual_location or "",
+            "asset_info_updated": item.asset_info_updated,
+            "updated_fields": updated_fields,
+        },
+    )
     refresh_task_status(task)
     db.commit()
     db.refresh(task)
@@ -148,7 +227,7 @@ def report_exception(task_id: str, asset_id: str, payload: StocktakeExceptionSub
         raise HTTPException(status_code=404, detail="该资产不在当前盘点任务范围内")
     ensure_task_accepts_items(task, visible_asset_ids)
     item.actual_location = payload.actual_location or ""
-    item.result = payload.result if payload.result in {"盘盈", "盘亏", "位置不符", "状态不符"} else "位置不符"
+    item.result = payload.result if payload.result in {"盘盈", "盘亏", "位置不符", "使用人不符", "状态不符"} else "位置不符"
     item.checker = operator_from_request(request)
     item.checked_at = datetime.utcnow()
     item.remark = payload.remark or "异常上报，等待复核"
@@ -358,7 +437,7 @@ def serialize_task(task: StocktakeTask, visible_asset_ids: set[str] | None = Non
     items = [item for item in task.items if visible_asset_ids is None or item.asset_id in visible_asset_ids]
     is_partial = visible_asset_ids is not None and len(items) != len(task.items)
     checked = len([item for item in items if item.result != "未盘"])
-    abnormal = len([item for item in items if item.result in {"盘盈", "盘亏", "位置不符", "状态不符"}])
+    abnormal = len([item for item in items if item.result in {"盘盈", "盘亏", "位置不符", "使用人不符", "状态不符"}])
     return {
         "id": task.id,
         "name": task.name,
@@ -386,7 +465,10 @@ def serialize_item(item: StocktakeItem, asset_no: str | None = None) -> dict:
         "sn": item.sn or "",
         "book_location": item.book_location or "",
         "book_status": item.book_status or "",
+        "book_owner_user_id": item.book_owner_user_id or "",
         "actual_location": item.actual_location or "",
+        "actual_owner_user_id": item.actual_owner_user_id or "",
+        "asset_info_updated": bool(item.asset_info_updated),
         "result": item.result,
         "checker": item.checker or "",
         "checked_at": item.checked_at.isoformat(sep=" ", timespec="seconds") if item.checked_at else "",
@@ -396,3 +478,13 @@ def serialize_item(item: StocktakeItem, asset_no: str | None = None) -> dict:
         "reviewed_by": item.reviewed_by or "",
         "reviewed_at": item.reviewed_at.isoformat(sep=" ", timespec="seconds") if item.reviewed_at else "",
     }
+
+
+def normalize_stocktake_result(requested_result: str, owner_mismatch: bool, location_mismatch: bool) -> str:
+    if requested_result not in {"", "正常"}:
+        return requested_result
+    if owner_mismatch:
+        return "使用人不符"
+    if location_mismatch:
+        return "位置不符"
+    return "正常"

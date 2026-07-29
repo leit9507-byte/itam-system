@@ -71,6 +71,9 @@ def ensure_compatible_schema(engine) -> None:
         add_column(engine, columns, "stocktake_items", "review_note", "TEXT NULL")
         add_column(engine, columns, "stocktake_items", "reviewed_by", "VARCHAR(128) NULL")
         add_column(engine, columns, "stocktake_items", "reviewed_at", "DATETIME NULL")
+        add_column(engine, columns, "stocktake_items", "book_owner_user_id", "VARCHAR(64) NULL")
+        add_column(engine, columns, "stocktake_items", "actual_owner_user_id", "VARCHAR(64) NULL")
+        add_column(engine, columns, "stocktake_items", "asset_info_updated", "BOOLEAN DEFAULT 0 NOT NULL")
     if "scrap_requests" in inspector.get_table_names():
         columns = {column["name"] for column in inspector.get_columns("scrap_requests")}
         add_column(engine, columns, "scrap_requests", "retirement_flow_no", "VARCHAR(64) NULL")

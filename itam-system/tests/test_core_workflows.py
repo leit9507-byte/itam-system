@@ -3,17 +3,21 @@ from datetime import datetime
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from starlette.requests import Request
 
 from app.core.database import Base
 import app.models  # noqa: F401
 from app.models.asset import Asset
 from app.models.checkout import AssetCheckout
 from app.models.company import Company
+from app.models.lifecycle import Lifecycle
 from app.models.product import DeviceType, ProductCatalog
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.repair import RepairRecord
 from app.models.scan_binding import AssetScanBinding
+from app.models.stocktake import StocktakeItem, StocktakeTask
 from app.models.user import UserDirectory
+from app.api.stocktake import StocktakeItemSubmit, submit_item
 from app.core.schema_compat import current_timestamp_sql
 from app.schemas.asset import AssetBatchImport, AssetBatchUpdateCreate, AssetImportRow, AssetUpdate
 from app.schemas.purchase import PurchaseAcceptanceReceive
@@ -111,6 +115,76 @@ class CoreWorkflowTest(unittest.TestCase):
 
         self.assertEqual(result["name"], "Archived asset")
         self.assertEqual(result["status"], "disposed")
+
+    def test_mobile_stocktake_can_reconcile_asset_owner_and_location(self):
+        self.db.add_all(
+            [
+                UserDirectory(user_id="U1", username="user1", display_name="User 1", dept_id="D1", status="active"),
+                UserDirectory(user_id="U2", username="user2", display_name="User 2", dept_id="D2", status="active"),
+            ]
+        )
+        asset = self.add_asset(status="in_use")
+        asset.owner_user_id = "U1"
+        asset.dept_id = "D1"
+        asset.location = "Room A"
+        task = StocktakeTask(id="ST-TEST-001", name="Test stocktake", status="进行中")
+        task.items.append(
+            StocktakeItem(
+                asset_id=asset.asset_id,
+                name=asset.name,
+                book_status=asset.status,
+                book_location=asset.location,
+                book_owner_user_id=asset.owner_user_id,
+                result="未盘",
+            )
+        )
+        self.db.add(task)
+        self.db.commit()
+
+        request = Request({"type": "http", "method": "POST", "path": "/stocktake/tasks/ST-TEST-001/items/ITAM-000001", "headers": []})
+        request.state.user = {
+            "user_id": "admin",
+            "username": "admin",
+            "display_name": "Admin",
+            "role": "admin",
+        }
+        result = submit_item(
+            task.id,
+            asset.asset_id,
+            StocktakeItemSubmit(
+                actual_location="Room B",
+                actual_owner_user_id="U2",
+                update_asset_info=True,
+                result="正常",
+            ),
+            request,
+            self.db,
+        )
+
+        self.db.refresh(asset)
+        self.assertEqual(asset.owner_user_id, "U2")
+        self.assertEqual(asset.dept_id, "D2")
+        self.assertEqual(asset.location, "Room B")
+        self.assertEqual(result["result"], "使用人不符")
+        self.assertTrue(result["asset_info_updated"])
+        self.assertEqual(result["review_status"], "已确认")
+
+        lifecycle_count = self.db.query(Lifecycle).filter(Lifecycle.asset_id == asset.asset_id).count()
+        repeated = submit_item(
+            task.id,
+            asset.asset_id,
+            StocktakeItemSubmit(
+                actual_location="Room B",
+                actual_owner_user_id="U2",
+                update_asset_info=True,
+                result="正常",
+            ),
+            request,
+            self.db,
+        )
+        self.assertFalse(repeated["asset_info_updated"])
+        self.assertEqual(repeated["review_status"], "已确认")
+        self.assertEqual(self.db.query(Lifecycle).filter(Lifecycle.asset_id == asset.asset_id).count(), lifecycle_count)
 
     def test_asset_rename_updates_checkout_and_scan_binding(self):
         asset = self.add_asset()

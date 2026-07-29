@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -31,7 +31,10 @@ class StocktakeItem(Base):
     sn = Column(String(128), nullable=True, index=True)
     book_location = Column(String(128), nullable=True)
     book_status = Column(String(64), nullable=True)
+    book_owner_user_id = Column(String(64), nullable=True, index=True)
     actual_location = Column(String(128), nullable=True)
+    actual_owner_user_id = Column(String(64), nullable=True, index=True)
+    asset_info_updated = Column(Boolean, default=False, nullable=False)
     result = Column(String(32), nullable=False, default="未盘")
     checker = Column(String(128), nullable=True)
     checked_at = Column(DateTime, nullable=True)

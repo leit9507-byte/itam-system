@@ -1,7 +1,7 @@
 import request from '../utils/request'
 
 const RESULT_UNCHECKED = '未盘'
-const ABNORMAL_RESULTS = ['盘盈', '盘亏', '位置不符', '状态不符']
+const ABNORMAL_RESULTS = ['盘盈', '盘亏', '位置不符', '使用人不符', '状态不符']
 
 export async function getStocktakeTasks(filters = {}) {
   const tasks = await request.get('/stocktake/tasks')
@@ -19,7 +19,7 @@ export function buildStocktakeDashboard(visibleTasks = []) {
   const checked = allItems.filter(item => item.result !== RESULT_UNCHECKED).length
   const surplus = allItems.filter(item => item.result === '盘盈').length
   const loss = allItems.filter(item => item.result === '盘亏').length
-  const mismatch = allItems.filter(item => ['位置不符', '状态不符'].includes(item.result)).length
+  const mismatch = allItems.filter(item => ['位置不符', '使用人不符', '状态不符'].includes(item.result)).length
   const abnormal = surplus + loss + mismatch
 
   return {
@@ -38,6 +38,7 @@ export function buildStocktakeDashboard(visibleTasks = []) {
       { name: '盘盈', value: surplus },
       { name: '盘亏', value: loss },
       { name: '位置不符', value: allItems.filter(item => item.result === '位置不符').length },
+      { name: '使用人不符', value: allItems.filter(item => item.result === '使用人不符').length },
       { name: '状态不符', value: allItems.filter(item => item.result === '状态不符').length }
     ],
     taskTrend: buildTaskTrend(visibleTasks),

@@ -936,7 +936,14 @@ class AssetService:
         return AssetService.to_out(asset, db=db)
 
     @staticmethod
-    def apply_asset_update(db: Session, asset_id: str, payload: AssetUpdate, operator: str = "system", user_context: dict | None = None) -> Asset:
+    def apply_asset_update(
+        db: Session,
+        asset_id: str,
+        payload: AssetUpdate,
+        operator: str = "system",
+        user_context: dict | None = None,
+        source: str = "asset_update",
+    ) -> Asset:
         asset = AssetService.get_scoped_asset(db, asset_id, user_context)
 
         data = payload.model_dump(exclude_unset=True)
@@ -983,7 +990,7 @@ class AssetService:
             AssetService.validate_status_owner(asset, status_changed=asset.status != old_status)
         SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
 
-        AssetService.record_asset_field_changes(db, asset, original_values, operator, source="asset_update")
+        AssetService.record_asset_field_changes(db, asset, original_values, operator, source=source)
         AuditLogService.record_operation(
             db,
             module="asset",

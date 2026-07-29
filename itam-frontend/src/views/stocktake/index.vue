@@ -182,6 +182,7 @@
           <el-option label="盘盈" value="盘盈" />
           <el-option label="盘亏" value="盘亏" />
           <el-option label="位置不符" value="位置不符" />
+          <el-option label="使用人不符" value="使用人不符" />
           <el-option label="状态不符" value="状态不符" />
         </el-select>
         <el-button @click="refreshTaskItems">查询</el-button>
@@ -200,10 +201,16 @@
         <el-table-column prop="sn" label="序列号" width="140" />
         <el-table-column prop="book_location" label="账面位置" width="160" />
         <el-table-column prop="book_status" label="账面状态" width="100" />
+        <el-table-column prop="book_owner_user_id" label="账面使用人" width="150">
+          <template #default="{ row }">{{ row.book_owner_user_id || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="actual_location" label="实盘位置" width="160">
           <template #default="{ row }">
             {{ row.actual_location || '-' }}
           </template>
+        </el-table-column>
+        <el-table-column prop="actual_owner_user_id" label="实盘使用人" width="150">
+          <template #default="{ row }">{{ row.actual_owner_user_id || '-' }}</template>
         </el-table-column>
         <el-table-column prop="result" label="结果" width="130">
           <template #default="{ row }">
@@ -513,7 +520,7 @@ function applySavedItem(taskId, saved) {
   const item = task.items.find(row => row.asset_id === saved.asset_id)
   if (item) Object.assign(item, saved)
   task.checked = task.items.filter(row => row.result !== '未盘').length
-  task.abnormal = task.items.filter(row => ['盘盈', '盘亏', '位置不符', '状态不符'].includes(row.result)).length
+  task.abnormal = task.items.filter(row => ['盘盈', '盘亏', '位置不符', '使用人不符', '状态不符'].includes(row.result)).length
   if (task.status !== '已完成' && task.total && task.checked === task.total) task.status = '待确认'
   const visibleItem = taskItems.value.find(row => row.asset_id === saved.asset_id)
   if (visibleItem) Object.assign(visibleItem, saved)
