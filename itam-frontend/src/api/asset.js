@@ -831,16 +831,16 @@ function buildAssetRisksV2(asset) {
 
   if (warrantyDate) {
     const days = daysUntil(warrantyDate, today)
-    if (days < 0) risks.push({ level: isActive ? 'high' : 'medium', message: `已过保 ${Math.abs(days)} 天`, detail: `质保到期日：${asset.warranty_expire_date}。仍在使用的过保设备建议评估延保、替换或纳入重点巡检。` })
-    else if (days <= 30) risks.push({ level: 'medium', message: `质保 ${days} 天后到期`, detail: `质保到期日：${asset.warranty_expire_date}，建议提前确认是否续保或安排替换。` })
-    else if (days <= 90) risks.push({ level: 'low', message: `质保 ${days} 天后到期`, detail: `质保到期日：${asset.warranty_expire_date}，可加入到期提醒清单。` })
+    if (days < 0) risks.push({ level: isActive ? 'high' : 'medium', message: `已过保 ${formatDurationDays(Math.abs(days))}`, detail: `质保到期日：${asset.warranty_expire_date}。仍在使用的过保设备建议评估延保、替换或纳入重点巡检。` })
+    else if (days <= 30) risks.push({ level: 'medium', message: `质保 ${formatDurationDays(days)}后到期`, detail: `质保到期日：${asset.warranty_expire_date}，建议提前确认是否续保或安排替换。` })
+    else if (days <= 90) risks.push({ level: 'low', message: `质保 ${formatDurationDays(days)}后到期`, detail: `质保到期日：${asset.warranty_expire_date}，可加入到期提醒清单。` })
   }
 
   if (retirementDate) {
     const days = daysUntil(retirementDate, today)
-    if (days < 0) risks.push({ level: isActive ? 'high' : 'medium', message: `已超过服役年限 ${Math.abs(days)} 天`, detail: `预计退役时间：${asset.retirement_date}。仍在使用的超服役设备建议评估性能、安全和替换计划。` })
-    else if (days <= 30) risks.push({ level: 'medium', message: `距离预计退役 ${days} 天`, detail: `预计退役时间：${asset.retirement_date}，建议提前准备替换或处置方案。` })
-    else if (days <= 90) risks.push({ level: 'low', message: `距离预计退役 ${days} 天`, detail: `预计退役时间：${asset.retirement_date}，可纳入季度资产复核。` })
+    if (days < 0) risks.push({ level: isActive ? 'high' : 'medium', message: `已超过服役年限 ${formatDurationDays(Math.abs(days))}`, detail: `预计退役时间：${asset.retirement_date}。仍在使用的超服役设备建议评估性能、安全和替换计划。` })
+    else if (days <= 30) risks.push({ level: 'medium', message: `距离预计退役 ${formatDurationDays(days)}`, detail: `预计退役时间：${asset.retirement_date}，建议提前准备替换或处置方案。` })
+    else if (days <= 90) risks.push({ level: 'low', message: `距离预计退役 ${formatDurationDays(days)}`, detail: `预计退役时间：${asset.retirement_date}，可纳入季度资产复核。` })
   }
 
   if (asset.status === 'idle') risks.push({ level: 'medium', message: '资产处于闲置状态', detail: '建议优先调拨复用，长期无法复用时进入报废或处置评估。' })
@@ -867,6 +867,14 @@ function startOfToday() {
 function daysUntil(date, base = startOfToday()) {
   const target = new Date(date.getFullYear(), date.getMonth(), date.getDate())
   return Math.ceil((target.getTime() - base.getTime()) / 86400000)
+}
+
+function formatDurationDays(value) {
+  const totalDays = Math.max(Math.floor(Number(value) || 0), 0)
+  if (totalDays < 365) return `${totalDays} 天`
+  const years = Math.floor(totalDays / 365)
+  const remainingDays = totalDays % 365
+  return `${years} 年 ${remainingDays} 天（共 ${totalDays} 天）`
 }
 
 function buildAssetRisks(asset) {
