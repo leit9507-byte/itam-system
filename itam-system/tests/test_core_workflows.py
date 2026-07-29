@@ -1,5 +1,5 @@
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -24,6 +24,7 @@ from app.schemas.purchase import PurchaseAcceptanceReceive
 from app.schemas.repair import RepairCreate
 from app.schemas.user import UserPermissionUpdate, UserUpsert
 from app.services.asset_service import AssetService, AssetValidationError
+from app.services.asset_residual_service import AssetResidualService
 from app.services.dashboard_service import DashboardService
 from app.services.identity_service import IdentityService
 from app.services.purchase_service import PurchaseService
@@ -185,6 +186,53 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertFalse(repeated["asset_info_updated"])
         self.assertEqual(repeated["review_status"], "已确认")
         self.assertEqual(self.db.query(Lifecycle).filter(Lifecycle.asset_id == asset.asset_id).count(), lifecycle_count)
+
+    def test_asset_residual_methods_use_distinct_curves_and_minimum_floor(self):
+        base_config = {
+            "minimum_residual_rate": 0.05,
+            "missing_basis_policy": "original",
+            "category_rates": [],
+        }
+        values = {
+            method: AssetResidualService.calculate(
+                10000,
+                date(2020, 1, 1),
+                5,
+                date(2022, 1, 1),
+                {**base_config, "method": method},
+            )
+            for method in AssetResidualService.VALID_METHODS
+        }
+
+        self.assertLess(values["fixed_rate"], values["double_declining"])
+        self.assertLess(values["double_declining"], values["sum_of_years_digits"])
+        self.assertLess(values["sum_of_years_digits"], values["straight_line"])
+        for method in AssetResidualService.VALID_METHODS:
+            expired = AssetResidualService.calculate(
+                10000,
+                date(2020, 1, 1),
+                5,
+                date(2030, 1, 1),
+                {**base_config, "method": method},
+            )
+            self.assertEqual(expired, 500)
+
+    def test_asset_residual_method_is_persisted(self):
+        saved = AssetResidualService.save_config(
+            self.db,
+            {
+                "method": "double_declining",
+                "minimum_residual_rate": 0.08,
+                "missing_basis_policy": "original",
+                "category_rates": [{"category": "Laptop", "minimum_residual_rate": 0.1}],
+            },
+            "tester",
+        )
+
+        self.assertEqual(saved["method"], "double_declining")
+        loaded = AssetResidualService.get_config(self.db)
+        self.assertEqual(loaded["method"], "double_declining")
+        self.assertEqual(loaded["category_rates"][0]["minimum_residual_rate"], 0.1)
 
     def test_asset_rename_updates_checkout_and_scan_binding(self):
         asset = self.add_asset()

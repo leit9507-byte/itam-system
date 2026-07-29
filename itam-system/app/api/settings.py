@@ -16,7 +16,7 @@ class CategoryResidualRate(BaseModel):
 
 
 class AssetResidualConfigPayload(BaseModel):
-    method: str = "straight_line"
+    method: str = Field(default="straight_line", pattern="^(straight_line|double_declining|sum_of_years_digits|fixed_rate)$")
     minimum_residual_rate: float = Field(ge=0, le=1)
     missing_basis_policy: str = "original"
     category_rates: list[CategoryResidualRate] = Field(default_factory=list)
