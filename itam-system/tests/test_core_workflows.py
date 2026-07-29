@@ -1,6 +1,8 @@
 import unittest
 from datetime import date, datetime
+from io import BytesIO
 
+from openpyxl import load_workbook
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from starlette.requests import Request
@@ -15,6 +17,7 @@ from app.models.product import DeviceType, ProductCatalog
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.repair import RepairRecord
 from app.models.scan_binding import AssetScanBinding
+from app.models.scrap import ScrapRequest
 from app.models.stocktake import StocktakeItem, StocktakeTask
 from app.models.user import UserDirectory
 from app.api.stocktake import StocktakeItemSubmit, submit_item
@@ -503,6 +506,103 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(row.asset_id, "2232")
         self.assertEqual(row.asset_no, "99-MB-20260521-001")
         self.assertEqual(row.company, "深圳市九九互动科技有限公司")
+
+    def test_row_mapping_parses_multiple_scan_codes(self):
+        row = AssetService.normalize_import_row(
+            AssetService.row_from_mapping(
+                {
+                    "资产编码": "QR-IMPORT-001",
+                    "资产名称": "二维码导入资产",
+                    "设备类型": "显示器",
+                    "状态": "已报废",
+                    "二维码内容": "QR-CODE-A\nQR-CODE-B；QR-CODE-A",
+                }
+            )
+        )
+
+        self.assertEqual(row.scan_codes, ["QR-CODE-A", "QR-CODE-B"])
+        self.assertEqual(row.status, "scrapped")
+
+    def test_import_template_contains_scan_codes_and_correct_status_column(self):
+        workbook = load_workbook(BytesIO(AssetService.build_import_template()))
+        sheet = workbook["资产导入"]
+        example = workbook["填写示例"]
+        headers = [cell.value for cell in sheet[1]]
+
+        self.assertEqual(headers[-1], "scan_codes")
+        self.assertEqual(example["B2"].value, "NB-001")
+        self.assertEqual(example["C2"].value, "ThinkPad X1 Carbon")
+        self.assertEqual(example["V2"].value, "https://asset.example/nb-001")
+        validations = [str(item.sqref) for item in sheet.data_validations.dataValidation]
+        self.assertIn("M2:M500", validations)
+
+    def test_import_creates_scan_bindings_and_scrap_request(self):
+        payload = AssetBatchImport(
+            overwrite=True,
+            items=[
+                AssetImportRow(
+                    asset_id="OLD-SCRAP-QR-001",
+                    asset_no="OLD-SCRAP-QR-001",
+                    name="历史报废显示器",
+                    category="显示器",
+                    status="scrapped",
+                    scan_codes=["QR-SCRAP-A", "QR-SCRAP-B"],
+                )
+            ],
+        )
+
+        first = AssetService.import_assets(self.db, payload)
+        second = AssetService.import_assets(self.db, payload)
+
+        self.assertEqual(first["created"], 1)
+        self.assertEqual(first["scan_bindings_created"], 2)
+        self.assertEqual(first["scrap_requests_created"], 1)
+        self.assertEqual(second["updated"], 1)
+        self.assertEqual(second["scan_bindings_created"], 0)
+        self.assertEqual(second["scrap_requests_created"], 0)
+        self.assertEqual(
+            self.db.query(AssetScanBinding)
+            .filter(AssetScanBinding.asset_id == "OLD-SCRAP-QR-001", AssetScanBinding.status == "active")
+            .count(),
+            2,
+        )
+        scraps = self.db.query(ScrapRequest).filter(ScrapRequest.asset_id == "OLD-SCRAP-QR-001").all()
+        self.assertEqual(len(scraps), 1)
+        self.assertEqual(scraps[0].status, "待处置")
+        self.assertTrue(scraps[0].retirement_flow_no)
+
+    def test_import_scan_binding_conflict_rolls_back_asset(self):
+        self.add_asset(asset_id="BOUND-ASSET-001")
+        self.db.add(
+            AssetScanBinding(
+                asset_id="BOUND-ASSET-001",
+                scan_key="shared-qr-code",
+                scan_raw="SHARED-QR-CODE",
+                scan_type="qrcode",
+                status="active",
+            )
+        )
+        self.db.commit()
+
+        result = AssetService.import_assets(
+            self.db,
+            AssetBatchImport(
+                items=[
+                    AssetImportRow(
+                        asset_id="CONFLICT-ASSET-001",
+                        name="冲突资产",
+                        category="显示器",
+                        status="in_stock",
+                        scan_codes=["SHARED-QR-CODE"],
+                    )
+                ]
+            ),
+        )
+
+        self.assertEqual(result["created"], 0)
+        self.assertEqual(len(result["errors"]), 1)
+        self.assertIn("已绑定其他资产", result["errors"][0]["message"])
+        self.assertIsNone(self.db.get(Asset, "CONFLICT-ASSET-001"))
 
     def test_overwrite_import_updates_existing_asset_by_asset_no_and_renames_id(self):
         self.add_asset(asset_id="ITAM-000001")

@@ -1,4 +1,5 @@
 import csv
+import re
 from zipfile import BadZipFile
 from datetime import datetime
 from io import BytesIO, StringIO
@@ -88,6 +89,7 @@ class AssetService:
         "payment_time",
         "payment_no",
         "remark",
+        "scan_codes",
     ]
     CHANGE_FIELD_LABELS = {
         "asset_id": "资产编号",
@@ -241,8 +243,12 @@ class AssetService:
         updated_assets: list[Asset] = []
         errors: list[dict] = []
         skipped = 0
+        scan_bindings_created = 0
+        scrap_requests_created = 0
 
         for index, row in enumerate(payload.items, start=1):
+            row_scan_bindings_created = 0
+            row_scrap_requests_created = 0
             try:
                 with db.begin_nested():
                     normalized = AssetService.normalize_import_row(row)
@@ -293,10 +299,24 @@ class AssetService:
                     AssetService.ensure_product_catalog_from_import(db, normalized)
                     db.flush()
                     LifecycleService.record(db, asset.asset_id, "BATCH_IMPORT", old_status, asset.status, payload.operator)
+                    row_scan_bindings_created = AssetService.sync_import_scan_bindings(
+                        db,
+                        asset.asset_id,
+                        normalized.scan_codes,
+                        payload.operator,
+                    )
+                    row_scrap_requests_created = AssetService.ensure_import_scrap_request(
+                        db,
+                        asset,
+                        normalized.status,
+                        payload.operator,
+                    )
                     if old_status is None:
                         created_assets.append(asset)
                     else:
                         updated_assets.append(asset)
+                scan_bindings_created += row_scan_bindings_created
+                scrap_requests_created += row_scrap_requests_created
             except SQLAlchemyError as exc:
                 errors.append({"row": index, "message": f"数据库保存失败：{AssetService.db_error_message(exc)}", "data": row.model_dump()})
             except Exception as exc:
@@ -311,9 +331,114 @@ class AssetService:
             "created": len(created_assets),
             "updated": len(updated_assets),
             "skipped": skipped,
+            "scan_bindings_created": scan_bindings_created,
+            "scrap_requests_created": scrap_requests_created,
             "errors": errors,
             "assets": [AssetService.to_out(asset, db=db, residual_config=residual_config) for asset in [*created_assets, *updated_assets]],
         }
+
+    @staticmethod
+    def sync_import_scan_bindings(db: Session, asset_id: str, scan_codes: list[str], operator: str) -> int:
+        from app.services.scan_binding_service import ScanBindingService
+
+        created = 0
+        for scan_raw in AssetService.normalize_scan_codes(scan_codes):
+            scan_key = ScanBindingService.normalize_scan_key(scan_raw)
+            row = db.query(AssetScanBinding).filter(AssetScanBinding.scan_key == scan_key).first()
+            if row and row.status == "active" and row.asset_id != asset_id:
+                raise AssetValidationError(f"二维码内容已绑定其他资产：{row.asset_id}")
+            if row:
+                was_active = row.status == "active"
+                row.asset_id = asset_id
+                row.scan_raw = scan_raw
+                row.scan_type = "qrcode"
+                row.status = "active"
+                row.remark = AssetService.join_notes(row.remark, "资产批量导入")
+                row.updated_at = datetime.utcnow()
+                created += 0 if was_active else 1
+                action = "update_scan_code" if was_active else "rebind_scan_code"
+            else:
+                row = AssetScanBinding(
+                    asset_id=asset_id,
+                    scan_key=scan_key,
+                    scan_raw=scan_raw,
+                    scan_type="qrcode",
+                    status="active",
+                    remark="资产批量导入",
+                    created_by=operator,
+                )
+                db.add(row)
+                created += 1
+                action = "bind_scan_code"
+            AuditLogService.record_operation(
+                db,
+                "asset",
+                action,
+                operator,
+                "asset_scan_binding",
+                asset_id,
+                f"批量导入二维码绑定 {asset_id}",
+                {"asset_id": asset_id, "scan_raw": scan_raw, "scan_type": "qrcode"},
+            )
+        return created
+
+    @staticmethod
+    def ensure_import_scrap_request(db: Session, asset: Asset, status: str, operator: str) -> int:
+        if status not in {"pending_scrap", "scrapped"}:
+            return 0
+        existed = db.query(ScrapRequest).filter(ScrapRequest.asset_id == asset.asset_id).first()
+        if existed:
+            return 0
+
+        year = datetime.utcnow().year
+        request = ScrapRequest(
+            request_no=NumberService.next(db, f"scrap:{year}", f"SC-{year}-", 4),
+            retirement_flow_no=NumberService.next(db, f"retirement_flow:{year}", f"RT-{year}-", 4),
+            asset_id=asset.asset_id,
+            asset_name=asset.name,
+            asset_sn=asset.sn,
+            company=asset.company,
+            category=asset.category,
+            brand=asset.brand,
+            model=asset.model,
+            owner_user_id=asset.owner_user_id,
+            dept_id=asset.dept_id,
+            location=asset.location,
+            purchase_price=asset.purchase_price,
+            purchase_date=asset.purchase_date,
+            purchase_approval_no=asset.purchase_approval_no,
+            purchase_supplier_name=asset.purchase_supplier_name,
+            applicant=operator,
+            reason="资产批量导入时状态为待处置或已报废，自动创建处置登记",
+            estimated_residual_value=AssetResidualService.calculate_asset(asset, db=db),
+            status="待处置",
+        )
+        db.add(request)
+        LifecycleService.record(
+            db,
+            asset.asset_id,
+            "SCRAP_REQUEST",
+            asset.status,
+            asset.status,
+            operator,
+            LifecycleService.structured_remark(
+                reason=request.reason,
+                object=f"报废单 {request.request_no}",
+                location=asset.location,
+                extra={"retirement_flow_no": request.retirement_flow_no},
+            ),
+        )
+        AuditLogService.record_operation(
+            db,
+            "scrap",
+            "create_from_import",
+            operator,
+            "scrap_request",
+            request.request_no,
+            f"批量导入自动创建报废处置登记 {asset.asset_id}",
+            {"asset_id": asset.asset_id, "status": status, "retirement_flow_no": request.retirement_flow_no},
+        )
+        return 1
 
     @staticmethod
     def db_error_message(exc: SQLAlchemyError) -> str:
@@ -338,11 +463,14 @@ class AssetService:
 
     @staticmethod
     def preview_import_assets(db: Session, items: list[AssetImportRow], overwrite: bool = False) -> dict:
+        from app.services.scan_binding_service import ScanBindingService
+
         errors: list[dict] = []
         preview_items: list[dict] = []
         seen_sn: set[str] = set()
         seen_asset_id: set[str] = set()
         seen_asset_no: set[str] = set()
+        seen_scan_keys: dict[str, str] = {}
 
         for index, row in enumerate(items, start=1):
             try:
@@ -361,6 +489,24 @@ class AssetService:
                     if normalized.asset_id in seen_asset_id or (not overwrite and db.get(Asset, normalized.asset_id)):
                         raise AssetValidationError(f"duplicate asset_id: {normalized.asset_id}")
                     seen_asset_id.add(normalized.asset_id)
+                target_asset_id = normalized.asset_id
+                if overwrite and not target_asset_id:
+                    existing_asset = db.query(Asset).filter(Asset.asset_no == asset_no).first()
+                    target_asset_id = existing_asset.asset_id if existing_asset else None
+                preview_identity = target_asset_id or asset_no
+                for scan_raw in normalized.scan_codes:
+                    scan_key = ScanBindingService.normalize_scan_key(scan_raw)
+                    previous_identity = seen_scan_keys.get(scan_key)
+                    if previous_identity and previous_identity != preview_identity:
+                        raise AssetValidationError(f"二维码内容在导入文件中重复：{scan_raw}")
+                    seen_scan_keys[scan_key] = preview_identity
+                    existing_binding = (
+                        db.query(AssetScanBinding)
+                        .filter(AssetScanBinding.scan_key == scan_key, AssetScanBinding.status == "active")
+                        .first()
+                    )
+                    if existing_binding and existing_binding.asset_id != target_asset_id:
+                        raise AssetValidationError(f"二维码内容已绑定其他资产：{existing_binding.asset_id}")
                 AssetService.validate_status_owner(
                     SimpleNamespace(status=normalized.status, owner_user_id=normalized.owner_user_id, location=normalized.location),
                     allow_workflow_statuses=True,
@@ -394,8 +540,8 @@ class AssetService:
         sheet.append(
             [
                 "",
-                "ThinkPad X1 Carbon",
                 "NB-001",
+                "ThinkPad X1 Carbon",
                 "笔记本电脑",
                 "Lenovo",
                 "X1 Carbon Gen 12",
@@ -411,14 +557,17 @@ class AssetService:
                 "上海IT仓",
                 "总部",
                 "32G/1TB",
+                "",
+                "",
                 "关键岗位备用机",
+                "https://asset.example/nb-001",
             ]
         )
         sheet.append(
             [
                 "",
-                "Dell U2723QE",
                 "DP-001",
+                "Dell U2723QE",
                 "显示器",
                 "Dell",
                 "U2723QE",
@@ -434,7 +583,10 @@ class AssetService:
                 "上海办公区",
                 "总部",
                 "27英寸 4K",
+                "",
+                "",
                 "设计部高色准显示器",
+                "QR-DP-001；QR-DP-001-LEGACY",
             ]
         )
 
@@ -475,6 +627,7 @@ class AssetService:
             "S": 18,
             "T": 22,
             "U": 28,
+            "V": 36,
         }
         for column, width in widths.items():
             sheet.column_dimensions[column].width = width
@@ -484,11 +637,11 @@ class AssetService:
 
         status_validation = DataValidation(
             type="list",
-            formula1='"in_stock,in_use,idle,borrowed,out_stock,repair,ready_scrap,lost"',
+            formula1='"in_stock,in_use,idle,borrowed,out_stock,repair,ready_scrap,pending_scrap,scrapped,disposed,lost"',
             allow_blank=False,
         )
         sheet.add_data_validation(status_validation)
-        status_validation.add("L2:L500")
+        status_validation.add("M2:M500")
 
         instruction = workbook.create_sheet("字段说明")
         instruction.append(["字段", "是否必填", "说明"])
@@ -505,13 +658,16 @@ class AssetService:
             ("purchase_approval_no", "否", "采购审批单号或采购单号"),
             ("purchase_supplier_name", "否", "采购供应商"),
             ("warranty_years", "否", "维保年限，系统会换算为月数并计算质保到期"),
-            ("status", "是", "可填 in_stock、in_use、idle、borrowed、out_stock、repair、ready_scrap"),
+            ("status", "是", "支持英文状态；也可填写在库、在用、待报废、待处置登记、已报废、已处置、已丢失等中文状态"),
             ("owner_user_id", "按状态", "in_use、borrowed 必填；out_stock 可填写领用人或出库地址；库存/闲置/待报废必须留空"),
             ("dept_id", "否", "部门编号或部门名称"),
             ("location", "否", "当前位置"),
             ("company", "否", "所属公司"),
             ("spec", "否", "规格配置"),
+            ("payment_time", "否", "付款时间或财务入账时间"),
+            ("payment_no", "否", "付款单号或财务凭证号"),
             ("remark", "否", "备注/特殊说明，例如备用机、涉密、借测、待补配件"),
+            ("scan_codes", "否", "二维码扫码返回的原始内容；多个内容用换行、英文分号或中文分号分隔，导入后直接绑定资产"),
         ]
         for row in rows:
             instruction.append(row)
@@ -583,6 +739,20 @@ class AssetService:
         return items
 
     @staticmethod
+    def normalize_scan_codes(value: Any) -> list[str]:
+        values = value if isinstance(value, (list, tuple, set)) else re.split(r"[\r\n;；]+", str(value or ""))
+        result: list[str] = []
+        seen: set[str] = set()
+        for item in values:
+            clean = str(item or "").strip()
+            normalized = " ".join(clean.lower().split())
+            if not clean or normalized in seen:
+                continue
+            seen.add(normalized)
+            result.append(clean)
+        return result
+
+    @staticmethod
     def row_from_mapping(row: dict[str, Any]) -> AssetImportRow:
         normalized_row = {str(key).strip(): value for key, value in row.items()}
 
@@ -629,6 +799,9 @@ class AssetService:
             location=pick("location", "位置"),
             company=pick("company", "公司", "所属公司"),
             remark=pick("remark", "备注", "特殊说明", "说明"),
+            scan_codes=AssetService.normalize_scan_codes(
+                pick("scan_codes", "qr_codes", "scan_raw", "二维码内容", "二维码", "扫码内容")
+            ),
         )
 
     @staticmethod
@@ -645,6 +818,25 @@ class AssetService:
         data["asset_id"] = AssetService.normalize_blank(data.get("asset_id")) or None
         data["asset_no"] = AssetService.normalize_blank(data.get("asset_no")) or None
         data["sn"] = AssetService.normalize_blank(data.get("sn")) or None
+        status = AssetService.normalize_blank(data.get("status")) or "in_stock"
+        data["status"] = {
+            "在库": "in_stock",
+            "库存": "in_stock",
+            "闲置": "idle",
+            "在用": "in_use",
+            "借出": "borrowed",
+            "已出库": "out_stock",
+            "维修": "repair",
+            "待报废": "ready_scrap",
+            "待处置": "pending_scrap",
+            "待处置登记": "pending_scrap",
+            "报废": "scrapped",
+            "已报废": "scrapped",
+            "已处置": "disposed",
+            "丢失": "lost",
+            "已丢失": "lost",
+        }.get(status, status)
+        data["scan_codes"] = AssetService.normalize_scan_codes(data.get("scan_codes"))
 
         config = data.get("config") or {}
         if data.get("spec"):

@@ -160,6 +160,7 @@ class AssetImportRow(AssetCreate):
     payment_time: Optional[str] = None
     payment_no: Optional[str] = None
     remark: Optional[str] = None
+    scan_codes: list[str] = Field(default_factory=list)
 
 
 class AssetBatchImport(BaseModel):
@@ -184,5 +185,7 @@ class AssetImportResult(BaseModel):
     created: int
     updated: int = 0
     skipped: int
+    scan_bindings_created: int = 0
+    scrap_requests_created: int = 0
     errors: list[AssetImportError]
     assets: list[AssetOut]
