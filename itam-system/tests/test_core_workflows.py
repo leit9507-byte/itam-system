@@ -611,6 +611,28 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(scraps[0].status, "待处置")
         self.assertTrue(scraps[0].retirement_flow_no)
 
+    def test_import_ready_scrap_does_not_create_disposal_record(self):
+        result = AssetService.import_assets(
+            self.db,
+            AssetBatchImport(
+                items=[
+                    AssetImportRow(
+                        asset_id="READY-SCRAP-IMPORT-001",
+                        name="待退役设备",
+                        category="显示器",
+                        status="ready_scrap",
+                    )
+                ]
+            ),
+        )
+
+        self.assertEqual(result["created"], 1)
+        self.assertEqual(result["scrap_requests_created"], 0)
+        self.assertEqual(
+            self.db.query(ScrapRequest).filter(ScrapRequest.asset_id == "READY-SCRAP-IMPORT-001").count(),
+            0,
+        )
+
     def test_import_creates_checkout_workflow_without_duplicates(self):
         status_time = datetime(2026, 7, 1, 9, 30)
         due_date = datetime(2026, 7, 31, 18, 0)
@@ -782,9 +804,28 @@ class CoreWorkflowTest(unittest.TestCase):
 
         first = AssetService.import_assets(self.db, payload)
         second = AssetService.import_assets(self.db, payload)
+        third = AssetService.import_assets(
+            self.db,
+            AssetBatchImport(
+                items=[
+                    AssetImportRow(
+                        asset_id="LEGACY-003",
+                        asset_no="TAG-003",
+                        name="ThinkPad X1 Carbon",
+                        category="移动工作站",
+                        brand="Other Brand",
+                        model="Other Model",
+                        spec="16GB / 512GB",
+                        purchase_price=9999,
+                        status="in_stock",
+                    )
+                ]
+            ),
+        )
 
         self.assertEqual(first["created"], 1)
         self.assertEqual(second["updated"], 1)
+        self.assertEqual(third["created"], 1)
         self.assertEqual(self.db.query(DeviceType).filter(DeviceType.name == "笔记本电脑").count(), 1)
         catalogs = self.db.query(ProductCatalog).filter(
             ProductCatalog.product_name == "ThinkPad X1 Carbon",
@@ -796,6 +837,7 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(catalogs[0].spec, "Ultra 7 / 32GB / 1TB")
         self.assertEqual(catalogs[0].unit_price, 15000)
         self.assertEqual(catalogs[0].default_warehouse, "阳光粤海大厦")
+        self.assertEqual(self.db.query(ProductCatalog).filter(ProductCatalog.product_name == "ThinkPad X1 Carbon").count(), 1)
         self.assertEqual(self.db.query(Company).filter(Company.name == "雷泰科技").count(), 1)
 
     def test_product_seed_keeps_catalog_clean(self):

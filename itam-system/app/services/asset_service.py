@@ -477,7 +477,7 @@ class AssetService:
         operator: str,
     ) -> int:
         status = row.status
-        if status not in {"ready_scrap", "pending_scrap", "scrapped", "disposed"}:
+        if status not in {"pending_scrap", "scrapped", "disposed"}:
             return 0
         existed = db.query(ScrapRequest).filter(ScrapRequest.asset_id == asset.asset_id).first()
         if existed:
@@ -1008,14 +1008,12 @@ class AssetService:
         model = AssetService.normalize_blank(row.model)
         spec = AssetService.normalize_blank((row.config or {}).get("spec"))
 
-        query = db.query(ProductCatalog).filter(
-            ProductCatalog.product_name == product_name,
-            ProductCatalog.device_type == device_type,
+        catalog = (
+            db.query(ProductCatalog)
+            .filter(func.trim(ProductCatalog.product_name) == product_name)
+            .order_by(ProductCatalog.id.asc())
+            .first()
         )
-        query = AssetService.filter_nullable_text(query, ProductCatalog.brand, brand)
-        query = AssetService.filter_nullable_text(query, ProductCatalog.model, model)
-        query = AssetService.filter_nullable_text(query, ProductCatalog.spec, spec)
-        catalog = query.first()
 
         if not catalog:
             catalog = ProductCatalog(
