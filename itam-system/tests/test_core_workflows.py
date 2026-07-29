@@ -21,6 +21,7 @@ from app.models.scrap import ScrapRequest
 from app.models.stocktake import StocktakeItem, StocktakeTask
 from app.models.user import UserDirectory
 from app.api.stocktake import StocktakeItemSubmit, submit_item
+from app.api.company import list_companies, list_company_assets
 from app.core.schema_compat import current_timestamp_sql
 from app.schemas.asset import AssetBatchImport, AssetBatchUpdateCreate, AssetImportRow, AssetUpdate
 from app.schemas.purchase import PurchaseAcceptanceReceive
@@ -73,6 +74,20 @@ class CoreWorkflowTest(unittest.TestCase):
         context = {"role": "dept_manager", "dept_id": "D1", "user_id": "manager-1"}
         with self.assertRaises(ValueError):
             AssetService.update_asset(self.db, "ITAM-000001", AssetUpdate(name="Changed"), "manager", context)
+
+    def test_company_read_endpoints_do_not_rewrite_asset_rows(self):
+        asset = self.add_asset(asset_id="COMPANY-READ-001")
+        asset.company = "  Example Company  "
+        self.db.commit()
+
+        companies = list_companies(self.db)
+        assets = list_company_assets(company="Example Company", db=self.db)
+
+        self.db.refresh(asset)
+        self.assertEqual(asset.company, "  Example Company  ")
+        self.assertTrue(any(item["name"] == "Example Company" for item in companies))
+        self.assertEqual(assets["total"], 1)
+        self.assertEqual(assets["list"][0]["asset_id"], "COMPANY-READ-001")
 
     def test_asset_manager_can_manage_all_assets(self):
         self.add_asset(dept_id="D2")

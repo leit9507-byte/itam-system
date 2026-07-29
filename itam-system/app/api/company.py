@@ -50,7 +50,6 @@ ASSET_STATUS_LABELS = {
 
 @router.get("/list")
 def list_companies(db: Session = Depends(get_db)):
-    ensure_company_data(db)
     companies = db.query(Company).order_by(Company.id.asc()).all()
     stats = (
         db.query(
@@ -70,18 +69,51 @@ def list_companies(db: Session = Depends(get_db)):
         group["status"][status or "unknown"] += count
 
     rows = []
+    stored_names = set()
     for company in companies:
-        group = groups.get(company.name, {"count": 0, "value": 0, "status": Counter()})
+        company_name = normalize_company(company.name)
+        if company_name == DEFAULT_COMPANY:
+            continue
+        stored_names.add(company_name)
+        group = groups.get(company_name, {"count": 0, "value": 0, "status": Counter()})
         status_counter = group["status"]
         rows.append(
             {
                 "id": company.id,
-                "name": company.name,
+                "name": company_name,
                 "code": company.code,
                 "contact": company.contact,
                 "status": company.status,
                 "created_at": company.created_at,
                 "updated_at": company.updated_at,
+                "asset_count": group["count"],
+                "total_original_value": group["value"],
+                "in_use_count": status_counter.get("in_use", 0),
+                "in_stock_count": status_counter.get("in_stock", 0),
+                "idle_count": status_counter.get("idle", 0),
+                "repair_count": status_counter.get("repair", 0),
+                "ready_scrap_count": status_counter.get("ready_scrap", 0),
+                "scrapped_count": status_counter.get("scrapped", 0),
+                "disposed_count": status_counter.get("disposed", 0),
+                "lost_count": status_counter.get("lost", 0),
+                "pending_scrap_count": status_counter.get("pending_scrap", 0),
+                "status_distribution": [{"name": status_label(key), "value": value} for key, value in status_counter.items()],
+            }
+        )
+    for company_name, group in groups.items():
+        if company_name == DEFAULT_COMPANY or company_name in stored_names:
+            continue
+        status_counter = group["status"]
+        rows.append(
+            {
+                "id": None,
+                "name": company_name,
+                "code": "",
+                "contact": "",
+                "status": "未建档",
+                "virtual": True,
+                "created_at": None,
+                "updated_at": None,
                 "asset_count": group["count"],
                 "total_original_value": group["value"],
                 "in_use_count": status_counter.get("in_use", 0),
@@ -134,15 +166,20 @@ def list_company_assets(
     page_size: int = 20,
     db: Session = Depends(get_db),
 ):
-    ensure_company_data(db)
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
     company_name = normalize_company(company)
     query = db.query(Asset)
     if company_name == DEFAULT_COMPANY:
-        query = query.filter(or_(Asset.company.is_(None), Asset.company == ""))
+        query = query.filter(
+            or_(
+                Asset.company.is_(None),
+                func.trim(Asset.company) == "",
+                func.trim(Asset.company) == DEFAULT_COMPANY,
+            )
+        )
     else:
-        query = query.filter(Asset.company == company_name)
+        query = query.filter(func.trim(Asset.company) == company_name)
     if keyword:
         pattern = f"%{keyword.strip()}%"
         if keyword.strip():
@@ -211,36 +248,6 @@ def delete_company(company_id: int, db: Session = Depends(get_db)):
     db.delete(company)
     db.commit()
     return {"deleted": True, "asset_company_reset": old_name}
-
-
-def ensure_company_data(db: Session) -> None:
-    # 集合级修复，避免逐行加载全部资产
-    normalized = (
-        db.query(Asset)
-        .filter(
-            Asset.company.isnot(None),
-            or_(func.trim(Asset.company) == "", func.trim(Asset.company) == DEFAULT_COMPANY),
-        )
-        .update({Asset.company: None}, synchronize_session=False)
-    )
-    trimmed = (
-        db.query(Asset)
-        .filter(Asset.company.isnot(None), Asset.company != func.trim(Asset.company))
-        .update({Asset.company: func.trim(Asset.company)}, synchronize_session=False)
-    )
-    asset_names = {
-        row[0]
-        for row in db.query(Asset.company).filter(Asset.company.isnot(None), Asset.company != "").distinct()
-    }
-    existing_names = {row[0] for row in db.query(Company.name)}
-    missing_names = asset_names - existing_names
-    for name in missing_names:
-        db.add(Company(name=name, status="启用"))
-    default_company = db.query(Company).filter(Company.name == DEFAULT_COMPANY).first()
-    if default_company:
-        db.delete(default_company)
-    if normalized or trimmed or missing_names or default_company:
-        db.commit()
 
 
 def asset_row(asset: Asset) -> dict:
