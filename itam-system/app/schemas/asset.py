@@ -163,6 +163,9 @@ class AssetImportRow(AssetCreate):
     scan_codes: list[str] = Field(default_factory=list)
     status_time: Optional[datetime] = None
     borrow_due_date: Optional[datetime] = None
+    disposal_method: Optional[str] = None
+    retirement_approval_no: Optional[str] = None
+    dispose_recipient_name: Optional[str] = None
 
 
 class AssetBatchImport(BaseModel):

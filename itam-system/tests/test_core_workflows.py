@@ -544,7 +544,16 @@ class CoreWorkflowTest(unittest.TestCase):
         headers = [cell.value for cell in sheet[1]]
 
         self.assertIn("scan_codes", headers)
-        self.assertEqual(headers[-2:], ["status_time", "borrow_due_date"])
+        self.assertEqual(
+            headers[-5:],
+            [
+                "status_time",
+                "borrow_due_date",
+                "disposal_method",
+                "retirement_approval_no",
+                "dispose_recipient_name",
+            ],
+        )
         self.assertEqual(example["B2"].value, "NB-001")
         self.assertEqual(example["C2"].value, "ThinkPad X1 Carbon")
         self.assertEqual(example["V2"].value, "https://asset.example/nb-001")
@@ -654,6 +663,10 @@ class CoreWorkflowTest(unittest.TestCase):
                         category="显示器",
                         status="disposed",
                         status_time=status_time,
+                        disposal_method="员工领用",
+                        retirement_approval_no="RT-LEGACY-001",
+                        dispose_recipient_name="张三",
+                        remark="历史处置记录",
                     )
                 ]
             ),
@@ -664,6 +677,10 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(request.status, "已处置")
         self.assertEqual(request.retirement_date, status_time)
         self.assertEqual(request.disposed_at, status_time)
+        self.assertEqual(request.disposal_method, "员工领用")
+        self.assertEqual(request.retirement_approval_no, "RT-LEGACY-001")
+        self.assertEqual(request.dispose_recipient_name, "张三")
+        self.assertIn("历史处置记录", request.disposal_remark)
 
     def test_import_scan_binding_conflict_rolls_back_asset(self):
         self.add_asset(asset_id="BOUND-ASSET-001")

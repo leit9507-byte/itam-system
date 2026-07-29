@@ -92,6 +92,9 @@ class AssetService:
         "scan_codes",
         "status_time",
         "borrow_due_date",
+        "disposal_method",
+        "retirement_approval_no",
+        "dispose_recipient_name",
     ]
     CHANGE_FIELD_LABELS = {
         "asset_id": "资产编号",
@@ -462,11 +465,18 @@ class AssetService:
                 )
                 counts["repair"] = 1
 
-        counts["scrap"] = AssetService.ensure_import_scrap_request(db, asset, row.status, status_time, operator)
+        counts["scrap"] = AssetService.ensure_import_scrap_request(db, asset, row, status_time, operator)
         return counts
 
     @staticmethod
-    def ensure_import_scrap_request(db: Session, asset: Asset, status: str, status_time: datetime, operator: str) -> int:
+    def ensure_import_scrap_request(
+        db: Session,
+        asset: Asset,
+        row: AssetImportRow,
+        status_time: datetime,
+        operator: str,
+    ) -> int:
+        status = row.status
         if status not in {"ready_scrap", "pending_scrap", "scrapped", "disposed"}:
             return 0
         existed = db.query(ScrapRequest).filter(ScrapRequest.asset_id == asset.asset_id).first()
@@ -495,8 +505,19 @@ class AssetService:
             reason="资产批量导入时状态为待处置或已报废，自动创建处置登记",
             estimated_residual_value=AssetResidualService.calculate_asset(asset, db=db),
             final_residual_value=AssetResidualService.calculate_asset(asset, db=db) if status == "disposed" else 0,
+            disposal_method=AssetService.normalize_blank(row.disposal_method) if status == "disposed" else None,
             retirement_date=status_time if status == "disposed" else None,
-            disposal_remark="历史已处置资产批量导入，处置资料待补充" if status == "disposed" else None,
+            retirement_approval_no=AssetService.normalize_blank(row.retirement_approval_no),
+            disposal_remark=(
+                AssetService.join_notes(row.remark, "历史已处置资产批量导入")
+                if status == "disposed"
+                else None
+            ),
+            dispose_recipient_name=(
+                AssetService.normalize_blank(row.dispose_recipient_name)
+                if status == "disposed" and row.disposal_method == "员工领用"
+                else None
+            ),
             disposed_by=operator if status == "disposed" else None,
             disposed_at=status_time if status == "disposed" else None,
             status="已处置" if status == "disposed" else "待处置",
@@ -764,6 +785,9 @@ class AssetService:
             ("scan_codes", "否", "二维码扫码返回的原始内容；多个内容用换行、英文分号或中文分号分隔，导入后直接绑定资产"),
             ("status_time", "否", "当前状态发生时间，格式 YYYY-MM-DD HH:MM:SS；留空使用导入时间"),
             ("borrow_due_date", "借用状态", "计划归还时间，仅 borrowed 状态使用，格式 YYYY-MM-DD HH:MM:SS"),
+            ("disposal_method", "已处置状态", "实际处置方式：报废、变卖、员工领用"),
+            ("retirement_approval_no", "否", "退役审批单号或历史退役流程编号"),
+            ("dispose_recipient_name", "员工领用处置", "历史员工领用处置的接收人姓名或账号"),
         ]
         for row in rows:
             instruction.append(row)
@@ -903,6 +927,13 @@ class AssetService:
             ),
             borrow_due_date=AssetService.parse_datetime(
                 pick("borrow_due_date", "计划归还时间", "借用到期时间", "预计归还时间")
+            ),
+            disposal_method=pick("disposal_method", "实际处置方式", "处置方式", "处理手段"),
+            retirement_approval_no=pick(
+                "retirement_approval_no", "退役审批单号", "退役流程编号", "处置审批单号"
+            ),
+            dispose_recipient_name=pick(
+                "dispose_recipient_name", "处置领用人", "员工领用人", "报废领用人"
             ),
         )
 
