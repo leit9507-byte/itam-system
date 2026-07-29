@@ -438,6 +438,11 @@ function normalizeImportResult(result) {
     created: Number(result.created || 0),
     updated: Number(result.updated || 0),
     skipped: Number(result.skipped || 0),
+    scan_bindings_created: Number(result.scan_bindings_created || 0),
+    checkout_records_created: Number(result.checkout_records_created || 0),
+    repair_records_created: Number(result.repair_records_created || 0),
+    scrap_requests_created: Number(result.scrap_requests_created || 0),
+    errors: result.errors || [],
     assets: (result.assets || []).map(mapBackendAsset)
   }
 }

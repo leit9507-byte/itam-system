@@ -397,27 +397,56 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="importDialog.visible" title="批量导入资产" width="1080px">
+    <el-dialog v-model="importDialog.visible" title="批量导入资产" width="1080px" :before-close="beforeCloseImportDialog" :close-on-click-modal="!importDialog.importing" :close-on-press-escape="!importDialog.importing">
       <el-alert title="导入会按资产状态自动补建借用/出库、维修或报废处置流程；重复导入不会重复建单。" type="info" show-icon :closable="false" />
       <div class="upload-row">
-        <el-upload :show-file-list="false" accept=".xlsx,.xlsm" :before-upload="previewExcelImport">
+        <el-upload :show-file-list="false" accept=".xlsx,.xlsm" :before-upload="previewExcelImport" :disabled="importDialog.importing">
           <el-button type="primary">上传并预览 Excel</el-button>
         </el-upload>
-        <el-button @click="downloadTemplate">下载导入模板</el-button>
-        <el-button @click="fillImportExample">填入粘贴示例</el-button>
-        <el-checkbox v-model="importDialog.overwrite" @change="clearImportPreview">覆盖已有资产</el-checkbox>
+        <el-button :disabled="importDialog.importing" @click="downloadTemplate">下载导入模板</el-button>
+        <el-button :disabled="importDialog.importing" @click="fillImportExample">填入粘贴示例</el-button>
+        <el-checkbox v-model="importDialog.overwrite" :disabled="importDialog.importing" @change="clearImportPreview">覆盖已有资产</el-checkbox>
       </div>
-      <el-input v-model="importDialog.content" type="textarea" :rows="9" class="import-textarea" placeholder="也可以把 Excel 表格复制后粘贴到这里" @input="clearImportPreview" />
+      <el-input v-model="importDialog.content" type="textarea" :rows="9" class="import-textarea" placeholder="也可以把 Excel 表格复制后粘贴到这里" :disabled="importDialog.importing" @input="clearImportPreview" />
       <div class="import-actions">
-        <el-button :loading="importDialog.loading" @click="previewTextImport">预览粘贴内容</el-button>
+        <el-button :loading="importDialog.loading" :disabled="importDialog.importing" @click="previewTextImport">预览粘贴内容</el-button>
         <el-button type="primary" :disabled="!canConfirmImport" :loading="importDialog.importing" @click="confirmImport">确认导入</el-button>
       </div>
+      <section v-if="importDialog.progress.status !== 'idle'" class="import-progress-panel">
+        <div class="import-progress-heading">
+          <div>
+            <strong>{{ importProgressTitle }}</strong>
+            <span>{{ importDialog.progress.message }}</span>
+          </div>
+          <el-tag :type="importProgressTagType">{{ importProgressStatusLabel }}</el-tag>
+        </div>
+        <el-progress
+          :percentage="importProgressPercentage"
+          :status="importProgressBarStatus"
+          :stroke-width="12"
+        />
+        <div class="import-progress-stats">
+          <span>总数 <strong>{{ importDialog.progress.total }}</strong></span>
+          <span>已处理 <strong>{{ importDialog.progress.processed }}</strong></span>
+          <span>新增 <strong>{{ importDialog.progress.created }}</strong></span>
+          <span>更新 <strong>{{ importDialog.progress.updated }}</strong></span>
+          <span>跳过 <strong>{{ importDialog.progress.skipped }}</strong></span>
+          <span>失败 <strong class="import-failed-count">{{ importDialog.progress.failed }}</strong></span>
+        </div>
+        <div v-if="importDialog.progress.totalBatches" class="import-progress-batch">
+          当前批次 {{ Math.min(importDialog.progress.currentBatch, importDialog.progress.totalBatches) }} / {{ importDialog.progress.totalBatches }}
+          <span>每批最多 {{ IMPORT_CHUNK_SIZE }} 条</span>
+        </div>
+      </section>
       <el-descriptions v-if="importDialog.preview" :column="3" border class="import-result">
         <el-descriptions-item label="总行数">{{ importDialog.preview.total }}</el-descriptions-item>
         <el-descriptions-item label="可导入">{{ importDialog.preview.valid }}</el-descriptions-item>
         <el-descriptions-item label="错误">{{ importDialog.preview.errors.length }}</el-descriptions-item>
       </el-descriptions>
-      <el-table v-if="importDialog.preview?.items?.length" :data="importDialog.preview.items" border size="small" class="import-result" max-height="320">
+      <div v-if="importDialog.preview?.items?.length > IMPORT_PREVIEW_LIMIT" class="import-preview-note">
+        为保持页面流畅，仅展示前 {{ IMPORT_PREVIEW_LIMIT }} 行；确认导入仍会处理全部 {{ importDialog.preview.valid }} 条有效数据。
+      </div>
+      <el-table v-if="importDialog.preview?.items?.length" :data="importPreviewRows" border size="small" class="import-result" max-height="320">
         <el-table-column prop="row" label="行号" width="70" />
         <el-table-column label="校验" width="90">
           <template #default="{ row }">
@@ -437,11 +466,19 @@
         <el-table-column prop="message" label="提示" />
       </el-table>
       <el-result
-        v-if="importDialog.result && !importDialog.result.errors.length"
-        icon="success"
-        :title="`导入完成：新增 ${importDialog.result.created} 条，更新 ${importDialog.result.updated || 0} 条`"
+        v-if="importDialog.result"
+        :icon="importResultIcon"
+        :title="importResultTitle"
         :sub-title="`二维码 ${importDialog.result.scan_bindings_created || 0} 条，借用/出库 ${importDialog.result.checkout_records_created || 0} 条，维修 ${importDialog.result.repair_records_created || 0} 条，处置 ${importDialog.result.scrap_requests_created || 0} 条`"
       />
+      <div v-if="importDialog.result?.errors?.length > IMPORT_ERROR_DISPLAY_LIMIT" class="import-preview-note">
+        失败明细较多，当前展示前 {{ IMPORT_ERROR_DISPLAY_LIMIT }} 条。
+      </div>
+      <el-table v-if="importDialog.result?.errors?.length" :data="importResultErrorRows" border size="small" class="import-result" max-height="260">
+        <el-table-column prop="row" label="原始行号" width="100" />
+        <el-table-column prop="stage" label="阶段" width="90" />
+        <el-table-column prop="message" label="失败原因" min-width="320" />
+      </el-table>
     </el-dialog>
   </div>
 </template>
@@ -475,7 +512,19 @@ const filters = reactive({ keyword: '', status: '', category: '', company: '', s
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 const batch = reactive({ visible: false, type: 'inbound', assets: [], form: defaultBatchForm() })
 const batchEdit = reactive({ visible: false, form: defaultBatchEditForm(), fields: defaultBatchEditFields() })
-const importDialog = reactive({ visible: false, loading: false, importing: false, overwrite: false, content: '', preview: null, result: null })
+const IMPORT_CHUNK_SIZE = 50
+const IMPORT_PREVIEW_LIMIT = 100
+const IMPORT_ERROR_DISPLAY_LIMIT = 200
+const importDialog = reactive({
+  visible: false,
+  loading: false,
+  importing: false,
+  overwrite: false,
+  content: '',
+  preview: null,
+  result: null,
+  progress: defaultImportProgress()
+})
 const editDialog = reactive({ visible: false, saving: false, form: {} })
 const repairDialog = reactive({ visible: false, asset: null, assets: [], form: defaultRepairForm() })
 const columnDialog = reactive({ visible: false })
@@ -534,7 +583,51 @@ const realCompanies = computed(() => companies.value.filter(item => !item.virtua
 const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
 const activeFaultTypes = computed(() => faultTypes.value.filter(item => item.enabled !== '停用'))
 const batchEditSelectedCount = computed(() => Object.values(batchEdit.fields).filter(Boolean).length)
-const canConfirmImport = computed(() => importDialog.preview?.valid > 0 && !importDialog.preview.errors.length)
+const canConfirmImport = computed(() => importDialog.preview?.valid > 0 && !importDialog.importing)
+const importPreviewRows = computed(() => (importDialog.preview?.items || []).slice(0, IMPORT_PREVIEW_LIMIT))
+const importResultErrorRows = computed(() => (importDialog.result?.errors || []).slice(0, IMPORT_ERROR_DISPLAY_LIMIT))
+const importProgressPercentage = computed(() => {
+  if (!importDialog.progress.total) return 0
+  return Math.min(100, Math.round(importDialog.progress.processed / importDialog.progress.total * 100))
+})
+const importProgressStatusLabel = computed(() => ({
+  preparing: '准备中',
+  importing: '导入中',
+  retrying: '重试中',
+  completed: '已完成',
+  partial: '部分失败',
+  failed: '失败'
+})[importDialog.progress.status] || '等待')
+const importProgressTagType = computed(() => ({
+  completed: 'success',
+  partial: 'warning',
+  failed: 'danger',
+  retrying: 'warning'
+})[importDialog.progress.status] || 'primary')
+const importProgressBarStatus = computed(() => {
+  if (importDialog.progress.status === 'completed') return 'success'
+  if (['partial', 'failed'].includes(importDialog.progress.status)) return 'exception'
+  return undefined
+})
+const importProgressTitle = computed(() => {
+  if (importDialog.progress.status === 'completed') return '资产导入完成'
+  if (importDialog.progress.status === 'partial') return '资产导入完成，部分数据失败'
+  if (importDialog.progress.status === 'failed') return '资产导入未完成'
+  return '正在导入资产'
+})
+const importResultIcon = computed(() => {
+  if (importDialog.progress.status === 'failed') return 'error'
+  return importDialog.result?.errors?.length ? 'warning' : 'success'
+})
+const importResultTitle = computed(() => {
+  if (importDialog.progress.status === 'failed') {
+    return `导入已停止：已处理 ${importDialog.progress.processed}/${importDialog.progress.total} 条`
+  }
+  if (importDialog.result?.errors?.length) {
+    return `导入完成，${importDialog.result.errors.length} 条需要处理`
+  }
+  return `导入完成：新增 ${importDialog.result?.created || 0} 条，更新 ${importDialog.result?.updated || 0} 条`
+})
 const configurableAssetColumns = computed(() => {
   const map = Object.fromEntries(assetColumnDefs.map(item => [item.key, item]))
   return columnOrder.value.map(key => map[key]).filter(Boolean)
@@ -1069,6 +1162,39 @@ function locationLabel(item) {
   return [item.name, item.type, item.owner_dept].filter(Boolean).join(' / ')
 }
 
+function defaultImportProgress() {
+  return {
+    status: 'idle',
+    message: '',
+    total: 0,
+    processed: 0,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    currentBatch: 0,
+    totalBatches: 0
+  }
+}
+
+function emptyImportResult(previewErrors = []) {
+  return {
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    scan_bindings_created: 0,
+    checkout_records_created: 0,
+    repair_records_created: 0,
+    scrap_requests_created: 0,
+    errors: previewErrors.map(error => ({ ...error, stage: '预检' })),
+    assets: []
+  }
+}
+
+function resetImportProgress() {
+  Object.assign(importDialog.progress, defaultImportProgress())
+}
+
 function fillImportExample() {
   importDialog.content = [
     '资产编码,资产名称,设备类型,品牌,型号,序列号,价格,采购日期,采购审批单号,采购供应商,维保年限,使用人,部门,位置,状态,备注,二维码内容,状态发生时间,计划归还时间',
@@ -1088,17 +1214,29 @@ function openImportDialog() {
   importDialog.importing = false
   importDialog.preview = null
   importDialog.result = null
+  resetImportProgress()
 }
 
 function clearImportPreview() {
+  if (importDialog.importing) return
   importDialog.preview = null
   importDialog.result = null
+  resetImportProgress()
+}
+
+function beforeCloseImportDialog(done) {
+  if (importDialog.importing) {
+    ElMessage.warning('资产正在导入，请等待当前任务完成。')
+    return
+  }
+  done()
 }
 
 async function previewExcelImport(file) {
   importDialog.loading = true
   importDialog.result = null
   importDialog.preview = null
+  resetImportProgress()
   try {
     importDialog.preview = await previewAssetsFromExcel(file, importDialog.overwrite)
     ElMessage.success(`预览完成：${importDialog.preview.valid}/${importDialog.preview.total} 行可导入`)
@@ -1118,6 +1256,7 @@ async function previewTextImport() {
   importDialog.loading = true
   importDialog.result = null
   importDialog.preview = null
+  resetImportProgress()
   try {
     importDialog.preview = await previewAssetsFromText(importDialog.content, 'frontend-text-preview', importDialog.overwrite)
     ElMessage.success(`预览完成：${importDialog.preview.valid}/${importDialog.preview.total} 行可导入`)
@@ -1130,14 +1269,107 @@ async function previewTextImport() {
 
 async function confirmImport() {
   if (!canConfirmImport.value) return
+  const validEntries = importDialog.preview.items.filter(item => item.valid)
+  const previewErrors = importDialog.preview.errors || []
+  const aggregate = emptyImportResult(previewErrors)
+  const chunks = []
+  for (let index = 0; index < validEntries.length; index += IMPORT_CHUNK_SIZE) {
+    chunks.push(validEntries.slice(index, index + IMPORT_CHUNK_SIZE))
+  }
+
   importDialog.importing = true
+  importDialog.result = null
+  Object.assign(importDialog.progress, {
+    ...defaultImportProgress(),
+    status: 'preparing',
+    message: `准备导入 ${validEntries.length} 条有效数据`,
+    total: importDialog.preview.total,
+    processed: previewErrors.length,
+    failed: previewErrors.length,
+    totalBatches: chunks.length
+  })
+
   try {
-    const items = importDialog.preview.items.filter(item => item.valid).map(item => item.data)
-    importDialog.result = await importAssets(items, 'frontend-confirm-import', importDialog.overwrite)
-    ElMessage.success(`导入完成：新增 ${importDialog.result.created} 条，更新 ${importDialog.result.updated || 0} 条；自动建借用/出库 ${importDialog.result.checkout_records_created || 0} 条、维修 ${importDialog.result.repair_records_created || 0} 条、处置 ${importDialog.result.scrap_requests_created || 0} 条`)
+    for (let batchIndex = 0; batchIndex < chunks.length; batchIndex += 1) {
+      const chunk = chunks[batchIndex]
+      importDialog.progress.currentBatch = batchIndex + 1
+      importDialog.progress.status = 'importing'
+      importDialog.progress.message = `正在提交第 ${batchIndex + 1} 批，共 ${chunks.length} 批`
+
+      let batchResult = null
+      let lastError = null
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          if (attempt > 1) {
+            importDialog.progress.status = 'retrying'
+            importDialog.progress.message = `第 ${batchIndex + 1} 批提交失败，正在第 ${attempt - 1} 次重试`
+            await new Promise(resolve => window.setTimeout(resolve, 600 * attempt))
+          }
+          batchResult = await importAssets(
+            chunk.map(item => item.data),
+            `frontend-confirm-import-${batchIndex + 1}`,
+            importDialog.overwrite
+          )
+          break
+        } catch (error) {
+          lastError = error
+        }
+      }
+
+      if (!batchResult) {
+        const message = importErrorMessage(lastError, `第 ${batchIndex + 1} 批提交失败`)
+        aggregate.errors.push({
+          row: `${chunk[0]?.row || '-'}-${chunk[chunk.length - 1]?.row || '-'}`,
+          stage: '提交',
+          message
+        })
+        importDialog.progress.status = 'failed'
+        importDialog.progress.failed = aggregate.errors.length
+        importDialog.progress.message = `第 ${batchIndex + 1} 批连续失败，导入已停止`
+        break
+      }
+
+      aggregate.created += batchResult.created
+      aggregate.updated += batchResult.updated
+      aggregate.skipped += batchResult.skipped
+      aggregate.scan_bindings_created += batchResult.scan_bindings_created
+      aggregate.checkout_records_created += batchResult.checkout_records_created
+      aggregate.repair_records_created += batchResult.repair_records_created
+      aggregate.scrap_requests_created += batchResult.scrap_requests_created
+      aggregate.errors.push(...batchResult.errors.map(error => ({
+        ...error,
+        row: chunk[Math.max(0, Number(error.row || 1) - 1)]?.row || error.row,
+        stage: '导入'
+      })))
+
+      importDialog.progress.processed += chunk.length
+      importDialog.progress.created = aggregate.created
+      importDialog.progress.updated = aggregate.updated
+      importDialog.progress.skipped = aggregate.skipped
+      importDialog.progress.failed = aggregate.errors.length
+      importDialog.progress.message = `第 ${batchIndex + 1} 批已完成`
+    }
+
+    importDialog.result = aggregate
     importDialog.preview = null
+    if (importDialog.progress.status !== 'failed') {
+      importDialog.progress.processed = importDialog.progress.total
+      importDialog.progress.status = aggregate.errors.length ? 'partial' : 'completed'
+      importDialog.progress.message = aggregate.errors.length
+        ? `导入结束，${aggregate.errors.length} 条数据需要处理`
+        : '所有数据已成功处理'
+    }
+    if (importDialog.progress.status === 'failed') {
+      ElMessage.error({ message: importDialog.progress.message, duration: 6000, showClose: true })
+    } else if (aggregate.errors.length) {
+      ElMessage.warning(`导入结束：新增 ${aggregate.created} 条，更新 ${aggregate.updated} 条，失败 ${aggregate.errors.length} 条`)
+    } else {
+      ElMessage.success(`导入完成：新增 ${aggregate.created} 条，更新 ${aggregate.updated} 条；自动建借用/出库 ${aggregate.checkout_records_created} 条、维修 ${aggregate.repair_records_created} 条、处置 ${aggregate.scrap_requests_created} 条`)
+    }
     await loadAssets()
   } catch (error) {
+    importDialog.progress.status = 'failed'
+    importDialog.progress.message = importErrorMessage(error, '导入任务异常终止')
     ElMessage.error({ message: importErrorMessage(error, '确认导入失败'), duration: 6000, showClose: true })
   } finally {
     importDialog.importing = false
@@ -1371,6 +1603,78 @@ function manualStatusOptions(currentStatus) {
   justify-content: flex-start;
 }
 
+.import-progress-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #d9e7f7;
+  border-radius: 8px;
+  background: #f7faff;
+}
+
+.import-preview-note {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.import-progress-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.import-progress-heading > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.import-progress-heading strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.import-progress-heading span,
+.import-progress-batch {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.import-progress-stats {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.import-progress-stats span {
+  padding: 8px 10px;
+  border: 1px solid #e5edf7;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.import-progress-stats strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 16px;
+}
+
+.import-progress-stats .import-failed-count {
+  color: var(--danger);
+}
+
+.import-progress-batch {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .pagination-bar {
   display: flex;
   justify-content: flex-end;
@@ -1396,6 +1700,10 @@ function manualStatusOptions(currentStatus) {
   .upload-row,
   .import-actions {
     justify-content: flex-start;
+  }
+
+  .import-progress-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .header-actions .el-button,
