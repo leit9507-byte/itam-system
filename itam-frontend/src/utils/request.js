@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
+import { getStorageItem, removeStorageItem } from './storage'
 
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/backend',
@@ -7,7 +8,7 @@ const request = axios.create({
 })
 
 request.interceptors.request.use(config => {
-  const token = localStorage.getItem('itam_token')
+  const token = getStorageItem('itam_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -22,8 +23,8 @@ request.interceptors.response.use(
     const isLoginRequest = (error.config?.url || '').includes('/auth/login')
     if (error.response?.status === 401 && !isLoginRequest) {
       // 会话过期：清理凭证并回到登录页
-      localStorage.removeItem('itam_token')
-      localStorage.removeItem('itam_user')
+      removeStorageItem('itam_token')
+      removeStorageItem('itam_user')
       if (window.location.pathname !== '/login') {
         ElMessage.error('登录状态已过期，请重新登录')
         window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`

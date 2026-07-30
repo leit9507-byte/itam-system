@@ -392,6 +392,7 @@ import TodoAssetActions from '../../components/TodoAssetActions.vue'
 import { useAppStore } from '../../store'
 import { assetCodeCandidates, assetCodeMatches, parseAssetCode } from '../../utils/assetCode'
 import { feishuRuntimeStatus, getLastFeishuScanError, isFeishuClient, scanByFeishuSdk } from '../../utils/feishuSdk'
+import { getStorageJson, setStorageItem } from '../../utils/storage'
 
 const router = useRouter()
 const store = useAppStore()
@@ -1049,12 +1050,8 @@ function setScanFeedback(tone, title, detail) {
 }
 
 function loadPendingJobs() {
-  try {
-    const rows = JSON.parse(localStorage.getItem(QUEUE_STORAGE_KEY) || '[]')
-    return Array.isArray(rows) ? rows : []
-  } catch {
-    return []
-  }
+  const rows = getStorageJson(QUEUE_STORAGE_KEY, [])
+  return Array.isArray(rows) ? rows : []
 }
 
 function stocktakeOwnerLabel(userId, emptyLabel = true) {
@@ -1064,7 +1061,7 @@ function stocktakeOwnerLabel(userId, emptyLabel = true) {
 }
 
 function savePendingJobs() {
-  localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(pendingJobs.value))
+  setStorageItem(QUEUE_STORAGE_KEY, JSON.stringify(pendingJobs.value))
 }
 
 function enqueueJob(job, reason) {
