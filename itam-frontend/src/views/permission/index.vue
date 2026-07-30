@@ -645,7 +645,7 @@ const mobileConfig = computed(() => {
     feishuSdkAutoLoad: import.meta.env.VITE_FEISHU_SDK_AUTO_LOAD || '',
     envSnippet: [
       `VITE_MOBILE_PUBLIC_URL=${publicUrl}`,
-      'VITE_FEISHU_SDK_URL=https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.30.js',
+      'VITE_FEISHU_SDK_URL=https://lf-scm-cn.feishucdn.com/lark/op/h5-js-sdk-1.5.44.js',
       'VITE_FEISHU_SDK_AUTO_LOAD=true'
     ].join('\n')
   }

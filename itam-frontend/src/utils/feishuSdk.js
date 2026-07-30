@@ -2,8 +2,8 @@ import request from './request'
 
 const DEFAULT_SDK_URLS = [
   import.meta.env.VITE_FEISHU_SDK_URL,
-  'https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.30.js',
-  'https://lf3-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.30.js'
+  'https://lf-scm-cn.feishucdn.com/lark/op/h5-js-sdk-1.5.44.js',
+  'https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.44.js'
 ].filter(Boolean)
 
 let sdkLoading = null

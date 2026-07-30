@@ -146,6 +146,32 @@
       </div>
     </el-dialog>
 
+    <el-dialog
+      v-model="browserScannerVisible"
+      title="扫描资产二维码"
+      width="92%"
+      class="mobile-camera-dialog"
+      append-to-body
+      :close-on-click-modal="false"
+      @closed="cancelBrowserScan"
+    >
+      <div class="camera-preview">
+        <video ref="browserVideoRef" muted playsinline></video>
+        <span class="camera-frame" aria-hidden="true"></span>
+      </div>
+      <el-alert
+        v-if="browserScanError"
+        :title="browserScanError"
+        type="error"
+        show-icon
+        :closable="false"
+      />
+      <p v-else class="camera-tip">将二维码或条形码放入框内，识别后会自动关闭。</p>
+      <template #footer>
+        <el-button size="large" @click="cancelBrowserScan">取消扫码</el-button>
+      </template>
+    </el-dialog>
+
     <el-card v-if="pendingJobs.length" shadow="never" class="queue-card mobile-panel">
       <template #header>
         <div class="card-header">
@@ -350,7 +376,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { BrowserMultiFormatReader } from '@zxing/browser'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { Box, Camera, CircleCheck, FolderOpened, HomeFilled, Search, Setting } from '@element-plus/icons-vue'
@@ -400,12 +427,17 @@ const visibleStocktakeTasks = ref([])
 const scanRuntimeStatus = ref(feishuRuntimeStatus())
 const scanRuntimeError = ref('')
 const scanInfoDialogVisible = ref(false)
+const browserScannerVisible = ref(false)
+const browserVideoRef = ref(null)
+const browserScanError = ref('')
 const assetDialogVisible = ref(false)
 const isOnline = ref(navigator.onLine)
 const pendingJobs = ref(loadPendingJobs())
 const queueRetrying = ref(false)
 const lastScan = reactive({ mode: '', code: '', at: 0 })
 const scanFeedback = reactive({ visible: false, tone: 'info', title: '等待扫码', detail: '请扫描或输入资产编号。' })
+let browserScannerControls = null
+let browserScanResolve = null
 const showMobileAppbar = computed(() => !scanRuntimeStatus.value.isFeishu)
 const form = reactive(defaultForm())
 
@@ -442,7 +474,7 @@ const scanRuntimeDescription = computed(() => {
   if (scanRuntimeStatus.value.hasScanCode) return '已连接飞书原生扫码。'
   if (scanRuntimeStatus.value.hasH5Sdk) return '请检查 HTTPS、安全域名和应用发布。'
   if (scanRuntimeStatus.value.isFeishu) return '正在等待飞书扫码能力。'
-  return '可手动输入资产编号。'
+  return '将使用手机摄像头扫码，也可手动输入资产编号。'
 })
 const showScanRuntimeHint = computed(() => scanRuntimeError.value || !scanRuntimeStatus.value.hasScanCode)
 const sectionMenus = computed(() => [
@@ -490,6 +522,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('online', handleOnline)
   window.removeEventListener('offline', handleOffline)
+  finishBrowserScan('')
 })
 
 function defaultForm() {
@@ -625,27 +658,66 @@ function isScanCancelError(error) {
 }
 
 async function scanByBrowser() {
-  if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) return ''
-  let stream
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-    const video = document.createElement('video')
-    video.srcObject = stream
-    video.muted = true
-    await video.play()
-    const detector = new window.BarcodeDetector({ formats: ['qr_code', 'code_128'] })
-    const deadline = Date.now() + 8000
-    while (Date.now() < deadline) {
-      const codes = await detector.detect(video)
-      if (codes.length) return codes[0].rawValue
-      await new Promise(resolve => setTimeout(resolve, 300))
-    }
-  } catch {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    scanRuntimeError.value = window.isSecureContext
+      ? '当前浏览器不支持摄像头扫码'
+      : '摄像头扫码需要通过 HTTPS 访问'
     return ''
-  } finally {
-    stream?.getTracks().forEach(track => track.stop())
   }
-  return ''
+
+  browserScanError.value = ''
+  browserScannerVisible.value = true
+  await nextTick()
+
+  return new Promise(resolve => {
+    browserScanResolve = resolve
+    const reader = new BrowserMultiFormatReader()
+    reader.decodeFromConstraints(
+      {
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      },
+      browserVideoRef.value,
+      result => {
+        if (result?.getText()) finishBrowserScan(result.getText())
+      }
+    ).then(controls => {
+      if (!browserScanResolve) {
+        controls.stop()
+        return
+      }
+      browserScannerControls = controls
+    }).catch(error => {
+      browserScanError.value = browserCameraError(error)
+      scanRuntimeError.value = browserScanError.value
+    })
+  })
+}
+
+function cancelBrowserScan() {
+  finishBrowserScan('')
+}
+
+function finishBrowserScan(value) {
+  browserScannerControls?.stop()
+  browserScannerControls = null
+  browserScannerVisible.value = false
+  const resolve = browserScanResolve
+  browserScanResolve = null
+  resolve?.(value || '')
+}
+
+function browserCameraError(error) {
+  const name = error?.name || ''
+  if (name === 'NotAllowedError' || name === 'SecurityError') return '摄像头权限未开启，请在浏览器设置中允许访问摄像头'
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') return '未检测到可用摄像头'
+  if (name === 'NotReadableError' || name === 'TrackStartError') return '摄像头正被其他应用占用'
+  if (!window.isSecureContext) return '摄像头扫码需要通过 HTTPS 访问'
+  return error?.message || '摄像头启动失败，请检查浏览器权限'
 }
 
 function handleScanResult(value) {
@@ -1544,6 +1616,54 @@ function statusType(value) {
 
 .mobile-scan-dialog :deep(.el-dialog__body) {
   padding-top: 4px;
+}
+
+.mobile-camera-dialog :deep(.el-dialog) {
+  max-width: 420px;
+  border-radius: 16px;
+}
+
+.mobile-camera-dialog :deep(.el-dialog__body) {
+  display: grid;
+  gap: 12px;
+  padding-top: 6px;
+}
+
+.camera-preview {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  max-height: 62vh;
+  border-radius: 8px;
+  background: #111827;
+}
+
+.camera-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.camera-frame {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(68vw, 250px);
+  aspect-ratio: 1;
+  border: 2px solid #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 0 0 999px rgb(15 23 42 / 38%);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.camera-tip {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .scan-runtime-alert {

@@ -26,7 +26,7 @@ Mobile entry variables can be set in `.env` before building:
 
 ```text
 VITE_MOBILE_PUBLIC_URL=https://it.example.com/mobile
-VITE_FEISHU_SDK_URL=https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.30.js
+VITE_FEISHU_SDK_URL=https://lf-scm-cn.feishucdn.com/lark/op/h5-js-sdk-1.5.44.js
 VITE_FEISHU_SDK_AUTO_LOAD=true
 ```
 
