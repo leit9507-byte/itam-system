@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
+from app.core.time import app_now, utc_now
 from app.core.security import can_view_all_data, is_department_manager, scoped_dept_id, scoped_user_identities
 from app.models.asset import Asset
 from app.models.repair import RepairFaultType, RepairRecord
@@ -195,7 +196,7 @@ class RepairService:
             record.status = "未修好"
         elif record.repair_result == "在保送修":
             record.status = "在保送修"
-        record.finish_time = payload.finish_time or datetime.utcnow()
+        record.finish_time = payload.finish_time or utc_now()
         if payload.remark:
             record.remark = payload.remark
         if asset:
@@ -230,7 +231,7 @@ class RepairService:
 
     @staticmethod
     def generate_repair_no(db: Session) -> str:
-        year = datetime.utcnow().year
+        year = app_now().year
         return NumberService.next(db, f"repair:{year}", f"RP-{year}-", 4)
 
     @staticmethod

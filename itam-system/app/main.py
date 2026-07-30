@@ -17,6 +17,7 @@ from app.core.database import Base, engine
 from app.core.schema_compat import ensure_compatible_schema
 from app.core.config import get_settings
 from app.core.security import AuthMiddleware
+from app.core.time import app_timezone
 from app.services.sync_scheduler import start_daily_ldap_sync
 
 logger = logging.getLogger("itam")
@@ -39,6 +40,7 @@ def init_database_with_retry(retries: int = 20, delay: float = 2.0) -> None:
 
 
 def validate_production_settings(settings) -> None:
+    app_timezone()
     if not settings.production_mode:
         return
     if not settings.jwt_secret or len(settings.jwt_secret) < 32 or settings.jwt_secret.startswith("change-this"):

@@ -68,6 +68,7 @@ def build_database_url() -> str:
 
 class Settings(BaseModel):
     app_name: str = "Enterprise ITAM System"
+    app_timezone: str = os.getenv("APP_TIMEZONE", "Asia/Shanghai")
     database_url: str = build_database_url()
     db_pool_size: int = env_int("DB_POOL_SIZE", "10")
     db_max_overflow: int = env_int("DB_MAX_OVERFLOW", "20")
@@ -75,7 +76,7 @@ class Settings(BaseModel):
     db_pool_timeout: int = env_int("DB_POOL_TIMEOUT", "30")
     db_connect_timeout: int = env_int("DB_CONNECT_TIMEOUT", "10")
     db_charset: str = os.getenv("DB_CHARSET", "utf8mb4")
-    db_timezone: str = os.getenv("DB_TIMEZONE", "+08:00")
+    db_timezone: str = os.getenv("DB_TIMEZONE", "+00:00")
     db_echo: bool = env_bool("DB_ECHO", "false")
     audit_report_path: str = os.getenv("AUDIT_REPORT_PATH", "audit_report.html")
     max_assets_per_user: int = int(os.getenv("MAX_ASSETS_PER_USER", "5"))

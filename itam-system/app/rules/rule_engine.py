@@ -3,6 +3,7 @@ from itertools import groupby
 
 from sqlalchemy.orm import Session
 
+from app.core.time import app_today, utc_now
 from app.core.config import get_settings
 from app.models.asset import Asset
 from app.models.audit_rule import AuditRule
@@ -205,7 +206,7 @@ class RuleEngine:
             return []
         threshold = int(rule.get("threshold_value") or 2)
         threshold_days = int(rule.get("threshold_days") or 180)
-        cutoff = datetime.utcnow() - timedelta(days=threshold_days)
+        cutoff = utc_now() - timedelta(days=threshold_days)
         asset_map = {asset.asset_id: asset for asset in self._category_assets(assets, rule.get("scope_category"))}
         if not asset_map:
             return []
@@ -240,7 +241,7 @@ class RuleEngine:
             return []
         grace_days = int(rule.get("threshold_days") or 0)
         active_statuses = {"in_use", "borrowed", "out_stock", "repair"}
-        today = datetime.utcnow()
+        today = app_today()
         violations = []
         for asset in self._category_assets(assets, rule.get("scope_category")):
             if asset.status not in active_statuses:
@@ -248,7 +249,7 @@ class RuleEngine:
             due_date = self._retirement_due_date(asset)
             if not due_date:
                 continue
-            overdue_days = (today.date() - due_date.date()).days
+            overdue_days = (today - due_date.date()).days
             if overdue_days <= grace_days:
                 continue
             years = int((asset.config or {}).get("retirement_years") or 0)
@@ -283,7 +284,7 @@ class RuleEngine:
         if not rule.get("enabled"):
             return []
         threshold_days = int(rule.get("threshold_days") or 30)
-        cutoff = datetime.utcnow() - timedelta(days=threshold_days)
+        cutoff = utc_now() - timedelta(days=threshold_days)
         violations = []
         for asset in self._category_assets(assets, rule.get("scope_category")):
             if asset.status != "borrowed":
@@ -347,7 +348,7 @@ class RuleEngine:
         if not rule.get("enabled"):
             return []
         threshold_days = int(rule.get("threshold_days") or self.settings.idle_days_threshold)
-        cutoff = datetime.utcnow() - timedelta(days=threshold_days)
+        cutoff = utc_now() - timedelta(days=threshold_days)
         idle_assets = [
             asset
             for asset in self._category_assets(assets, rule.get("scope_category"))

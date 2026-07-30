@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy.orm import Session
 
+from app.core.time import TimezoneModel
 from app.core.database import get_db
 from app.core.security import operator_from_request
 from app.services.asset_residual_service import AssetResidualService
@@ -10,12 +11,12 @@ from app.services.asset_residual_service import AssetResidualService
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
 
-class CategoryResidualRate(BaseModel):
+class CategoryResidualRate(TimezoneModel):
     category: str
     minimum_residual_rate: float = Field(ge=0, le=1)
 
 
-class AssetResidualConfigPayload(BaseModel):
+class AssetResidualConfigPayload(TimezoneModel):
     method: str = Field(default="straight_line", pattern="^(straight_line|double_declining|sum_of_years_digits|fixed_rate)$")
     minimum_residual_rate: float = Field(ge=0, le=1)
     missing_basis_policy: str = "original"

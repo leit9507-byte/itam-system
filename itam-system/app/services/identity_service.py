@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from app.core.time import utc_now
 from app.core.auth import create_access_token, hash_password, verify_password
 from app.core.config import get_settings
 from app.models.user import IdentityProviderConfig, RolePermission, UserDirectory
@@ -125,7 +126,7 @@ class IdentityService:
         if not user:
             user = db.query(UserDirectory).filter(UserDirectory.username == payload.username).first()
         if not user:
-            user = UserDirectory(user_id=user_id, created_at=datetime.utcnow())
+            user = UserDirectory(user_id=user_id, created_at=utc_now())
             db.add(user)
             created = True
 
@@ -151,7 +152,7 @@ class IdentityService:
             user.asset_assignment_required = payload.asset_assignment_required
         if payload.password:
             user.password_hash = hash_password(payload.password)
-        user.last_synced_at = datetime.utcnow()
+        user.last_synced_at = utc_now()
 
         if commit:
             db.commit()
@@ -190,7 +191,7 @@ class IdentityService:
             if admin_count <= 1:
                 raise ValueError("cannot delete the last local admin user")
         user.status = "resigned"
-        user.last_synced_at = datetime.utcnow()
+        user.last_synced_at = utc_now()
         db.commit()
         db.refresh(user)
         return user
@@ -220,7 +221,7 @@ class IdentityService:
 
         user.role = next_role
         user.status = next_status
-        user.last_synced_at = datetime.utcnow()
+        user.last_synced_at = utc_now()
         db.commit()
         db.refresh(user)
         return user
@@ -232,7 +233,7 @@ class IdentityService:
         if not user:
             raise ValueError("user not found")
         user.asset_assignment_required = required
-        user.last_synced_at = datetime.utcnow()
+        user.last_synced_at = utc_now()
         db.commit()
         db.refresh(user)
         return user
@@ -249,7 +250,7 @@ class IdentityService:
             from app.services.sso_service import SsoService
 
             user = SsoService.ldap_authenticate(db, username, password)
-            user.last_login_at = datetime.utcnow()
+            user.last_login_at = utc_now()
             db.commit()
             db.refresh(user)
             token = create_access_token(user.user_id, user.role, expires_minutes)
@@ -257,7 +258,7 @@ class IdentityService:
         if provider != "local":
             raise ValueError("only local and LDAP login are enabled")
         user = db.query(UserDirectory).filter(UserDirectory.username == username).first()
-        now = datetime.utcnow()
+        now = utc_now()
         if not user:
             raise ValueError("invalid credentials")
         if user.status != "active":
@@ -325,7 +326,7 @@ class IdentityService:
         provider.provider_type = payload.provider_type
         provider.enabled = payload.enabled
         provider.config = payload.config
-        provider.updated_at = datetime.utcnow()
+        provider.updated_at = utc_now()
         db.commit()
         db.refresh(provider)
         return provider
@@ -407,7 +408,7 @@ class IdentityService:
                 if user.external_id in synced_external_ids or user.username.casefold() in synced_usernames:
                     continue
                 user.status = "resigned"
-                user.last_synced_at = datetime.utcnow()
+                user.last_synced_at = utc_now()
                 offboarded += 1
         db.commit()
         for user in synced:

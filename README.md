@@ -95,7 +95,7 @@
 
 ## 技术栈
 
-后端：Python 3.11、FastAPI、SQLAlchemy、MySQL 8.0、Pydantic、Alembic、Uvicorn。
+后端：Python 3.14、FastAPI、SQLAlchemy、MySQL 8.0、Pydantic、Alembic、Uvicorn。
 
 前端：Vue 3、Vite、Element Plus、Vue Router、Pinia、Axios、ECharts、Nginx。
 

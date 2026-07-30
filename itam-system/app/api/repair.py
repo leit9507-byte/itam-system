@@ -1,10 +1,11 @@
-from datetime import datetime, time
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import operator_from_request, user_context_from_request
+from app.core.time import app_day_bounds
 from app.schemas.repair import RepairCreate, RepairFaultTypeOut, RepairFaultTypeSave, RepairFinish, RepairOut
 from app.services.repair_service import RepairService
 
@@ -55,8 +56,8 @@ def list_repairs(
     request: Request = None,
     db: Session = Depends(get_db),
 ):
-    start = datetime.combine(datetime.fromisoformat(start_date).date(), time.min) if start_date else None
-    end = datetime.combine(datetime.fromisoformat(end_date).date(), time.max) if end_date else None
+    start = app_day_bounds(datetime.fromisoformat(start_date))[0] if start_date else None
+    end = app_day_bounds(datetime.fromisoformat(end_date))[1] if end_date else None
     return RepairService.list_records(db, page, page_size, keyword, status, start, end, sort_by, sort_order, user_context_from_request(request))
 
 

@@ -4,7 +4,7 @@ This directory contains the FastAPI backend for the ITAM asset management system
 
 ## Stack
 
-- Python 3.11
+- Python 3.14
 - FastAPI
 - SQLAlchemy
 - MySQL / SQLite

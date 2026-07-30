@@ -1,9 +1,8 @@
-from datetime import datetime
-
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Column, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.time import UTCDateTime, utc_now
 
 
 class Purchase(Base):
@@ -17,7 +16,7 @@ class Purchase(Base):
     purchase_reason = Column(Text, nullable=True)
     total_amount = Column(Numeric(12, 2, asdecimal=False), default=0)
     status = Column(String(32), default="created", index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(UTCDateTime, default=utc_now, nullable=False, index=True)
 
     items = relationship("PurchaseItem", cascade="all, delete-orphan", back_populates="purchase")
 

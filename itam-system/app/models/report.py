@@ -1,8 +1,7 @@
-from datetime import datetime
-
-from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy import Column, Integer, String
 
 from app.core.database import Base
+from app.core.time import UTCDateTime, utc_now
 
 
 class AuditReportArchive(Base):
@@ -21,4 +20,4 @@ class AuditReportArchive(Base):
     xlsx_path = Column(String(512), nullable=True)
     created_by = Column(String(128), nullable=True)
     scope_key = Column(String(160), nullable=False, default="global", index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(UTCDateTime, default=utc_now, nullable=False, index=True)

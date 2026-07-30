@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.core.time import app_now, utc_now
 from app.core.security import can_view_all_data, is_department_manager, scoped_dept_id, scoped_user_identities
 from app.models.asset import Asset
 from app.models.scrap import ScrapRequest
@@ -323,7 +324,7 @@ class ScrapService:
 
         request.status = "已处置"
         request.disposal_method = disposal_method
-        request.retirement_date = payload.get("retirement_date") or request.retirement_date or datetime.utcnow()
+        request.retirement_date = payload.get("retirement_date") or request.retirement_date or utc_now()
         request.retirement_approval_no = retirement_approval_no
         request.retirement_flow_no = retirement_flow_no or request.retirement_flow_no or request.request_no
         final_residual_value = payload.get("final_residual_value")
@@ -334,7 +335,7 @@ class ScrapService:
         request.dispose_recipient_user_id = recipient_user_id or None
         request.dispose_recipient_name = recipient_name or None
         request.disposed_by = operator
-        request.disposed_at = datetime.utcnow()
+        request.disposed_at = utc_now()
         if asset:
             from_status = asset.status
             if from_status != "scrapped":
@@ -400,10 +401,10 @@ class ScrapService:
 
     @staticmethod
     def generate_no(db: Session) -> str:
-        year = datetime.utcnow().year
+        year = app_now().year
         return NumberService.next(db, f"scrap:{year}", f"SC-{year}-", 4)
 
     @staticmethod
     def generate_retirement_flow_no(db: Session) -> str:
-        year = datetime.utcnow().year
+        year = app_now().year
         return NumberService.next(db, f"retirement_flow:{year}", f"RT-{year}-", 4)

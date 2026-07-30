@@ -4,6 +4,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.core.time import utc_now
 from app.models.system_setting import SystemSetting
 
 
@@ -39,6 +40,6 @@ class SystemSettingService:
             db.add(row)
         row.value = json.dumps(value, ensure_ascii=False)
         row.updated_by = operator
-        row.updated_at = datetime.utcnow()
+        row.updated_at = utc_now()
         db.commit()
         return value

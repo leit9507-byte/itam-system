@@ -6,7 +6,7 @@ Create Date: 2026-07-17
 """
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 from alembic import op
 import sqlalchemy as sa
@@ -40,7 +40,7 @@ def upgrade() -> None:
         ("asset:ITAM", "assets", "asset_id", r"^ITAM-(\d+)$"),
         ("supplier", "suppliers", "supplier_no", r"^SUP-(\d+)$"),
     ]
-    year = datetime.utcnow().year
+    year = datetime.now(timezone.utc).year
     seeds.extend([
         (f"repair:{year}", "repair_records", "repair_no", rf"^RP-{year}-(\d+)$"),
         (f"scrap:{year}", "scrap_requests", "request_no", rf"^SC-{year}-(\d+)$"),
@@ -67,12 +67,17 @@ def upgrade() -> None:
         ).scalar_one_or_none()
         if current is None:
             bind.execute(
-                sequences.insert().values(key=key, current_value=maximum, updated_at=datetime.utcnow())
+                sequences.insert().values(
+                    key=key,
+                    current_value=maximum,
+                    updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                )
             )
         elif current < maximum:
             bind.execute(
                 sequences.update().where(sequences.c.key == key).values(
-                    current_value=maximum, updated_at=datetime.utcnow()
+                    current_value=maximum,
+                    updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
                 )
             )
 

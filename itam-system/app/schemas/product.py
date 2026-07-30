@@ -1,15 +1,17 @@
+from app.core.time import TimezoneModel
+
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 
-class DeviceTypeUpsert(BaseModel):
+class DeviceTypeUpsert(TimezoneModel):
     name: str
     description: Optional[str] = None
 
 
-class DeviceTypeOut(BaseModel):
+class DeviceTypeOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -18,7 +20,7 @@ class DeviceTypeOut(BaseModel):
     created_at: datetime
 
 
-class ProductUpsert(BaseModel):
+class ProductUpsert(TimezoneModel):
     product_name: str
     device_type: str
     brand: Optional[str] = None
@@ -29,12 +31,12 @@ class ProductUpsert(BaseModel):
     retirement_years: Optional[int] = None
 
 
-class ProductBatchRetirementYearsUpdate(BaseModel):
+class ProductBatchRetirementYearsUpdate(TimezoneModel):
     product_ids: list[int] = Field(min_length=1, max_length=500)
     retirement_years: int = Field(ge=1, le=100)
 
 
-class ProductOut(BaseModel):
+class ProductOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int

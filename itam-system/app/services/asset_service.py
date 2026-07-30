@@ -14,6 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 
+from app.core.time import app_datetime_to_utc, app_end_of_day, app_now, format_app_datetime, utc_now
 from app.models.asset import Asset
 from app.models.audit_response import AuditResponse
 from app.models.audit_log import AssetChangeLog
@@ -370,7 +371,7 @@ class AssetService:
                 row.scan_type = "qrcode"
                 row.status = "active"
                 row.remark = AssetService.join_notes(row.remark, "资产批量导入")
-                row.updated_at = datetime.utcnow()
+                row.updated_at = utc_now()
                 created += 0 if was_active else 1
                 action = "update_scan_code" if was_active else "rebind_scan_code"
             else:
@@ -401,7 +402,7 @@ class AssetService:
     @staticmethod
     def ensure_import_status_workflow(db: Session, asset: Asset, row: AssetImportRow, operator: str) -> dict[str, int]:
         counts = {"checkout": 0, "repair": 0, "scrap": 0}
-        status_time = row.status_time or datetime.utcnow()
+        status_time = row.status_time or utc_now()
 
         if row.status in {"in_use", "borrowed", "out_stock"}:
             checkout = AssetService.open_checkout_for_asset(db, asset.asset_id)
@@ -440,7 +441,7 @@ class AssetService:
                 .first()
             )
             if not active_repair:
-                year = datetime.utcnow().year
+                year = app_now().year
                 repair = RepairRecord(
                     repair_no=NumberService.next(db, f"repair:{year}", f"RP-{year}-", 4),
                     asset_id=asset.asset_id,
@@ -483,7 +484,11 @@ class AssetService:
         if existed:
             return 0
 
-        year = datetime.utcnow().year
+        year = app_now().year
+        completed = status in {"scrapped", "disposed"}
+        disposal_method = AssetService.normalize_blank(row.disposal_method)
+        if status == "scrapped" and not disposal_method:
+            disposal_method = "报废"
         request = ScrapRequest(
             request_no=NumberService.next(db, f"scrap:{year}", f"SC-{year}-", 4),
             retirement_flow_no=NumberService.next(db, f"retirement_flow:{year}", f"RT-{year}-", 4),
@@ -504,23 +509,23 @@ class AssetService:
             applicant=operator,
             reason="资产批量导入时状态为待处置或已报废，自动创建处置登记",
             estimated_residual_value=AssetResidualService.calculate_asset(asset, db=db),
-            final_residual_value=AssetResidualService.calculate_asset(asset, db=db) if status == "disposed" else 0,
-            disposal_method=AssetService.normalize_blank(row.disposal_method) if status == "disposed" else None,
-            retirement_date=status_time if status == "disposed" else None,
+            final_residual_value=AssetResidualService.calculate_asset(asset, db=db) if completed else 0,
+            disposal_method=disposal_method if completed else None,
+            retirement_date=status_time if completed else None,
             retirement_approval_no=AssetService.normalize_blank(row.retirement_approval_no),
             disposal_remark=(
                 AssetService.join_notes(row.remark, "历史已处置资产批量导入")
-                if status == "disposed"
+                if completed
                 else None
             ),
             dispose_recipient_name=(
                 AssetService.normalize_blank(row.dispose_recipient_name)
-                if status == "disposed" and row.disposal_method == "员工领用"
+                if completed and disposal_method == "员工领用"
                 else None
             ),
-            disposed_by=operator if status == "disposed" else None,
-            disposed_at=status_time if status == "disposed" else None,
-            status="已处置" if status == "disposed" else "待处置",
+            disposed_by=operator if completed else None,
+            disposed_at=status_time if completed else None,
+            status="已处置" if completed else "待处置",
         )
         db.add(request)
         LifecycleService.record(
@@ -1010,7 +1015,7 @@ class AssetService:
 
         catalog = (
             db.query(ProductCatalog)
-            .filter(func.trim(ProductCatalog.product_name) == product_name)
+            .filter(func.lower(func.trim(ProductCatalog.product_name)) == product_name.lower())
             .order_by(ProductCatalog.id.asc())
             .first()
         )
@@ -1150,7 +1155,7 @@ class AssetService:
         if not clean_filter:
             return query
         active_status_filter = Asset.status.in_(["in_use", "borrowed", "out_stock"])
-        warranty_overdue_filter = Asset.warranty_expire_date.isnot(None) & (Asset.warranty_expire_date < datetime.utcnow())
+        warranty_overdue_filter = Asset.warranty_expire_date.isnot(None) & (Asset.warranty_expire_date < utc_now())
         retirement_overdue_filter = text(
             "purchase_date IS NOT NULL "
             "AND JSON_UNQUOTE(JSON_EXTRACT(config, '$.retirement_years')) IS NOT NULL "
@@ -1192,7 +1197,7 @@ class AssetService:
 
     @staticmethod
     def asset_summary(db: Session, user_context: dict | None = None) -> dict:
-        now = datetime.utcnow()
+        now = utc_now()
         current_month = datetime(now.year, now.month, 1)
         previous_month = datetime(now.year - 1, 12, 1) if now.month == 1 else datetime(now.year, now.month - 1, 1)
 
@@ -1635,7 +1640,7 @@ class AssetService:
     @staticmethod
     def close_checkout(checkout: AssetCheckout, operator: str, location: str | None = None, remark: str | None = None) -> None:
         checkout.status = "closed"
-        checkout.checked_in_at = datetime.utcnow()
+        checkout.checked_in_at = utc_now()
         checkout.checked_in_by = operator
         checkout.checkin_location = AssetService.normalize_blank(location)
         checkout.checkin_remark = AssetService.join_notes(checkout.checkin_remark, remark)
@@ -1669,7 +1674,7 @@ class AssetService:
         due_days: int = 7,
         user_context: dict | None = None,
     ) -> dict:
-        now = datetime.utcnow()
+        now = utc_now()
         due_limit = now + AssetService.timedelta_days(max(due_days, 0))
         query = db.query(AssetCheckout, Asset).outerjoin(Asset, Asset.asset_id == AssetCheckout.asset_id)
         query = AssetService.apply_data_scope(query, user_context)
@@ -1778,7 +1783,7 @@ class AssetService:
 
     @staticmethod
     def checkout_out(row: AssetCheckout, asset: Asset | None = None) -> dict:
-        now = datetime.utcnow()
+        now = utc_now()
         due_date = row.due_date
         is_open = row.status == "open"
         is_overdue = bool(is_open and due_date and due_date < now)
@@ -1813,10 +1818,10 @@ class AssetService:
         if not clean:
             return None
         try:
-            return datetime.fromisoformat(clean.replace("Z", "+00:00")).replace(tzinfo=None)
+            return app_datetime_to_utc(datetime.fromisoformat(clean.replace("Z", "+00:00")))
         except ValueError:
             try:
-                return datetime.strptime(clean, "%Y-%m-%d")
+                return app_datetime_to_utc(datetime.strptime(clean, "%Y-%m-%d"))
             except ValueError as exc:
                 raise AssetValidationError(f"日期格式不正确：{clean}，请使用 YYYY-MM-DD") from exc
 
@@ -1824,7 +1829,7 @@ class AssetService:
     def end_of_day(value: datetime | None) -> datetime | None:
         if not value:
             return None
-        return value.replace(hour=23, minute=59, second=59, microsecond=999999)
+        return app_end_of_day(value)
 
     @staticmethod
     def timedelta_days(days: int):
@@ -1855,7 +1860,7 @@ class AssetService:
         previous_owner_user_id: str | None = None,
         current_user: UserDirectory | None = None,
     ) -> None:
-        now_text = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        now_text = format_app_datetime()
         if to_status == "in_stock":
             NotificationService.send_event(
                 db,
@@ -2063,15 +2068,15 @@ class AssetService:
         if value in (None, ""):
             return None
         if isinstance(value, datetime):
-            return value
+            return app_datetime_to_utc(value)
         text = str(value).strip()
         for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
             try:
-                return datetime.strptime(text, fmt)
+                return app_datetime_to_utc(datetime.strptime(text, fmt))
             except ValueError:
                 continue
         try:
-            return datetime.fromisoformat(text)
+            return app_datetime_to_utc(datetime.fromisoformat(text))
         except ValueError:
             return None
 

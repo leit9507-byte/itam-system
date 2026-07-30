@@ -6,7 +6,7 @@ Create Date: 2026-07-17
 """
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 
 from alembic import op
 import sqlalchemy as sa
@@ -104,7 +104,7 @@ def backfill_relationships(bind) -> None:
     history = sa.Table("inventory_license_seat_history", metadata, autoload_with=bind)
     installations = sa.Table("inventory_component_installations", metadata, autoload_with=bind)
     assets = sa.Table("assets", metadata, autoload_with=bind)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     asset_ids = set(bind.execute(sa.select(assets.c.asset_id)).scalars())
 
     inventory_rows = bind.execute(sa.select(items)).mappings().all()

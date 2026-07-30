@@ -73,6 +73,15 @@ Connection pool defaults:
 - `DB_POOL_TIMEOUT=30`
 - `DB_CONNECT_TIMEOUT=10`
 
+Time handling is split between storage and display:
+
+- `MYSQL_TIMEZONE=+00:00` keeps MySQL server-generated timestamps in UTC.
+- `DB_TIMEZONE=+00:00` keeps every backend database session in UTC.
+- `APP_TIMEZONE=Asia/Shanghai` controls business dates, report names, notifications, and timezone-free API input.
+- API timestamps include an explicit UTC offset. Browsers display them in the device timezone.
+
+Keep both database timezone values at `+00:00`. Change only `APP_TIMEZONE` when the organization uses another business timezone.
+
 If the database is changed from the admin backend page, stop the backend, run migration, then run initialization:
 
 ```bash

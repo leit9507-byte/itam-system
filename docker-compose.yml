@@ -28,6 +28,8 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: mysql+pymysql://itam:itam_pass@mysql:3306/itam_system?charset=utf8mb4
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Shanghai}
+      DB_TIMEZONE: ${DB_TIMEZONE:-+00:00}
       APP_CONFIG_DIR: /app/runtime
       AUDIT_REPORT_PATH: /app/audit_report.html
       MAX_ASSETS_PER_USER: 5

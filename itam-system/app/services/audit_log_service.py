@@ -64,3 +64,6 @@ class AuditLogService:
                 detail=AuditLogService.serialize(detail) if detail is not None else None,
             )
         )
+        from app.services.dashboard_service import DashboardService
+
+        DashboardService.invalidate()

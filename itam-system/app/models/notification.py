@@ -1,8 +1,7 @@
-from datetime import datetime
-
-from sqlalchemy import Boolean, Column, DateTime, Integer, JSON, String
+from sqlalchemy import Boolean, Column, Integer, JSON, String
 
 from app.core.database import Base
+from app.core.time import UTCDateTime, utc_now
 
 
 class NotificationSetting(Base):
@@ -16,4 +15,4 @@ class NotificationSetting(Base):
     event_types = Column(JSON, nullable=True)
     last_test_status = Column(String(32), nullable=True)
     last_test_message = Column(String(255), nullable=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(UTCDateTime, default=utc_now, onupdate=utc_now, nullable=False)

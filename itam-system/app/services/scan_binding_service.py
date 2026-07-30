@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlparse
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.time import utc_now
 from app.models.asset import Asset
 from app.models.scan_binding import AssetScanBinding
 from app.services.asset_service import AssetService
@@ -127,7 +128,7 @@ class ScanBindingService:
             row.scan_raw = scan_raw.strip()
             row.scan_type = (scan_type or "generic").strip() or "generic"
             row.remark = remark
-            row.updated_at = datetime.utcnow()
+            row.updated_at = utc_now()
         else:
             row = AssetScanBinding(
                 asset_id=asset_id,
@@ -151,7 +152,7 @@ class ScanBindingService:
         if not ScanBindingService.can_access_asset(db, row.asset_id, user_context):
             raise HTTPException(status_code=404, detail="scan binding not found")
         row.status = "deleted"
-        row.updated_at = datetime.utcnow()
+        row.updated_at = utc_now()
         AuditLogService.record_operation(db, "asset", "delete_scan_code", operator, "asset_scan_binding", row.asset_id, f"解绑扫码 {row.asset_id}", ScanBindingService.to_out(row))
         db.commit()
         return {"ok": True}

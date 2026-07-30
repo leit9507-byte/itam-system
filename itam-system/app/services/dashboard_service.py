@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.time import app_day_bounds, app_datetime_to_utc, utc_now
 from app.core.security import can_view_all_data, is_department_manager, scoped_dept_id, scoped_user_identities
 from app.models.asset import Asset
 from app.models.lifecycle import Lifecycle
@@ -15,6 +16,7 @@ from app.models.repair import RepairRecord
 from app.models.scrap import ScrapRequest
 from app.models.user import UserDirectory
 from app.services.asset_service import AssetService
+from app.services.asset_residual_service import AssetResidualService
 
 
 class DashboardService:
@@ -37,6 +39,10 @@ class DashboardService:
     _cache: dict[str, tuple[float, dict]] = {}
 
     @staticmethod
+    def invalidate() -> None:
+        DashboardService._cache.clear()
+
+    @staticmethod
     def enterprise(db: Session, user_context: dict | None = None, date_range: list[str] | None = None) -> dict:
         cache_key = DashboardService.cache_key(user_context, date_range)
         now_monotonic = time.monotonic()
@@ -44,7 +50,7 @@ class DashboardService:
         if cached and now_monotonic - cached[0] <= DashboardService.CACHE_TTL_SECONDS:
             return copy.deepcopy(cached[1])
 
-        now = datetime.utcnow()
+        now = utc_now()
         summary = AssetService.asset_summary(db, user_context)
         managed_query = AssetService.apply_data_scope(db.query(Asset), user_context).filter(or_(Asset.status.is_(None), ~Asset.status.in_(["scrapped", "disposed", "lost"])))
         assets_for_detail = managed_query.options().all()
@@ -60,7 +66,18 @@ class DashboardService:
 
         total = int(summary["managed_total"] if use_global_summary else len(assets))
         original_value = float(summary["managed_total_value"] if use_global_summary else sum(float(asset.purchase_price or 0) for asset in assets))
-        net_value = round(original_value * 0.68)
+        residual_config = AssetResidualService.get_config(db)
+        net_value = round(
+            sum(
+                AssetResidualService.calculate_asset(
+                    asset,
+                    as_of=now,
+                    residual_config=residual_config,
+                )
+                for asset in assets
+            ),
+            2,
+        )
         this_month = DashboardService.month_start(now, 0)
         previous_month = DashboardService.month_start(now, 1)
         current_month_count = int(summary["current_month_managed_count"] if use_global_summary else sum(1 for asset in assets if asset.created_at and asset.created_at >= this_month))
@@ -77,7 +94,15 @@ class DashboardService:
             "metrics": [
                 DashboardService.metric("在管资产", total, "项", "", DashboardService.compare(total, max(total - current_month_count, 0)), DashboardService.asset_month_trend(assets_for_detail, "count", now), "primary"),
                 DashboardService.metric("资产原值", original_value, "", "¥", DashboardService.compare(DashboardService.sum_assets_by_month(assets_for_detail, 0, now), DashboardService.sum_assets_by_month(assets_for_detail, 1, now)), DashboardService.asset_month_trend(assets, "value", now), "success"),
-                DashboardService.metric("资产净值", net_value, "", "¥", "按原值估算", DashboardService.asset_month_trend(assets, "net", now), "warning"),
+                DashboardService.metric(
+                    "资产净值",
+                    net_value,
+                    "",
+                    "¥",
+                    "按残值规则",
+                    DashboardService.asset_month_trend(assets, "net", now, residual_config),
+                    "warning",
+                ),
                 DashboardService.metric("在用资产", int(status_counts.get("in_use", 0)), "项", "", "实时", DashboardService.status_trend(status_counts, "in_use"), "success"),
                 DashboardService.metric("闲置资产", int(status_counts.get("idle", 0)), "项", "", "实时", DashboardService.status_trend(status_counts, "idle"), "warning"),
                 DashboardService.metric("维修中资产", int(status_counts.get("repair", 0)), "项", "", "实时", DashboardService.status_trend(status_counts, "repair"), "danger"),
@@ -200,8 +225,10 @@ class DashboardService:
         if not date_range or len(date_range) < 2:
             return None, None
         try:
-            start = datetime.fromisoformat(date_range[0])
-            end = datetime.fromisoformat(date_range[1]).replace(hour=23, minute=59, second=59, microsecond=999999)
+            start_date = datetime.fromisoformat(date_range[0]).date()
+            end_date = datetime.fromisoformat(date_range[1]).date()
+            start, _ = app_day_bounds(start_date)
+            _, end = app_day_bounds(end_date)
             return start, end
         except ValueError:
             return None, None
@@ -211,7 +238,12 @@ class DashboardService:
         start, end = DashboardService.parse_date_range(date_range)
         if not start or not end:
             return rows
-        return [row for row in rows if getattr(row, key, None) and start <= getattr(row, key) <= end]
+        return [
+            row
+            for row in rows
+            if getattr(row, key, None)
+            and start <= app_datetime_to_utc(getattr(row, key)) <= end
+        ]
 
     @staticmethod
     def compare(current, previous) -> str:
@@ -255,14 +287,31 @@ class DashboardService:
         return bool(value and value.year == month.year and value.month == month.month)
 
     @staticmethod
-    def asset_month_trend(assets: list[Asset], mode: str, now: datetime) -> list[float]:
+    def asset_month_trend(
+        assets: list[Asset],
+        mode: str,
+        now: datetime,
+        residual_config: dict | None = None,
+    ) -> list[float]:
         rows = []
         for month in DashboardService.last_months(5, now):
             month_assets = [asset for asset in assets if DashboardService.in_month(asset.created_at, month)]
             if mode == "value":
                 rows.append(sum(float(asset.purchase_price or 0) for asset in month_assets))
             elif mode == "net":
-                rows.append(round(sum(float(asset.purchase_price or 0) for asset in month_assets) * 0.68))
+                rows.append(
+                    round(
+                        sum(
+                            AssetResidualService.calculate_asset(
+                                asset,
+                                as_of=now,
+                                residual_config=residual_config,
+                            )
+                            for asset in month_assets
+                        ),
+                        2,
+                    )
+                )
             else:
                 rows.append(len(month_assets))
         return rows
@@ -386,7 +435,7 @@ class DashboardService:
             return asset.purchase_date.replace(month=2, day=28, year=asset.purchase_date.year + years)
 
     @staticmethod
-    def resolve_retirement_years(asset: Asset, products: list[ProductCatalog]) -> int:
+    def resolve_retirement_years(asset: Asset, products: list[ProductCatalog] | dict[str, int]) -> int:
         config = asset.config or {}
         if config.get("retirement_years"):
             return int(config["retirement_years"])
@@ -401,27 +450,21 @@ class DashboardService:
         return 0
 
     @staticmethod
-    def product_retirement_index(products: list[ProductCatalog]) -> dict[tuple[str, str, str], int]:
-        rows: dict[tuple[str, str, str], int] = {}
+    def product_retirement_index(products: list[ProductCatalog]) -> dict[str, int]:
+        rows: dict[str, int] = {}
         for product in products:
             years = int(product.retirement_years or 0)
             if not years:
                 continue
             name = DashboardService.normalize_text(product.product_name)
-            model = DashboardService.normalize_text(product.model)
-            brand = DashboardService.normalize_text(product.brand)
-            if not name or not model:
+            if not name:
                 continue
-            rows[(name, model, brand)] = years
-            rows.setdefault((name, model, ""), years)
+            rows[name] = years
         return rows
 
     @staticmethod
-    def product_lookup_keys(asset: Asset) -> list[tuple[str, str, str]]:
-        name = DashboardService.normalize_text(asset.name)
-        model = DashboardService.normalize_text(asset.model)
-        brand = DashboardService.normalize_text(asset.brand)
-        return [(name, model, brand), (name, model, "")]
+    def product_lookup_keys(asset: Asset) -> list[str]:
+        return [DashboardService.normalize_text(asset.name)]
 
     @staticmethod
     def normalize_text(value: str | None) -> str:
@@ -429,10 +472,7 @@ class DashboardService:
 
     @staticmethod
     def product_matches_asset(product: ProductCatalog, asset: Asset) -> bool:
-        same_name = (product.product_name or "").strip().lower() == (asset.name or "").strip().lower()
-        same_model = (product.model or "").strip().lower() == (asset.model or "").strip().lower()
-        same_brand = not product.brand or not asset.brand or product.brand.strip().lower() == asset.brand.strip().lower()
-        return same_name and same_model and same_brand
+        return DashboardService.normalize_text(product.product_name) == DashboardService.normalize_text(asset.name)
 
     @staticmethod
     def retirement_month_trend(assets: list[Asset], products: list[ProductCatalog], now: datetime) -> list[int]:

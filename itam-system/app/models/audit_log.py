@@ -1,8 +1,7 @@
-from datetime import datetime
-
-from sqlalchemy import Column, DateTime, Integer, String, Text
+from sqlalchemy import Column, Integer, String, Text
 
 from app.core.database import Base
+from app.core.time import UTCDateTime, utc_now
 
 
 class AssetChangeLog(Base):
@@ -16,7 +15,7 @@ class AssetChangeLog(Base):
     new_value = Column(Text, nullable=True)
     operator = Column(String(128), nullable=False, default="system", index=True)
     source = Column(String(64), nullable=False, default="asset_update", index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(UTCDateTime, default=utc_now, nullable=False, index=True)
 
 
 class OperationAuditLog(Base):
@@ -30,4 +29,4 @@ class OperationAuditLog(Base):
     operator = Column(String(128), nullable=False, default="system", index=True)
     summary = Column(String(255), nullable=True)
     detail = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(UTCDateTime, default=utc_now, nullable=False, index=True)

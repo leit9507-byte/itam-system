@@ -1,5 +1,5 @@
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 
 from openpyxl import load_workbook
@@ -7,9 +7,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from starlette.requests import Request
 
+from app.core.time import app_datetime_to_utc, app_day_bounds, utc_now
 from app.core.database import Base
 import app.models  # noqa: F401
+from fastapi import HTTPException
 from app.models.asset import Asset
+from app.models.audit_log import AssetChangeLog, OperationAuditLog
 from app.models.checkout import AssetCheckout
 from app.models.company import Company
 from app.models.lifecycle import Lifecycle
@@ -23,7 +26,7 @@ from app.models.user import UserDirectory
 from app.api.stocktake import StocktakeItemSubmit, submit_item
 from app.api.company import list_companies, list_company_assets
 from app.core.schema_compat import current_timestamp_sql
-from app.schemas.asset import AssetBatchImport, AssetBatchUpdateCreate, AssetImportRow, AssetUpdate
+from app.schemas.asset import AssetBatchImport, AssetBatchUpdateCreate, AssetCreate, AssetImportRow, AssetUpdate
 from app.schemas.purchase import PurchaseAcceptanceReceive
 from app.schemas.repair import RepairCreate
 from app.schemas.user import UserPermissionUpdate, UserUpsert
@@ -35,8 +38,13 @@ from app.services.purchase_service import PurchaseService
 from app.services.repair_service import RepairService
 from app.services.scrap_service import ScrapService
 from app.services.todo_service import TodoService
-from app.api.product import batch_update_product_retirement_years, ensure_seed
-from app.schemas.product import ProductBatchRetirementYearsUpdate
+from app.api.product import (
+    batch_update_product_retirement_years,
+    create_product,
+    ensure_seed,
+    update_product,
+)
+from app.schemas.product import ProductBatchRetirementYearsUpdate, ProductUpsert
 
 
 class CoreWorkflowTest(unittest.TestCase):
@@ -56,6 +64,46 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertTrue(hasattr(app.models, "Company"))
         self.assertTrue(hasattr(app.models, "Location"))
         self.assertTrue(hasattr(app.models, "ScrapRequest"))
+
+    def test_timezone_free_api_datetime_uses_app_timezone(self):
+        payload = AssetCreate(
+            name="时区测试设备",
+            category="测试",
+            purchase_date=datetime(2026, 7, 1, 9, 30),
+        )
+
+        self.assertEqual(payload.purchase_date, datetime(2026, 7, 1, 1, 30, tzinfo=timezone.utc))
+
+    def test_offset_api_datetime_is_normalized_to_utc(self):
+        source_timezone = timezone(timedelta(hours=-4))
+        payload = AssetCreate(
+            name="时区测试设备",
+            category="测试",
+            purchase_date=datetime(2026, 7, 1, 9, 30, tzinfo=source_timezone),
+        )
+
+        self.assertEqual(payload.purchase_date, datetime(2026, 7, 1, 13, 30, tzinfo=timezone.utc))
+
+    def test_utc_datetime_round_trip_is_timezone_aware(self):
+        asset = Asset(
+            asset_id="TIMEZONE-ORM-001",
+            asset_no="TIMEZONE-ORM-001",
+            name="时区测试设备",
+            category="测试",
+            status="in_stock",
+            created_at=datetime(2026, 7, 1, 9, 30, tzinfo=timezone(timedelta(hours=8))),
+        )
+        self.db.add(asset)
+        self.db.commit()
+        self.db.refresh(asset)
+
+        self.assertEqual(asset.created_at, datetime(2026, 7, 1, 1, 30, tzinfo=timezone.utc))
+
+    def test_app_day_bounds_are_converted_to_utc(self):
+        start, end = app_day_bounds(date(2026, 7, 1))
+
+        self.assertEqual(start, datetime(2026, 6, 30, 16, 0, tzinfo=timezone.utc))
+        self.assertEqual(end, datetime(2026, 7, 1, 15, 59, 59, 999999, tzinfo=timezone.utc))
 
     def test_batch_product_retirement_years_updates_products_and_matching_assets(self):
         products = [
@@ -88,6 +136,81 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(assets[0].config["retirement_years"], 6)
         self.assertEqual(assets[1].config["retirement_years"], 6)
         self.assertNotIn("retirement_years", assets[2].config)
+
+    def test_product_update_preserves_asset_purchase_price_and_records_audit(self):
+        product = ProductCatalog(
+            product_name="Reference Laptop",
+            device_type="Laptop",
+            brand="Old Brand",
+            model="Old Model",
+            unit_price=5000,
+        )
+        asset = Asset(
+            asset_id="PRODUCT-SYNC-001",
+            asset_no="PRODUCT-SYNC-001",
+            name=" reference laptop ",
+            category="Legacy",
+            brand="Legacy Brand",
+            model="Legacy Model",
+            purchase_price=12888,
+            status="in_stock",
+            config={},
+        )
+        self.db.add_all([product, asset])
+        self.db.commit()
+        DashboardService.enterprise(self.db, {"role": "admin"})
+        request = Request({"type": "http", "method": "PUT", "path": f"/catalog/products/{product.id}", "headers": []})
+        request.state.user = {"display_name": "产品管理员", "role": "admin"}
+
+        update_product(
+            product.id,
+            ProductUpsert(
+                product_name="Reference Laptop",
+                device_type="Laptop",
+                brand="New Brand",
+                model="New Model",
+                spec="32GB / 1TB",
+                unit_price=6999,
+                retirement_years=6,
+            ),
+            request,
+            self.db,
+        )
+
+        self.db.refresh(asset)
+        self.assertEqual(float(asset.purchase_price), 12888)
+        self.assertEqual(asset.brand, "New Brand")
+        self.assertEqual(asset.model, "New Model")
+        self.assertEqual(asset.config["retirement_years"], 6)
+        self.assertEqual(DashboardService._cache, {})
+        self.assertTrue(
+            self.db.query(OperationAuditLog)
+            .filter(
+                OperationAuditLog.action == "update_product",
+                OperationAuditLog.operator == "产品管理员(admin)",
+            )
+            .first()
+        )
+        self.assertFalse(
+            self.db.query(AssetChangeLog)
+            .filter(AssetChangeLog.asset_id == asset.asset_id, AssetChangeLog.field_name == "purchase_price")
+            .first()
+        )
+
+    def test_product_create_rejects_duplicate_normalized_name(self):
+        self.db.add(ProductCatalog(product_name="ThinkPad X1", device_type="Laptop"))
+        self.db.commit()
+        request = Request({"type": "http", "method": "POST", "path": "/catalog/products", "headers": []})
+        request.state.user = {"display_name": "产品管理员", "role": "admin"}
+
+        with self.assertRaises(HTTPException) as raised:
+            create_product(
+                ProductUpsert(product_name="  thinkpad x1  ", device_type="Laptop"),
+                request,
+                self.db,
+            )
+
+        self.assertEqual(raised.exception.status_code, 409)
 
     def add_asset(self, asset_id="ITAM-000001", dept_id="D1", status="in_stock"):
         asset = Asset(
@@ -343,14 +466,14 @@ class CoreWorkflowTest(unittest.TestCase):
             RepairRecord(
                 repair_no="RP-2026-0001",
                 asset_id=asset.asset_id,
-                repair_time=datetime.utcnow(),
+                repair_time=utc_now(),
                 fault_reason="Power",
                 operator="tester",
                 status="维修中",
             )
         )
         self.db.commit()
-        payload = RepairCreate(asset_id=asset.asset_id, repair_time=datetime.utcnow(), fault_reason="Screen")
+        payload = RepairCreate(asset_id=asset.asset_id, repair_time=utc_now(), fault_reason="Screen")
         with self.assertRaisesRegex(ValueError, "active repair"):
             RepairService.create_record(self.db, payload, {"role": "admin"})
 
@@ -365,9 +488,30 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertTrue(any(item["name"] == "库存中" and item["value"] == 1 for item in result["lifecycleDistribution"]))
         self.assertTrue(any(item["name"] == "笔记本电脑" and item["value"] == 2 for item in result["categoryDistribution"]))
 
+    def test_enterprise_dashboard_net_value_uses_residual_rules(self):
+        asset = Asset(
+            asset_id="ITAM-DASH-NET-1",
+            asset_no="ITAM-DASH-NET-1",
+            name="Residual asset",
+            category="Laptop",
+            status="in_stock",
+            purchase_price=10000,
+            purchase_date=datetime(2024, 1, 1),
+            config={"retirement_years": 5},
+        )
+        self.db.add(asset)
+        self.db.commit()
+
+        result = DashboardService.enterprise(self.db, {"role": "admin"})
+        metrics = {item["label"]: item for item in result["metrics"]}
+        expected = AssetResidualService.calculate_asset(asset, as_of=utc_now(), db=self.db)
+
+        self.assertAlmostEqual(metrics["资产净值"]["value"], expected, places=2)
+        self.assertEqual(metrics["资产净值"]["change"], "按残值规则")
+
     def test_dashboard_product_retirement_index_matches_asset(self):
-        product = ProductCatalog(product_name="ThinkPad X1 Carbon", device_type="Laptop", brand="Lenovo", model="Gen 12", retirement_years=4)
-        asset = Asset(asset_id="ITAM-RET-001", name="ThinkPad X1 Carbon", brand="Lenovo", model="Gen 12")
+        product = ProductCatalog(product_name="ThinkPad X1 Carbon", device_type="Laptop", retirement_years=4)
+        asset = Asset(asset_id="ITAM-RET-001", name="thinkpad x1 carbon", brand="Other", model="Different")
 
         product_index = DashboardService.product_retirement_index([product])
 
@@ -582,8 +726,8 @@ class CoreWorkflowTest(unittest.TestCase):
             }
         )
 
-        self.assertEqual(row.status_time, datetime(2026, 7, 1, 9, 30))
-        self.assertEqual(row.borrow_due_date, datetime(2026, 7, 31, 18, 0))
+        self.assertEqual(row.status_time, app_datetime_to_utc(datetime(2026, 7, 1, 9, 30)))
+        self.assertEqual(row.borrow_due_date, app_datetime_to_utc(datetime(2026, 7, 31, 18, 0)))
 
     def test_import_template_contains_scan_codes_and_correct_status_column(self):
         workbook = load_workbook(BytesIO(AssetService.build_import_template()))
@@ -641,7 +785,8 @@ class CoreWorkflowTest(unittest.TestCase):
         )
         scraps = self.db.query(ScrapRequest).filter(ScrapRequest.asset_id == "OLD-SCRAP-QR-001").all()
         self.assertEqual(len(scraps), 1)
-        self.assertEqual(scraps[0].status, "待处置")
+        self.assertEqual(scraps[0].status, "已处置")
+        self.assertEqual(scraps[0].disposal_method, "报废")
         self.assertTrue(scraps[0].retirement_flow_no)
 
     def test_import_ready_scrap_does_not_create_disposal_record(self):
@@ -691,8 +836,8 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(first["checkout_records_created"], 1)
         self.assertEqual(second["checkout_records_created"], 0)
         self.assertEqual(checkout.checkout_type, "borrowed")
-        self.assertEqual(checkout.checked_out_at, status_time)
-        self.assertEqual(checkout.due_date, due_date)
+        self.assertEqual(checkout.checked_out_at, app_datetime_to_utc(status_time))
+        self.assertEqual(checkout.due_date, app_datetime_to_utc(due_date))
         self.assertEqual(checkout.status, "open")
 
     def test_import_creates_repair_workflow_without_duplicates(self):
@@ -717,7 +862,7 @@ class CoreWorkflowTest(unittest.TestCase):
 
         self.assertEqual(first["repair_records_created"], 1)
         self.assertEqual(second["repair_records_created"], 0)
-        self.assertEqual(repair.repair_time, status_time)
+        self.assertEqual(repair.repair_time, app_datetime_to_utc(status_time))
         self.assertEqual(repair.status, "维修中")
         self.assertEqual(repair.fault_reason, "屏幕无显示")
 
@@ -745,12 +890,36 @@ class CoreWorkflowTest(unittest.TestCase):
 
         self.assertEqual(result["scrap_requests_created"], 1)
         self.assertEqual(request.status, "已处置")
-        self.assertEqual(request.retirement_date, status_time)
-        self.assertEqual(request.disposed_at, status_time)
+        self.assertEqual(request.retirement_date, app_datetime_to_utc(status_time))
+        self.assertEqual(request.disposed_at, app_datetime_to_utc(status_time))
         self.assertEqual(request.disposal_method, "员工领用")
         self.assertEqual(request.retirement_approval_no, "RT-LEGACY-001")
         self.assertEqual(request.dispose_recipient_name, "张三")
         self.assertIn("历史处置记录", request.disposal_remark)
+
+    def test_import_scrapped_asset_creates_completed_scrap_disposal_record(self):
+        status_time = datetime(2026, 7, 3, 12, 0)
+        result = AssetService.import_assets(
+            self.db,
+            AssetBatchImport(
+                items=[
+                    AssetImportRow(
+                        asset_id="SCRAPPED-IMPORT-001",
+                        name="历史报废设备",
+                        category="显示器",
+                        status="scrapped",
+                        status_time=status_time,
+                    )
+                ]
+            ),
+        )
+        request = self.db.query(ScrapRequest).filter(ScrapRequest.asset_id == "SCRAPPED-IMPORT-001").one()
+
+        self.assertEqual(result["scrap_requests_created"], 1)
+        self.assertEqual(request.status, "已处置")
+        self.assertEqual(request.disposal_method, "报废")
+        self.assertEqual(request.retirement_date, app_datetime_to_utc(status_time))
+        self.assertEqual(request.disposed_at, app_datetime_to_utc(status_time))
 
     def test_import_scan_binding_conflict_rolls_back_asset(self):
         self.add_asset(asset_id="BOUND-ASSET-001")

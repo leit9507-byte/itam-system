@@ -1,8 +1,7 @@
-from datetime import datetime
-
-from sqlalchemy import Column, DateTime, Integer, String, Text
+from sqlalchemy import Column, Integer, String, Text
 
 from app.core.database import Base
+from app.core.time import UTCDateTime, utc_now
 
 
 class AuditResponse(Base):
@@ -16,5 +15,5 @@ class AuditResponse(Base):
     decision = Column(String(32), nullable=False, default="pending")
     reason = Column(Text, nullable=True)
     responder = Column(String(128), nullable=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(UTCDateTime, default=utc_now, onupdate=utc_now, nullable=False)
+    created_at = Column(UTCDateTime, default=utc_now, nullable=False)

@@ -1,8 +1,7 @@
-from datetime import datetime
-
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, ForeignKey, Integer, String, Text
 
 from app.core.database import Base
+from app.core.time import UTCDateTime, utc_now
 
 
 class Lifecycle(Base):
@@ -15,4 +14,4 @@ class Lifecycle(Base):
     to_status = Column(String(32), nullable=True)
     operator = Column(String(64), nullable=False, default="system")
     remark = Column(Text, nullable=True)
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    timestamp = Column(UTCDateTime, default=utc_now, nullable=False, index=True)

@@ -1,9 +1,8 @@
-from datetime import datetime
-
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.time import UTCDateTime, utc_now
 
 
 class StocktakeTask(Base):
@@ -15,8 +14,8 @@ class StocktakeTask(Base):
     target = Column(String(128), nullable=True)
     owner = Column(String(128), nullable=True)
     status = Column(String(32), nullable=False, default="待开始")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(UTCDateTime, default=utc_now, nullable=False, index=True)
+    updated_at = Column(UTCDateTime, default=utc_now, onupdate=utc_now, nullable=False, index=True)
 
     items = relationship("StocktakeItem", back_populates="task", cascade="all, delete-orphan")
 
@@ -37,12 +36,12 @@ class StocktakeItem(Base):
     asset_info_updated = Column(Boolean, default=False, nullable=False)
     result = Column(String(32), nullable=False, default="未盘")
     checker = Column(String(128), nullable=True)
-    checked_at = Column(DateTime, nullable=True)
+    checked_at = Column(UTCDateTime, nullable=True)
     remark = Column(Text, nullable=True)
     review_status = Column(String(32), nullable=False, default="无需复核", index=True)
     review_note = Column(Text, nullable=True)
     reviewed_by = Column(String(128), nullable=True)
-    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_at = Column(UTCDateTime, nullable=True)
 
     task = relationship("StocktakeTask", back_populates="items")
 
@@ -59,4 +58,4 @@ class StocktakeScanLog(Base):
     client_source = Column(String(64), nullable=True, index=True)
     operator = Column(String(128), nullable=True, index=True)
     message = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(UTCDateTime, default=utc_now, nullable=False, index=True)

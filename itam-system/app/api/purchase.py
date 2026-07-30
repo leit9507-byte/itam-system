@@ -1,10 +1,11 @@
-from datetime import date, datetime, time
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import operator_from_request, user_context_from_request
+from app.core.time import app_day_bounds
 from app.schemas.asset import AssetOut
 from app.schemas.purchase import PurchaseAcceptanceReceive, PurchaseCreate, PurchaseOut, PurchaseReceive
 from app.services.purchase_service import PurchaseService
@@ -22,8 +23,8 @@ def list_purchases(
     request: Request = None,
     db: Session = Depends(get_db),
 ):
-    start = datetime.combine(created_from, time.min) if created_from else None
-    end = datetime.combine(created_to, time.max) if created_to else None
+    start = app_day_bounds(created_from)[0] if created_from else None
+    end = app_day_bounds(created_to)[1] if created_to else None
     result = PurchaseService.list_purchases(db, start, end, page, page_size, user_context_from_request(request))
     return {
         **result,

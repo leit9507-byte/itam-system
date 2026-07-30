@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.time import TimezoneModel
 from app.core.database import get_db
 from app.core.security import operator_from_request, user_context_from_request
 from app.services.feishu_jsapi_service import FeishuJsapiService
@@ -11,14 +11,14 @@ from app.services.scan_binding_service import ScanBindingService
 router = APIRouter(prefix="/scan-bindings", tags=["ScanBinding"])
 
 
-class ScanBindPayload(BaseModel):
+class ScanBindPayload(TimezoneModel):
     scan_raw: str
     scan_type: str | None = "generic"
     remark: str | None = None
     force: bool = False
 
 
-class ScanResolvePayload(BaseModel):
+class ScanResolvePayload(TimezoneModel):
     scan_raw: str
 
 

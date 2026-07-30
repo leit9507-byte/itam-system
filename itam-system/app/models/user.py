@@ -1,8 +1,7 @@
-from datetime import datetime
-
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, JSON, String
 
 from app.core.database import Base
+from app.core.time import UTCDateTime, utc_now
 
 
 class UserDirectory(Base):
@@ -20,12 +19,12 @@ class UserDirectory(Base):
     status = Column(String(32), default="active", nullable=False)
     password_hash = Column(String(255), nullable=True)
     failed_login_count = Column(Integer, default=0, nullable=False)
-    locked_until = Column(DateTime, nullable=True)
+    locked_until = Column(UTCDateTime, nullable=True)
     asset_assignment_required = Column(Boolean, default=True, nullable=False)
     external_id = Column(String(128), nullable=True, index=True)
-    last_login_at = Column(DateTime, nullable=True)
-    last_synced_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_login_at = Column(UTCDateTime, nullable=True)
+    last_synced_at = Column(UTCDateTime, nullable=True)
+    created_at = Column(UTCDateTime, default=utc_now, nullable=False)
 
 
 class IdentityProviderConfig(Base):
@@ -38,7 +37,7 @@ class IdentityProviderConfig(Base):
     config = Column(JSON, nullable=True)
     last_test_status = Column(String(32), nullable=True)
     last_test_message = Column(String(255), nullable=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(UTCDateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
 
 class RolePermission(Base):

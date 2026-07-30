@@ -1,9 +1,11 @@
+from app.core.time import TimezoneModel
+
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 
 
-class LocationSave(BaseModel):
+class LocationSave(TimezoneModel):
     name: str
     code: str | None = None
     type: str = "办公位置"
@@ -12,7 +14,7 @@ class LocationSave(BaseModel):
     status: str = "启用"
 
 
-class LocationOut(BaseModel):
+class LocationOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int

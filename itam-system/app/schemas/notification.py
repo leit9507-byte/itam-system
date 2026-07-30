@@ -1,16 +1,18 @@
+from app.core.time import TimezoneModel
+
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 
-class NotificationSettingSave(BaseModel):
+class NotificationSettingSave(TimezoneModel):
     enabled: bool = False
     webhook_url: str | None = None
     secret: str | None = None
     event_types: dict[str, bool] = Field(default_factory=dict)
 
 
-class NotificationSettingOut(BaseModel):
+class NotificationSettingOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -24,5 +26,5 @@ class NotificationSettingOut(BaseModel):
     updated_at: datetime
 
 
-class NotificationTestRequest(BaseModel):
+class NotificationTestRequest(TimezoneModel):
     message: str = Field(default="资产管理系统消息通知测试")

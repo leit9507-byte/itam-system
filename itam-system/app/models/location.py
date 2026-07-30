@@ -1,8 +1,7 @@
-from datetime import datetime
-
-from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy import Column, Integer, String
 
 from app.core.database import Base
+from app.core.time import UTCDateTime, utc_now
 
 
 class Location(Base):
@@ -15,5 +14,5 @@ class Location(Base):
     owner_dept = Column(String(128), nullable=True)
     description = Column(String(255), nullable=True)
     status = Column(String(32), default="启用", nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(UTCDateTime, default=utc_now, nullable=False)
+    updated_at = Column(UTCDateTime, default=utc_now, onupdate=utc_now, nullable=False)

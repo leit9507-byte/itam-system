@@ -1,10 +1,12 @@
+from app.core.time import TimezoneModel
+
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 
-class AssetCreate(BaseModel):
+class AssetCreate(TimezoneModel):
     asset_no: Optional[str] = None
     company: Optional[str] = None
     name: str
@@ -26,7 +28,7 @@ class AssetCreate(BaseModel):
     remark: Optional[str] = None
 
 
-class AssetStatusChange(BaseModel):
+class AssetStatusChange(TimezoneModel):
     to_status: str
     operator: str = "system"
     owner_user_id: Optional[str] = None
@@ -36,7 +38,7 @@ class AssetStatusChange(BaseModel):
     remark: Optional[str] = None
 
 
-class AssetCheckoutCreate(BaseModel):
+class AssetCheckoutCreate(TimezoneModel):
     checkout_type: str = "in_use"
     owner_user_id: Optional[str] = None
     dept_id: Optional[str] = None
@@ -45,7 +47,7 @@ class AssetCheckoutCreate(BaseModel):
     remark: Optional[str] = None
 
 
-class AssetCheckinCreate(BaseModel):
+class AssetCheckinCreate(TimezoneModel):
     location: Optional[str] = None
     remark: Optional[str] = None
 
@@ -58,7 +60,7 @@ class AssetBatchCheckinCreate(AssetCheckinCreate):
     asset_ids: list[str]
 
 
-class AssetBatchRepairCreate(BaseModel):
+class AssetBatchRepairCreate(TimezoneModel):
     asset_ids: list[str]
     repair_time: datetime
     repair_type: str = "普通维修"
@@ -69,7 +71,7 @@ class AssetBatchRepairCreate(BaseModel):
     remark: Optional[str] = None
 
 
-class AssetCheckoutOut(BaseModel):
+class AssetCheckoutOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -90,7 +92,7 @@ class AssetCheckoutOut(BaseModel):
     checkin_remark: Optional[str] = None
 
 
-class AssetUpdate(BaseModel):
+class AssetUpdate(TimezoneModel):
     asset_id: Optional[str] = None
     asset_no: Optional[str] = None
     company: Optional[str] = None
@@ -113,12 +115,12 @@ class AssetUpdate(BaseModel):
     remark: Optional[str] = None
 
 
-class AssetBatchUpdateCreate(BaseModel):
+class AssetBatchUpdateCreate(TimezoneModel):
     asset_ids: list[str]
     updates: AssetUpdate
 
 
-class AssetOut(BaseModel):
+class AssetOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     display_id: Optional[int] = None
@@ -168,25 +170,25 @@ class AssetImportRow(AssetCreate):
     dispose_recipient_name: Optional[str] = None
 
 
-class AssetBatchImport(BaseModel):
+class AssetBatchImport(TimezoneModel):
     operator: str = "asset-import"
     overwrite: bool = False
     items: list[AssetImportRow]
 
 
-class AssetTextImport(BaseModel):
+class AssetTextImport(TimezoneModel):
     operator: str = "asset-import"
     overwrite: bool = False
     content: str
 
 
-class AssetImportError(BaseModel):
+class AssetImportError(TimezoneModel):
     row: int
     message: str
     data: Dict[str, Any] = Field(default_factory=dict)
 
 
-class AssetImportResult(BaseModel):
+class AssetImportResult(TimezoneModel):
     created: int
     updated: int = 0
     skipped: int

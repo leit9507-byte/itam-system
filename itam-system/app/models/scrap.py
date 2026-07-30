@@ -1,8 +1,7 @@
-from datetime import datetime
-
-from sqlalchemy import Column, DateTime, Integer, Numeric, String, Text
+from sqlalchemy import Column, Integer, Numeric, String, Text
 
 from app.core.database import Base
+from app.core.time import UTCDateTime, utc_now
 
 
 class ScrapRequest(Base):
@@ -22,13 +21,13 @@ class ScrapRequest(Base):
     dept_id = Column(String(64), nullable=True)
     location = Column(String(128), nullable=True)
     purchase_price = Column(Numeric(12, 2, asdecimal=False), default=0)
-    purchase_date = Column(DateTime, nullable=True)
+    purchase_date = Column(UTCDateTime, nullable=True)
     purchase_approval_no = Column(String(128), nullable=True)
     purchase_supplier_name = Column(String(128), nullable=True)
     applicant = Column(String(128), nullable=True)
     reason = Column(Text, nullable=True)
     disposal_method = Column(String(64), nullable=True)
-    retirement_date = Column(DateTime, nullable=True)
+    retirement_date = Column(UTCDateTime, nullable=True)
     retirement_approval_no = Column(String(128), nullable=True)
     estimated_residual_value = Column(Numeric(12, 2, asdecimal=False), default=0)
     final_residual_value = Column(Numeric(12, 2, asdecimal=False), default=0)
@@ -36,8 +35,8 @@ class ScrapRequest(Base):
     dispose_recipient_user_id = Column(String(128), nullable=True)
     dispose_recipient_name = Column(String(128), nullable=True)
     disposed_by = Column(String(128), nullable=True)
-    disposed_at = Column(DateTime, nullable=True)
+    disposed_at = Column(UTCDateTime, nullable=True)
     status = Column(String(32), default="待处置", nullable=False, index=True)
     approver = Column(String(128), nullable=True)
-    approved_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    approved_at = Column(UTCDateTime, nullable=True)
+    created_at = Column(UTCDateTime, default=utc_now, nullable=False)

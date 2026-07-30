@@ -1,10 +1,12 @@
+from app.core.time import TimezoneModel
+
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 
-class RepairCreate(BaseModel):
+class RepairCreate(TimezoneModel):
     asset_id: str
     repair_time: datetime
     repair_type: str = "普通维修"
@@ -15,7 +17,7 @@ class RepairCreate(BaseModel):
     remark: Optional[str] = None
 
 
-class RepairFinish(BaseModel):
+class RepairFinish(TimezoneModel):
     finish_time: Optional[datetime] = None
     next_status: str = "in_stock"
     repair_result: str = "已修好"
@@ -23,13 +25,13 @@ class RepairFinish(BaseModel):
     remark: Optional[str] = None
 
 
-class RepairFaultTypeSave(BaseModel):
+class RepairFaultTypeSave(TimezoneModel):
     name: str
     description: Optional[str] = None
     enabled: str = "启用"
 
 
-class RepairFaultTypeOut(BaseModel):
+class RepairFaultTypeOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -39,7 +41,7 @@ class RepairFaultTypeOut(BaseModel):
     created_at: datetime
 
 
-class RepairOut(BaseModel):
+class RepairOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int

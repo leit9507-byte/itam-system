@@ -58,7 +58,7 @@
           <el-form-item label="用户名" required><el-input v-model.trim="dbForm.username" /></el-form-item>
           <el-form-item label="密码"><el-input v-model="dbForm.password" show-password placeholder="留空表示空密码；保存后会隐藏" /></el-form-item>
           <el-form-item label="字符集"><el-input v-model.trim="dbForm.charset" placeholder="utf8mb4" /></el-form-item>
-          <el-form-item label="时区"><el-input v-model.trim="dbForm.timezone" placeholder="+08:00" /></el-form-item>
+          <el-form-item label="数据库时区（UTC）"><el-input v-model.trim="dbForm.timezone" disabled /></el-form-item>
           <el-form-item label="连接超时"><el-input-number v-model="dbForm.connect_timeout" :min="1" :max="120" style="width: 100%" /></el-form-item>
           <el-form-item label="连接池大小"><el-input-number v-model="dbForm.pool_size" :min="1" :max="200" style="width: 100%" /></el-form-item>
           <el-form-item label="溢出连接数"><el-input-number v-model="dbForm.max_overflow" :min="0" :max="500" style="width: 100%" /></el-form-item>
@@ -131,7 +131,7 @@ function defaultDbForm() {
     username: '',
     password: '',
     charset: 'utf8mb4',
-    timezone: '+08:00',
+    timezone: '+00:00',
     pool_size: 10,
     max_overflow: 20,
     pool_recycle: 1800,
@@ -149,7 +149,7 @@ function normalizeDbForm(config = {}) {
     username: config.username || '',
     password: config.password || '',
     charset: config.charset || 'utf8mb4',
-    timezone: config.timezone || '+08:00',
+    timezone: '+00:00',
     pool_size: Number(config.pool_size || 10),
     max_overflow: Number(config.max_overflow || 20),
     pool_recycle: Number(config.pool_recycle || 1800),

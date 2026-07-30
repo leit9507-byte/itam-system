@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.core.time import utc_now
 from app.core.auth import secure_filename
 from app.core.config import get_settings
 from app.core.database import get_db
@@ -94,7 +95,7 @@ def archive_file(file_id: int, request: Request, db: Session = Depends(get_db)):
     if not can_access_asset(db, row.asset_id, user_context_from_request(request)):
         raise HTTPException(status_code=404, detail="file not found")
     row.status = "archived"
-    row.archived_at = datetime.utcnow()
+    row.archived_at = utc_now()
     AuditLogService.record_operation(db, "file", "archive", operator_from_request(request), "asset_attachment", str(row.id), f"归档附件 {row.filename}")
     db.commit()
     db.refresh(row)
@@ -124,7 +125,7 @@ def delete_file(file_id: int, request: Request, db: Session = Depends(get_db)):
     if not can_access_asset(db, row.asset_id, user_context_from_request(request)):
         raise HTTPException(status_code=404, detail="file not found")
     row.status = "deleted"
-    row.deleted_at = datetime.utcnow()
+    row.deleted_at = utc_now()
     AuditLogService.record_operation(db, "file", "delete", operator_from_request(request), "asset_attachment", str(row.id), f"删除附件 {row.filename}")
     db.commit()
     return {"ok": True}

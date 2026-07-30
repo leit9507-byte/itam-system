@@ -2,6 +2,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.core.time import utc_now
 from app.models.asset import Asset
 from app.models.purchase import Purchase
 from app.models.scrap import ScrapRequest
@@ -32,14 +33,14 @@ class SupplierService:
         if not row:
             row = db.query(Supplier).filter(Supplier.name == payload.name).first()
         if not row:
-            row = Supplier(supplier_no=SupplierService.generate_supplier_no(db), created_at=datetime.utcnow())
+            row = Supplier(supplier_no=SupplierService.generate_supplier_no(db), created_at=utc_now())
             db.add(row)
         row.name = payload.name
         row.contact = payload.contact
         row.phone = payload.phone
         row.level = payload.level
         row.status = payload.status
-        row.updated_at = datetime.utcnow()
+        row.updated_at = utc_now()
         db.commit()
         db.refresh(row)
         return SupplierService.with_stats(db, row)
@@ -57,8 +58,8 @@ class SupplierService:
             name=clean_name,
             level="普通",
             status="启用",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=utc_now(),
+            updated_at=utc_now(),
         )
         db.add(row)
         db.flush()

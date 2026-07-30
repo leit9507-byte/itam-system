@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.core.time import app_today, utc_now
 from app.core.security import can_view_all_data, is_department_manager, scoped_dept_id, scoped_user_identities
 from app.models.asset import Asset
 from app.models.repair import RepairRecord
@@ -221,7 +222,7 @@ class TodoService:
 
     @staticmethod
     def borrow_due_todos(assets: list[Asset]) -> list[dict]:
-        today = datetime.utcnow().date()
+        today = app_today()
         soon_deadline = today + timedelta(days=TodoService.BORROW_DUE_SOON_DAYS)
         rows = []
         for asset in assets:

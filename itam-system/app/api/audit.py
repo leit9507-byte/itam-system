@@ -3,7 +3,6 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
@@ -14,6 +13,7 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from sqlalchemy.orm import Session
 
+from app.core.time import TimezoneModel, app_now, format_app_datetime, utc_now
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import operator_from_request, user_context_from_request
@@ -29,12 +29,12 @@ from app.services.notification_service import NotificationService
 router = APIRouter(prefix="/audit", tags=["Audit"])
 
 
-class AuditRunRequest(BaseModel):
+class AuditRunRequest(TimezoneModel):
     users: list[dict] = []
     notify: bool = False
 
 
-class AuditRulePayload(BaseModel):
+class AuditRulePayload(TimezoneModel):
     rule_code: str
     name: str
     severity: str = "medium"
@@ -44,7 +44,7 @@ class AuditRulePayload(BaseModel):
     threshold_days: int | None = None
 
 
-class AuditResponsePayload(BaseModel):
+class AuditResponsePayload(TimezoneModel):
     violation_key: str
     asset_id: str | None = None
     rule_code: str
@@ -297,7 +297,7 @@ def run_audit(request: Request, payload: AuditRunRequest | None = None, db: Sess
                 f"资产风险：{summary.get('asset', 0)} 条",
                 f"高风险：{len([item for item in violations if item.get('severity') == 'high'])} 条",
                 "处理建议：请进入审计中心查看明细并分派整改",
-                f"审计时间：{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}",
+                f"审计时间：{format_app_datetime()}",
             ],
         )
     return result
@@ -324,7 +324,7 @@ def get_audit_report_pdf(db: Session = Depends(get_db)):
 def generate_audit_pdf(result: dict) -> str:
     output_dir = Path(get_settings().upload_dir) / "reports"
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / f"audit_report_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.pdf"
+    output_path = output_dir / f"audit_report_{app_now().strftime('%Y%m%d%H%M%S')}.pdf"
 
     pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
     styles = getSampleStyleSheet()
@@ -344,7 +344,7 @@ def generate_audit_pdf(result: dict) -> str:
     )
     story = [
         Paragraph("ITAM 资产审计报告", title_style),
-        Paragraph(f"生成时间：{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC", body_style),
+        Paragraph(f"生成时间：{format_app_datetime()}", body_style),
         Spacer(1, 8),
     ]
 

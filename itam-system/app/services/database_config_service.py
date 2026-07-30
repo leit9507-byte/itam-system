@@ -54,7 +54,7 @@ def save_database_config(payload: dict) -> dict:
         "username": clean_string(payload.get("username")),
         "password": password or "",
         "charset": clean_string(payload.get("charset")) or "utf8mb4",
-        "timezone": clean_string(payload.get("timezone")) or "+08:00",
+        "timezone": "+00:00",
         "pool_size": int(payload.get("pool_size") or 10),
         "max_overflow": int(payload.get("max_overflow") or 20),
         "pool_recycle": int(payload.get("pool_recycle") or 1800),
@@ -120,6 +120,8 @@ def validate_config(data: dict) -> None:
     port = int(data.get("port") or 0)
     if port < 1 or port > 65535:
         raise ValueError("数据库端口不正确")
+    if clean_string(data.get("timezone")) not in {"", "+00:00", "UTC"}:
+        raise ValueError("数据库时区必须为 UTC（+00:00）")
 
 
 def scalar_or_empty(conn, statement: str) -> str:

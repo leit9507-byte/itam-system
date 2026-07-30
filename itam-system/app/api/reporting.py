@@ -1,5 +1,5 @@
 import csv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from io import BytesIO, StringIO
 from pathlib import Path
 
@@ -12,6 +12,7 @@ from reportlab.pdfgen import canvas
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.time import app_now, format_app_datetime, utc_now
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import can_view_all_data, scoped_dept_id, scoped_user_identities, operator_from_request, user_context_from_request
@@ -63,7 +64,7 @@ def list_audit_report_archives(request: Request, page: int = 1, page_size: int =
 def create_audit_report_archive(request: Request, db: Session = Depends(get_db)):
     asset_ids = set(scoped_asset_id_query(db, request))
     result = AuditEngine(db).run(asset_ids=asset_ids)
-    year = datetime.utcnow().year
+    year = app_now().year
     report_no = NumberService.next(db, f"audit_report:{year}", f"AR-{year}-", 6)
     output_dir = Path(get_settings().upload_dir) / "reports" / "audit-archives"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -83,7 +84,7 @@ def create_audit_report_archive(request: Request, db: Session = Depends(get_db))
 
     row = AuditReportArchive(
         report_no=report_no,
-        name=f"审计报告 {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
+        name=f"审计报告 {format_app_datetime(fmt='%Y-%m-%d %H:%M')}",
         report_type="audit",
         status="已生成",
         total_assets=int(result.get("total_assets") or 0),
@@ -198,7 +199,7 @@ def export_person_holdings_csv(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/overdue-borrowings.csv")
 def export_overdue_borrowings_csv(request: Request, db: Session = Depends(get_db)):
-    now = datetime.utcnow()
+    now = utc_now()
     scoped_asset_ids = scoped_asset_id_query(db, request)
     rows = []
     query = (
@@ -227,7 +228,7 @@ def export_overdue_borrowings_csv(request: Request, db: Session = Depends(get_db
 
 @router.get("/warranty-expiring.csv")
 def export_warranty_expiring_csv(request: Request, days: int = 90, db: Session = Depends(get_db)):
-    now = datetime.utcnow()
+    now = utc_now()
     end_at = now + timedelta(days=max(days, 0))
     rows = [
         [
@@ -302,7 +303,7 @@ def export_audit_report_excel(request: Request, db: Session = Depends(get_db)):
     output = BytesIO()
     workbook.save(output)
     output.seek(0)
-    filename = f"audit-report-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.xlsx"
+    filename = f"audit-report-{app_now().strftime('%Y%m%d%H%M%S')}.xlsx"
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -541,7 +542,7 @@ def style_sheet(sheet) -> None:
 
 
 def month_windows(count: int) -> list[tuple[str, datetime, datetime]]:
-    today = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    today = app_now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     starts = []
     current = today
     for _ in range(count - 1):
@@ -551,6 +552,10 @@ def month_windows(count: int) -> list[tuple[str, datetime, datetime]]:
     starts = list(reversed(starts))
     windows = []
     for start in starts:
-        end = datetime(start.year + 1, 1, 1) if start.month == 12 else datetime(start.year, start.month + 1, 1)
-        windows.append((start.strftime("%Y-%m"), start, end))
+        end = (
+            start.replace(year=start.year + 1, month=1)
+            if start.month == 12
+            else start.replace(month=start.month + 1)
+        )
+        windows.append((start.strftime("%Y-%m"), start.astimezone(timezone.utc), end.astimezone(timezone.utc)))
     return windows

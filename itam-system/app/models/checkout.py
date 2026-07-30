@@ -1,8 +1,7 @@
-from datetime import datetime
-
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, ForeignKey, Integer, String, Text
 
 from app.core.database import Base
+from app.core.time import UTCDateTime, utc_now
 
 
 class AssetCheckout(Base):
@@ -15,11 +14,11 @@ class AssetCheckout(Base):
     assignee_name = Column(String(128), nullable=True)
     dept_id = Column(String(64), nullable=True, index=True)
     location = Column(String(128), nullable=True)
-    due_date = Column(DateTime, nullable=True)
+    due_date = Column(UTCDateTime, nullable=True)
     status = Column(String(32), nullable=False, default="open", index=True)
-    checked_out_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    checked_out_at = Column(UTCDateTime, default=utc_now, nullable=False)
     checked_out_by = Column(String(64), nullable=False, default="system")
-    checked_in_at = Column(DateTime, nullable=True)
+    checked_in_at = Column(UTCDateTime, nullable=True)
     checked_in_by = Column(String(64), nullable=True)
     checkin_location = Column(String(128), nullable=True)
     remark = Column(Text, nullable=True)

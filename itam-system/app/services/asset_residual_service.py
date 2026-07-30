@@ -44,7 +44,11 @@ class AssetResidualService:
     @staticmethod
     def save_config(db: Session, config: dict, operator: str = "system") -> dict:
         normalized = AssetResidualService.normalize_config(config)
-        return SystemSettingService.save_json(db, SystemSettingService.ASSET_RESIDUAL_KEY, normalized, operator)
+        result = SystemSettingService.save_json(db, SystemSettingService.ASSET_RESIDUAL_KEY, normalized, operator)
+        from app.services.dashboard_service import DashboardService
+
+        DashboardService.invalidate()
+        return result
 
     @staticmethod
     def clamp_rate(value) -> float:

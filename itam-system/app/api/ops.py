@@ -7,10 +7,10 @@ import shutil
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
 from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
+from app.core.time import TimezoneModel, app_datetime_to_utc, app_today, utc_now
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.audit_log import OperationAuditLog
@@ -21,14 +21,14 @@ from app.services.database_config_service import current_database_config, save_d
 router = APIRouter(prefix="/ops", tags=["Operations"])
 
 
-class DatabaseConfigPayload(BaseModel):
+class DatabaseConfigPayload(TimezoneModel):
     host: str
     port: int = 3306
     database: str
     username: str
     password: str = ""
     charset: str = "utf8mb4"
-    timezone: str = "+08:00"
+    timezone: str = "+00:00"
     pool_size: int = 10
     max_overflow: int = 20
     pool_recycle: int = 1800
@@ -36,7 +36,7 @@ class DatabaseConfigPayload(BaseModel):
     connect_timeout: int = 10
 
 
-class DatabaseInitPayload(BaseModel):
+class DatabaseInitPayload(TimezoneModel):
     force: bool = False
 
 
@@ -60,7 +60,8 @@ def ops_health(db: Session = Depends(get_db)):
     disk = disk_usage(upload_dir)
     return {
         "service": "itam-system",
-        "checked_at": datetime.utcnow().isoformat(sep=" ", timespec="seconds"),
+        "checked_at": utc_now().isoformat(sep=" ", timespec="seconds"),
+        "timezone": {"storage": "UTC", "business": get_settings().app_timezone},
         "database": {"ok": database_ok, "message": database_message, "connections": connection_count},
         "upload_dir": {"path": str(upload_dir), "exists": upload_dir.exists(), "disk": disk},
         "scheduler": {"ldap_sync": "enabled"},
@@ -217,10 +218,10 @@ def export_operation_logs(
 def parse_log_datetime(value: str, fallback_time) -> datetime:
     clean = (value or "").strip()
     if not clean:
-        return datetime.combine(datetime.utcnow().date(), fallback_time)
+        return app_datetime_to_utc(datetime.combine(app_today(), fallback_time))
     if len(clean) == 10:
-        return datetime.combine(datetime.fromisoformat(clean).date(), fallback_time)
-    return datetime.fromisoformat(clean.replace("Z", "+00:00")).replace(tzinfo=None)
+        return app_datetime_to_utc(datetime.combine(datetime.fromisoformat(clean).date(), fallback_time))
+    return app_datetime_to_utc(datetime.fromisoformat(clean.replace("Z", "+00:00")))
 
 
 @router.get("/jobs")

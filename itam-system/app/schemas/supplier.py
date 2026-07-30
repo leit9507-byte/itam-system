@@ -1,10 +1,12 @@
+from app.core.time import TimezoneModel
+
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 
 
-class SupplierSave(BaseModel):
+class SupplierSave(TimezoneModel):
     name: str
     contact: Optional[str] = None
     phone: Optional[str] = None
@@ -12,7 +14,7 @@ class SupplierSave(BaseModel):
     status: str = "启用"
 
 
-class SupplierOut(BaseModel):
+class SupplierOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -30,7 +32,7 @@ class SupplierOut(BaseModel):
     last_purchase_no: str = ""
 
 
-class SupplierDeviceOut(BaseModel):
+class SupplierDeviceOut(TimezoneModel):
     supplier_name: str
     purchase_no: str
     status: str

@@ -2,10 +2,11 @@ from collections import Counter, defaultdict
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.core.time import TimezoneModel
+from app.core.time import utc_now
 from app.core.database import get_db
 from app.models.asset import Asset
 from app.models.company import Company
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/company", tags=["Company"])
 DEFAULT_COMPANY = "未设置公司"
 
 
-class CompanySave(BaseModel):
+class CompanySave(TimezoneModel):
     name: str
     code: str | None = None
     contact: str | None = None
@@ -231,7 +232,7 @@ def update_company(company_id: int, payload: CompanySave, db: Session = Depends(
     company.code = payload.code
     company.contact = payload.contact
     company.status = payload.status
-    company.updated_at = datetime.utcnow()
+    company.updated_at = utc_now()
     db.query(Asset).filter(Asset.company == old_name).update({"company": new_name})
     db.commit()
     db.refresh(company)

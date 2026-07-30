@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.core.time import utc_now
 from app.core.database import get_db
 from app.core.security import can_view_all_data, is_department_manager, operator_from_request, scoped_dept_id, scoped_user_identities, user_context_from_request
 from app.models.asset import Asset
@@ -54,7 +55,7 @@ def list_items(
     if expiring_days is not None:
         from datetime import datetime, timedelta
 
-        query = query.filter(InventoryItem.expire_date.isnot(None), InventoryItem.expire_date <= datetime.utcnow() + timedelta(days=max(expiring_days, 0)))
+        query = query.filter(InventoryItem.expire_date.isnot(None), InventoryItem.expire_date <= utc_now() + timedelta(days=max(expiring_days, 0)))
     total = query.count()
     page = max(page, 1)
     page_size = min(max(page_size or 20, 1), 200)
@@ -231,7 +232,7 @@ def assign_license_seat(seat_id: int, payload: LicenseSeatAssign, request: Reque
     ledger_payload = InventoryLedgerCreate(action="assign", quantity=1, assignee_user_id=payload.assignee_user_id, assignee_name=payload.assignee_name, dept_id=payload.dept_id, asset_id=payload.asset_id, remark=payload.remark)
     validate_inventory_targets(db, ledger_payload, user_context)
     dept_id = resolve_assignment_dept(db, ledger_payload, item, user_context)
-    now = datetime.utcnow()
+    now = utc_now()
     seat.status = "assigned"
     seat.assignee_user_id = payload.assignee_user_id
     seat.assignee_name = payload.assignee_name or resolve_user_name(db, payload.assignee_user_id)
@@ -266,7 +267,7 @@ def return_license_seat(seat_id: int, payload: LicenseSeatReturn, request: Reque
     seat.dept_id = None
     seat.asset_id = None
     seat.assigned_at = None
-    seat.returned_at = datetime.utcnow()
+    seat.returned_at = utc_now()
     seat.remark = payload.remark
     sync_license_counts(db, item)
     db.commit()
@@ -360,7 +361,7 @@ def add_license_seats(db: Session, item: InventoryItem, count: int, requested_co
         next_index += 1
         if candidate not in existing_codes and candidate not in clean_codes:
             clean_codes.append(candidate)
-    now = datetime.utcnow()
+    now = utc_now()
     seats = [InventoryLicenseSeat(item_id=item.id, seat_code=code, status="available", remark=remark, created_at=now, updated_at=now) for code in clean_codes]
     db.add_all(seats)
     db.flush()
@@ -452,7 +453,7 @@ def update_component_installation(db: Session, item: InventoryItem, payload: Inv
                 quantity=0,
                 dept_id=payload.dept_id or (asset.dept_id if asset else None) or item.dept_id,
                 installed_by=operator,
-                installed_at=datetime.utcnow(),
+                installed_at=utc_now(),
             )
             db.add(relation)
         relation.quantity += quantity
@@ -558,7 +559,7 @@ def build_summary(db: Session, user_context: dict | None = None, item_type: str 
         if type_values:
             query = query.filter(InventoryItem.item_type.in_(type_values))
     rows = query.all()
-    expiring_deadline = datetime.utcnow() + timedelta(days=90)
+    expiring_deadline = utc_now() + timedelta(days=90)
     return {
         "total": len(rows),
         "license": sum(1 for item in rows if item.item_type == "license"),

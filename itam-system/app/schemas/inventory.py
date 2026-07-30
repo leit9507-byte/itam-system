@@ -1,10 +1,12 @@
+from app.core.time import TimezoneModel
+
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 
-class InventoryItemBase(BaseModel):
+class InventoryItemBase(TimezoneModel):
     item_type: str
     code: str
     name: str
@@ -28,7 +30,7 @@ class InventoryItemCreate(InventoryItemBase):
     pass
 
 
-class InventoryItemUpdate(BaseModel):
+class InventoryItemUpdate(TimezoneModel):
     item_type: Optional[str] = None
     code: Optional[str] = None
     name: Optional[str] = None
@@ -58,7 +60,7 @@ class InventoryItemOut(InventoryItemBase):
     updated_at: datetime
 
 
-class InventoryLedgerCreate(BaseModel):
+class InventoryLedgerCreate(TimezoneModel):
     action: str
     quantity: int = 1
     assignee_user_id: Optional[str] = None
@@ -78,13 +80,13 @@ class InventoryLedgerOut(InventoryLedgerCreate):
     created_at: datetime
 
 
-class LicenseSeatBatchCreate(BaseModel):
+class LicenseSeatBatchCreate(TimezoneModel):
     count: int = Field(default=1, ge=1, le=1000)
     seat_codes: list[str] = Field(default_factory=list)
     remark: Optional[str] = None
 
 
-class LicenseSeatAssign(BaseModel):
+class LicenseSeatAssign(TimezoneModel):
     assignee_user_id: Optional[str] = None
     assignee_name: Optional[str] = None
     dept_id: Optional[str] = None
@@ -92,11 +94,11 @@ class LicenseSeatAssign(BaseModel):
     remark: Optional[str] = None
 
 
-class LicenseSeatReturn(BaseModel):
+class LicenseSeatReturn(TimezoneModel):
     remark: Optional[str] = None
 
 
-class LicenseSeatOut(BaseModel):
+class LicenseSeatOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -114,7 +116,7 @@ class LicenseSeatOut(BaseModel):
     updated_at: datetime
 
 
-class LicenseSeatHistoryOut(BaseModel):
+class LicenseSeatHistoryOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -129,7 +131,7 @@ class LicenseSeatHistoryOut(BaseModel):
     created_at: datetime
 
 
-class LicenseSeatPage(BaseModel):
+class LicenseSeatPage(TimezoneModel):
     list: list[LicenseSeatOut]
     total: int
     page: int
@@ -137,7 +139,7 @@ class LicenseSeatPage(BaseModel):
     summary: dict[str, int]
 
 
-class ComponentInstallationOut(BaseModel):
+class ComponentInstallationOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -152,7 +154,7 @@ class ComponentInstallationOut(BaseModel):
     updated_at: datetime
 
 
-class ComponentInstallationPage(BaseModel):
+class ComponentInstallationPage(TimezoneModel):
     list: list[ComponentInstallationOut]
     total: int
     page: int

@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
+from app.core.time import app_today, utc_now
 from app.core.database import get_db
 from app.core.security import can_view_all_data, is_department_manager, scoped_dept_id, scoped_user_identities, user_context_from_request
 from app.models.asset import Asset
@@ -157,7 +158,7 @@ def build_offboarding_todos(assets: list[Asset], inactive_user_map: dict[str, Us
 
 
 def build_borrow_due_todos(assets: list[Asset]) -> list[dict]:
-    today = datetime.utcnow().date()
+    today = app_today()
     soon_deadline = today + timedelta(days=BORROW_DUE_SOON_DAYS)
     rows = []
     for asset in assets:

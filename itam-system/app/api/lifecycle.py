@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, time
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import or_
@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import user_context_from_request
+from app.core.time import app_day_bounds
 from app.models.asset import Asset
 from app.models.lifecycle import Lifecycle
 from app.services.asset_service import AssetService
@@ -53,9 +54,11 @@ def list_lifecycles(
             )
         )
     if start_date:
-        query = query.filter(Lifecycle.timestamp >= datetime.combine(datetime.fromisoformat(start_date).date(), time.min))
+        start, _ = app_day_bounds(datetime.fromisoformat(start_date))
+        query = query.filter(Lifecycle.timestamp >= start)
     if end_date:
-        query = query.filter(Lifecycle.timestamp <= datetime.combine(datetime.fromisoformat(end_date).date(), time.max))
+        _, end = app_day_bounds(datetime.fromisoformat(end_date))
+        query = query.filter(Lifecycle.timestamp <= end)
     total = query.count()
     query = query.order_by(Lifecycle.timestamp.desc())
     if page_size and page_size > 0:

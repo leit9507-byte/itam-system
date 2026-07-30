@@ -2,6 +2,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.core.time import utc_now
 from app.core.security import can_view_all_data, is_department_manager, scoped_dept_id, scoped_user_identities
 from app.models.asset import Asset
 from app.models.purchase import Purchase, PurchaseItem
@@ -114,7 +115,7 @@ class PurchaseService:
             return {"purchase": purchase, "assets": []}
 
         created_assets: list[Asset] = []
-        purchase_date = datetime.utcnow()
+        purchase_date = utc_now()
         for item in purchase.items:
             for _ in range(item.quantity):
                 asset_id = AssetService.generate_asset_id(db)
@@ -201,7 +202,7 @@ class PurchaseService:
                     f"expected {item.quantity}, got {accepted_counts[item_id]}"
                 )
         created_assets: list[Asset] = []
-        default_purchase_date = datetime.utcnow()
+        default_purchase_date = utc_now()
         for acceptance in payload.acceptances:
             item = item_map.get(acceptance.item_id)
             if not item:

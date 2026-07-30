@@ -6,6 +6,7 @@ from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from app import models  # noqa: F401
+from app.core.time import utc_now
 from app.core.database import Base, engine
 from app.core.schema_compat import ensure_compatible_schema
 from app.models.audit_log import OperationAuditLog
@@ -21,7 +22,7 @@ def database_status() -> dict:
     return {
         "initialized": "user_directory" in tables and "assets" in tables,
         "table_count": len(tables),
-        "checked_at": datetime.utcnow().isoformat(sep=" ", timespec="seconds"),
+        "checked_at": utc_now().isoformat(sep=" ", timespec="seconds"),
     }
 
 

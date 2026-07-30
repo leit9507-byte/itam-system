@@ -1,9 +1,10 @@
-from datetime import date, datetime, time
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy.orm import Session
 
+from app.core.time import TimezoneModel, app_day_bounds
 from app.core.database import get_db
 from app.core.security import operator_from_request, user_context_from_request
 from app.models.scrap import ScrapRequest
@@ -13,7 +14,7 @@ from app.services.scrap_service import ScrapService
 router = APIRouter(prefix="/scrap", tags=["Scrap"])
 
 
-class ScrapPayload(BaseModel):
+class ScrapPayload(TimezoneModel):
     applicant: str | None = None
     reason: str | None = None
     disposal_method: str | None = None
@@ -28,7 +29,7 @@ class ScrapBatchCreatePayload(ScrapPayload):
     asset_ids: list[str] = Field(default_factory=list)
 
 
-class ScrapDisposePayload(BaseModel):
+class ScrapDisposePayload(TimezoneModel):
     final_residual_value: float = 0
     disposal_method: str | None = None
     retirement_date: datetime | None = None
@@ -56,8 +57,8 @@ def list_scrap_requests(
     request: Request = None,
     db: Session = Depends(get_db),
 ):
-    start = datetime.combine(created_from, time.min) if created_from else None
-    end = datetime.combine(created_to, time.max) if created_to else None
+    start = app_day_bounds(created_from)[0] if created_from else None
+    end = app_day_bounds(created_to)[1] if created_to else None
     return ScrapService.list_requests(
         db,
         page=page,
@@ -83,8 +84,8 @@ def list_scrap_flows(
     request: Request = None,
     db: Session = Depends(get_db),
 ):
-    start = datetime.combine(created_from, time.min) if created_from else None
-    end = datetime.combine(created_to, time.max) if created_to else None
+    start = app_day_bounds(created_from)[0] if created_from else None
+    end = app_day_bounds(created_to)[1] if created_to else None
     return ScrapService.list_flows(
         db,
         page=page,

@@ -1,10 +1,12 @@
+from app.core.time import TimezoneModel
+
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 
-class PurchaseItemCreate(BaseModel):
+class PurchaseItemCreate(TimezoneModel):
     name: str
     category: str
     brand: Optional[str] = None
@@ -18,7 +20,7 @@ class PurchaseItemCreate(BaseModel):
     dept_id: Optional[str] = None
 
 
-class PurchaseCreate(BaseModel):
+class PurchaseCreate(TimezoneModel):
     purchase_no: str
     company: Optional[str] = None
     approval_no: Optional[str] = None
@@ -29,11 +31,11 @@ class PurchaseCreate(BaseModel):
     items: List[PurchaseItemCreate] = Field(default_factory=list)
 
 
-class PurchaseReceive(BaseModel):
+class PurchaseReceive(TimezoneModel):
     operator: str = "system"
 
 
-class AcceptedAssetCreate(BaseModel):
+class AcceptedAssetCreate(TimezoneModel):
     asset_id: Optional[str] = None
     sn: Optional[str] = None
     name: Optional[str] = None
@@ -54,17 +56,17 @@ class AcceptedAssetCreate(BaseModel):
     retirement_years: Optional[int] = None
 
 
-class PurchaseItemAcceptance(BaseModel):
+class PurchaseItemAcceptance(TimezoneModel):
     item_id: int
     assets: List[AcceptedAssetCreate] = Field(default_factory=list)
 
 
-class PurchaseAcceptanceReceive(BaseModel):
+class PurchaseAcceptanceReceive(TimezoneModel):
     operator: str = "system"
     acceptances: List[PurchaseItemAcceptance] = Field(default_factory=list)
 
 
-class PurchaseItemOut(BaseModel):
+class PurchaseItemOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -80,7 +82,7 @@ class PurchaseItemOut(BaseModel):
     location: Optional[str]
     dept_id: Optional[str]
 
-class PurchaseOut(BaseModel):
+class PurchaseOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int

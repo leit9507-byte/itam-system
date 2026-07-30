@@ -1,10 +1,12 @@
+from app.core.time import TimezoneModel
+
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 
-class UserUpsert(BaseModel):
+class UserUpsert(TimezoneModel):
     user_id: str | None = None
     username: str
     display_name: str
@@ -19,7 +21,7 @@ class UserUpsert(BaseModel):
     asset_assignment_required: bool | None = None
 
 
-class UserOut(BaseModel):
+class UserOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     user_id: str
@@ -41,18 +43,18 @@ class UserOut(BaseModel):
     last_login_at: datetime | None = None
 
 
-class UserAssetAssignmentUpdate(BaseModel):
+class UserAssetAssignmentUpdate(TimezoneModel):
     asset_assignment_required: bool = True
 
 
-class IdentityProviderSave(BaseModel):
+class IdentityProviderSave(TimezoneModel):
     name: str
     provider_type: str = Field(pattern="^ldap$")
     enabled: bool = True
     config: dict[str, Any] = Field(default_factory=dict)
 
 
-class IdentityProviderOut(BaseModel):
+class IdentityProviderOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -65,33 +67,33 @@ class IdentityProviderOut(BaseModel):
     updated_at: datetime
 
 
-class LoginRequest(BaseModel):
+class LoginRequest(TimezoneModel):
     username: str
     password: str = ""
     provider: str = "local"
     remember_me: bool = False
 
 
-class LoginResponse(BaseModel):
+class LoginResponse(TimezoneModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
     user: UserOut
 
 
-class RolePermissionSave(BaseModel):
+class RolePermissionSave(TimezoneModel):
     role: str
     resource: str
     action: str
     allowed: bool = True
 
 
-class UserPermissionUpdate(BaseModel):
+class UserPermissionUpdate(TimezoneModel):
     role: str
     status: str = "active"
 
 
-class RolePermissionOut(BaseModel):
+class RolePermissionOut(TimezoneModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -101,12 +103,12 @@ class RolePermissionOut(BaseModel):
     allowed: bool
 
 
-class SyncUsersRequest(BaseModel):
+class SyncUsersRequest(TimezoneModel):
     provider_id: int | None = None
     users: list[UserUpsert] = Field(default_factory=list)
 
 
-class SyncUsersResponse(BaseModel):
+class SyncUsersResponse(TimezoneModel):
     created: int
     updated: int
     offboarded: int = 0

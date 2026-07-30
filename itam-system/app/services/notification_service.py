@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
+from app.core.time import format_app_datetime, utc_now
 from app.models.notification import NotificationSetting
 from app.schemas.notification import NotificationSettingSave
 
@@ -73,7 +74,7 @@ class NotificationService:
         setting.webhook_url = (payload.webhook_url or "").strip() or None
         setting.secret = (payload.secret or "").strip() or None
         setting.event_types = NotificationService.normalize_event_types(payload.event_types)
-        setting.updated_at = datetime.utcnow()
+        setting.updated_at = utc_now()
         db.commit()
         db.refresh(setting)
         return setting
@@ -251,7 +252,7 @@ class NotificationService:
             db.refresh(setting)
             raise ValueError(setting.last_test_message) from exc
 
-        setting.updated_at = datetime.utcnow()
+        setting.updated_at = utc_now()
         db.commit()
         db.refresh(setting)
         return setting
@@ -322,7 +323,7 @@ class NotificationService:
                 ])
             else:
                 content.append([{"tag": "text", "text": line}])
-        content.append([{"tag": "text", "text": f"发送时间：{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"}])
+        content.append([{"tag": "text", "text": f"发送时间：{format_app_datetime()}"}])
         payload = {
             "msg_type": "post",
             "content": {

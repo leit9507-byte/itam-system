@@ -1,8 +1,7 @@
-from datetime import datetime
-
-from sqlalchemy import Column, DateTime, Integer, Numeric, String
+from sqlalchemy import Column, Integer, Numeric, String
 
 from app.core.database import Base
+from app.core.time import UTCDateTime, utc_now
 
 
 class RepairRecord(Base):
@@ -11,7 +10,7 @@ class RepairRecord(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     repair_no = Column(String(64), unique=True, nullable=False, index=True)
     asset_id = Column(String(64), nullable=False, index=True)
-    repair_time = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    repair_time = Column(UTCDateTime, default=utc_now, nullable=False, index=True)
     repair_type = Column(String(64), default="普通维修", nullable=False, index=True)
     fault_reason = Column(String(512), nullable=False)
     repair_cost = Column(Numeric(12, 2, asdecimal=False), default=0, nullable=False)
@@ -19,9 +18,9 @@ class RepairRecord(Base):
     operator = Column(String(64), default="资产管理员", nullable=False)
     status = Column(String(32), default="维修中", nullable=False, index=True)
     repair_result = Column(String(64), nullable=True, index=True)
-    finish_time = Column(DateTime, nullable=True)
+    finish_time = Column(UTCDateTime, nullable=True)
     remark = Column(String(512), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(UTCDateTime, default=utc_now, nullable=False)
 
 
 class RepairFaultType(Base):
@@ -31,4 +30,4 @@ class RepairFaultType(Base):
     name = Column(String(128), unique=True, nullable=False, index=True)
     description = Column(String(255), nullable=True)
     enabled = Column(String(16), default="启用", nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(UTCDateTime, default=utc_now, nullable=False)
