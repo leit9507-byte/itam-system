@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import or_
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.security import operator_from_request
 from app.models.asset import Asset
 from app.models.product import DeviceType, ProductCatalog
-from app.schemas.product import DeviceTypeOut, DeviceTypeUpsert, ProductOut, ProductUpsert
+from app.schemas.product import DeviceTypeOut, DeviceTypeUpsert, ProductBatchRetirementYearsUpdate, ProductOut, ProductUpsert
+from app.services.audit_log_service import AuditLogService
 
 
 router = APIRouter(prefix="/catalog", tags=["Catalog"])
@@ -69,6 +71,55 @@ def create_product(payload: ProductUpsert, db: Session = Depends(get_db)):
     return item
 
 
+@router.post("/products/batch-retirement-years")
+def batch_update_product_retirement_years(
+    payload: ProductBatchRetirementYearsUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    product_ids = list(dict.fromkeys(payload.product_ids))
+    products = db.query(ProductCatalog).filter(ProductCatalog.id.in_(product_ids)).all()
+    found_ids = {item.id for item in products}
+    missing_ids = [product_id for product_id in product_ids if product_id not in found_ids]
+    if missing_ids:
+        raise HTTPException(status_code=404, detail=f"产品档案不存在：{', '.join(map(str, missing_ids))}")
+
+    operator = operator_from_request(request)
+    updated_asset_ids: set[str] = set()
+    for product in products:
+        product.retirement_years = payload.retirement_years
+        updated_asset_ids.update(
+            sync_asset_retirement_years(
+                db,
+                product.product_name,
+                payload.retirement_years,
+                operator,
+            )
+        )
+
+    AuditLogService.record_operation(
+        db,
+        "catalog",
+        "batch_update_retirement_years",
+        operator,
+        "product_catalog",
+        "batch",
+        f"批量设置 {len(products)} 个产品退役年限为 {payload.retirement_years} 年",
+        {
+            "product_ids": product_ids,
+            "retirement_years": payload.retirement_years,
+            "updated_assets": len(updated_asset_ids),
+        },
+    )
+    db.commit()
+    return {
+        "ok": True,
+        "updated_products": len(products),
+        "updated_assets": len(updated_asset_ids),
+        "retirement_years": payload.retirement_years,
+    }
+
+
 @router.put("/products/{product_id}", response_model=ProductOut)
 def update_product(product_id: int, payload: ProductUpsert, db: Session = Depends(get_db)):
     item = db.get(ProductCatalog, product_id)
@@ -128,6 +179,32 @@ def sync_assets_from_product(db: Session, old_snapshot: dict, product: ProductCa
         if product.default_warehouse and not asset.location:
             asset.location = product.default_warehouse
     return len(assets)
+
+
+def sync_asset_retirement_years(
+    db: Session,
+    product_name: str,
+    retirement_years: int,
+    operator: str,
+) -> set[str]:
+    clean_name = (product_name or "").strip().lower()
+    assets = db.query(Asset).filter(func.lower(func.trim(Asset.name)) == clean_name).all()
+    for asset in assets:
+        config = dict(asset.config or {})
+        old_value = config.get("retirement_years")
+        config["retirement_years"] = retirement_years
+        asset.config = config
+        AuditLogService.record_asset_change(
+            db,
+            asset.asset_id,
+            "retirement_years",
+            old_value,
+            retirement_years,
+            operator,
+            "退役年限",
+            "product_batch_update",
+        )
+    return {asset.asset_id for asset in assets}
 
 
 def nullable_text_match(column, value: str):

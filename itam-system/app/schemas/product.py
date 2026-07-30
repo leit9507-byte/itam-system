@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DeviceTypeUpsert(BaseModel):
@@ -27,6 +27,11 @@ class ProductUpsert(BaseModel):
     unit_price: float = 0
     default_warehouse: Optional[str] = None
     retirement_years: Optional[int] = None
+
+
+class ProductBatchRetirementYearsUpdate(BaseModel):
+    product_ids: list[int] = Field(min_length=1, max_length=500)
+    retirement_years: int = Field(ge=1, le=100)
 
 
 class ProductOut(BaseModel):

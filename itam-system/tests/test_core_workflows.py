@@ -35,7 +35,8 @@ from app.services.purchase_service import PurchaseService
 from app.services.repair_service import RepairService
 from app.services.scrap_service import ScrapService
 from app.services.todo_service import TodoService
-from app.api.product import ensure_seed
+from app.api.product import batch_update_product_retirement_years, ensure_seed
+from app.schemas.product import ProductBatchRetirementYearsUpdate
 
 
 class CoreWorkflowTest(unittest.TestCase):
@@ -55,6 +56,38 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertTrue(hasattr(app.models, "Company"))
         self.assertTrue(hasattr(app.models, "Location"))
         self.assertTrue(hasattr(app.models, "ScrapRequest"))
+
+    def test_batch_product_retirement_years_updates_products_and_matching_assets(self):
+        products = [
+            ProductCatalog(product_name="ThinkPad X1", device_type="笔记本电脑", retirement_years=3),
+            ProductCatalog(product_name="Dell R760", device_type="服务器", retirement_years=5),
+        ]
+        assets = [
+            Asset(asset_id="PRODUCT-LIFE-001", asset_no="PRODUCT-LIFE-001", name="ThinkPad X1", category="笔记本电脑", status="in_use", config={}),
+            Asset(asset_id="PRODUCT-LIFE-002", asset_no="PRODUCT-LIFE-002", name="Dell R760", category="服务器", status="in_use", config={"retirement_years": 5}),
+            Asset(asset_id="PRODUCT-LIFE-003", asset_no="PRODUCT-LIFE-003", name="Other", category="显示器", status="in_use", config={}),
+        ]
+        self.db.add_all([*products, *assets])
+        self.db.commit()
+        request = Request({"type": "http", "method": "POST", "path": "/catalog/products/batch-retirement-years", "headers": []})
+        request.state.user = {"display_name": "测试管理员", "role": "admin"}
+
+        result = batch_update_product_retirement_years(
+            ProductBatchRetirementYearsUpdate(
+                product_ids=[products[0].id, products[1].id],
+                retirement_years=6,
+            ),
+            request,
+            self.db,
+        )
+
+        self.assertEqual(result["updated_products"], 2)
+        self.assertEqual(result["updated_assets"], 2)
+        self.assertEqual(products[0].retirement_years, 6)
+        self.assertEqual(products[1].retirement_years, 6)
+        self.assertEqual(assets[0].config["retirement_years"], 6)
+        self.assertEqual(assets[1].config["retirement_years"], 6)
+        self.assertNotIn("retirement_years", assets[2].config)
 
     def add_asset(self, asset_id="ITAM-000001", dept_id="D1", status="in_stock"):
         asset = Asset(

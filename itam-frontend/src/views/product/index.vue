@@ -7,6 +7,7 @@
       </div>
       <div class="toolbar">
         <el-button @click="resetFilters">清空</el-button>
+        <el-button :disabled="!selectedProducts.length" @click="openBatchRetirementDialog">批量设置退役年限</el-button>
         <el-button type="primary" @click="openCreateProduct">创建产品</el-button>
       </div>
     </div>
@@ -67,6 +68,42 @@
       </template>
     </el-dialog>
 
+    <el-dialog
+      v-model="batchRetirementDialog.visible"
+      title="批量设置退役年限"
+      width="460px"
+      class="batch-retirement-dialog"
+      destroy-on-close
+    >
+      <el-alert
+        :title="`已选择 ${selectedProducts.length} 个产品`"
+        description="保存后会同步更新这些产品名称对应资产的退役年限，并重新计算预计退役时间和当前残值。"
+        type="info"
+        show-icon
+        :closable="false"
+      />
+      <el-form label-position="top" class="batch-retirement-form">
+        <el-form-item label="统一退役年限" required>
+          <div class="number-with-unit">
+            <el-input-number
+              v-model="batchRetirementDialog.retirement_years"
+              :min="1"
+              :max="100"
+              :step="1"
+              :precision="0"
+              controls-position="right"
+              style="width: 100%"
+            />
+            <span>年</span>
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="batchRetirementDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="batchRetirementDialog.saving" @click="saveBatchRetirementYears">确认设置</el-button>
+      </template>
+    </el-dialog>
+
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
@@ -79,7 +116,8 @@
           </div>
         </div>
       </template>
-      <el-table :data="pagedProducts" border stripe>
+      <el-table ref="productTableRef" :data="pagedProducts" row-key="id" border stripe @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="48" reserve-selection />
         <el-table-column prop="product_name" label="产品名称" min-width="180" />
         <el-table-column prop="device_type" label="设备类型" width="130" />
         <el-table-column prop="brand" label="品牌" width="120" />
@@ -89,7 +127,9 @@
           <template #default="{ row }">¥{{ Number(row.unit_price || 0).toLocaleString() }}</template>
         </el-table-column>
         <el-table-column prop="default_warehouse" label="默认入库地" width="160" show-overflow-tooltip />
-        <el-table-column prop="retirement_years" label="退役年限" width="110" />
+        <el-table-column prop="retirement_years" label="退役年限" width="110">
+          <template #default="{ row }">{{ row.retirement_years ? `${row.retirement_years} 年` : '-' }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="editProduct(row)">编辑</el-button>
@@ -114,13 +154,16 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getLocations } from '../../api/location'
-import { createProduct, deleteProduct, getDeviceTypes, getProducts, updateProduct } from '../../api/product'
+import { batchUpdateProductRetirementYears, createProduct, deleteProduct, getDeviceTypes, getProducts, updateProduct } from '../../api/product'
 
 const products = ref([])
 const deviceTypes = ref([])
 const locations = ref([])
+const productTableRef = ref(null)
 const productForm = reactive(defaultProductForm())
 const productDialog = reactive({ visible: false, saving: false })
+const batchRetirementDialog = reactive({ visible: false, saving: false, retirement_years: 5 })
+const selectedProducts = ref([])
 const filters = reactive({ keyword: '', device_type: '' })
 const pagination = reactive({ page: 1, pageSize: 10 })
 
@@ -177,6 +220,43 @@ function openCreateProduct() {
   productDialog.visible = true
 }
 
+function handleSelectionChange(rows) {
+  selectedProducts.value = rows
+}
+
+function openBatchRetirementDialog() {
+  if (!selectedProducts.value.length) {
+    ElMessage.warning('请先选择产品')
+    return
+  }
+  const years = selectedProducts.value[0]?.retirement_years
+  batchRetirementDialog.retirement_years = Number(years || 5)
+  batchRetirementDialog.visible = true
+}
+
+async function saveBatchRetirementYears() {
+  if (!selectedProducts.value.length) {
+    ElMessage.warning('请选择需要设置的产品')
+    return
+  }
+  const years = Number(batchRetirementDialog.retirement_years || 0)
+  if (!Number.isInteger(years) || years < 1 || years > 100) {
+    ElMessage.warning('退役年限必须是 1 至 100 的整数')
+    return
+  }
+  batchRetirementDialog.saving = true
+  try {
+    const result = await batchUpdateProductRetirementYears(selectedProducts.value.map(item => item.id), years)
+    batchRetirementDialog.visible = false
+    ElMessage.success(`已更新 ${result.updated_products} 个产品，并同步 ${result.updated_assets} 台资产`)
+    await load()
+    productTableRef.value?.clearSelection()
+    selectedProducts.value = []
+  } finally {
+    batchRetirementDialog.saving = false
+  }
+}
+
 function closeProductDialog() {
   productDialog.visible = false
   resetProductForm()
@@ -227,6 +307,16 @@ async function removeProduct(row) {
 
 .product-dialog :deep(.el-dialog__body) {
   padding-bottom: 10px;
+}
+
+.batch-retirement-dialog :deep(.el-dialog__body) {
+  display: grid;
+  gap: 18px;
+  padding-bottom: 8px;
+}
+
+.batch-retirement-form :deep(.el-form-item) {
+  margin-bottom: 0;
 }
 
 .product-form :deep(.el-form-item) {
@@ -286,6 +376,10 @@ async function removeProduct(row) {
 
   .filters {
     width: 100%;
+  }
+
+  .batch-retirement-dialog :deep(.el-dialog) {
+    width: calc(100vw - 24px) !important;
   }
 }
 </style>

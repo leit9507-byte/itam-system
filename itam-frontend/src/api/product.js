@@ -34,6 +34,14 @@ export function updateProduct(id, payload) {
   return request.put(`/catalog/products/${id}`, payload)
 }
 
+export function batchUpdateProductRetirementYears(productIds, retirementYears) {
+  clearCache('catalog:')
+  return request.post('/catalog/products/batch-retirement-years', {
+    product_ids: productIds,
+    retirement_years: retirementYears
+  })
+}
+
 export function deleteProduct(id) {
   clearCache('catalog:')
   return request.delete(`/catalog/products/${id}`)
