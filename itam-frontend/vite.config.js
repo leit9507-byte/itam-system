@@ -32,48 +32,6 @@ export default defineConfig({
     chunkSizeWarningLimit: 800,
     modulePreload: {
       resolveDependencies: () => []
-    },
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          const normalizedId = id.replaceAll('\\', '/')
-          const pageChunks = [
-            ['src/views/report/', 'page-report'],
-            ['src/views/stocktake/', 'page-stocktake'],
-            ['src/views/audit/', 'page-audit'],
-            ['src/views/repair/', 'page-repair'],
-            ['src/views/dashboard/', 'page-dashboard'],
-            ['src/views/permission/', 'page-permission'],
-            ['src/views/asset/list.vue', 'page-asset-list']
-          ]
-          const pageChunk = pageChunks.find(([path]) => normalizedId.includes(path))
-          if (pageChunk) return pageChunk[1]
-
-          if (!normalizedId.includes('node_modules')) return
-          if (normalizedId.includes('/node_modules/vue/') || normalizedId.includes('/node_modules/vue-router/') || normalizedId.includes('/node_modules/pinia/')) {
-            return 'vendor-vue'
-          }
-          if (normalizedId.includes('/node_modules/@element-plus/icons-vue/')) {
-            return 'vendor-element-icons'
-          }
-          if (normalizedId.includes('/node_modules/element-plus/theme-chalk/')) {
-            return 'vendor-element-style'
-          }
-          if (normalizedId.includes('/node_modules/element-plus/')) {
-            return 'vendor-element'
-          }
-          if (normalizedId.includes('/node_modules/zrender/')) {
-            return 'vendor-zrender'
-          }
-          if (normalizedId.includes('/node_modules/echarts/')) {
-            return 'vendor-echarts'
-          }
-          if (normalizedId.includes('/node_modules/axios/')) {
-            return 'vendor-http'
-          }
-          return 'vendor'
-        }
-      }
     }
   },
   server: {

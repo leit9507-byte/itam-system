@@ -4,7 +4,12 @@ const RESULT_UNCHECKED = '未盘'
 const ABNORMAL_RESULTS = ['盘盈', '盘亏', '位置不符', '使用人不符', '状态不符']
 
 export async function getStocktakeTasks(filters = {}) {
-  const tasks = await request.get('/stocktake/tasks')
+  const tasks = await request.get('/stocktake/tasks', {
+    params: {
+      status: filters.status || undefined,
+      include_items: filters.includeItems ?? true
+    }
+  })
   return filterTasks(tasks, filters.dateRange).map(task => cloneTask(task))
 }
 

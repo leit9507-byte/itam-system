@@ -59,15 +59,22 @@ class StocktakeReviewSubmit(TimezoneModel):
 
 
 @router.get("/tasks")
-def list_tasks(request: Request, db: Session = Depends(get_db)):
+def list_tasks(
+    request: Request,
+    db: Session = Depends(get_db),
+    status: str | None = None,
+    include_items: bool = True,
+):
     visible_asset_ids = visible_asset_id_set(db, request)
-    tasks = (
-        db.query(StocktakeTask)
-        .options(joinedload(StocktakeTask.items))
-        .order_by(StocktakeTask.created_at.desc())
-        .all()
-    )
-    return [row for row in [serialize_task(task, visible_asset_ids) for task in tasks] if row["total"] > 0]
+    query = db.query(StocktakeTask).options(joinedload(StocktakeTask.items))
+    if status:
+        query = query.filter(StocktakeTask.status == status)
+    tasks = query.order_by(StocktakeTask.created_at.desc()).all()
+    return [
+        row
+        for row in [serialize_task(task, visible_asset_ids, include_items=include_items) for task in tasks]
+        if row["total"] > 0
+    ]
 
 
 @router.post("/tasks")
@@ -434,7 +441,11 @@ def record_scan_log(db: Session, task_id: str, asset_id: str | None, scan_raw: s
     )
 
 
-def serialize_task(task: StocktakeTask, visible_asset_ids: set[str] | None = None) -> dict:
+def serialize_task(
+    task: StocktakeTask,
+    visible_asset_ids: set[str] | None = None,
+    include_items: bool = True,
+) -> dict:
     items = [item for item in task.items if visible_asset_ids is None or item.asset_id in visible_asset_ids]
     is_partial = visible_asset_ids is not None and len(items) != len(task.items)
     checked = len([item for item in items if item.result != "未盘"])
@@ -450,7 +461,7 @@ def serialize_task(task: StocktakeTask, visible_asset_ids: set[str] | None = Non
         "total": len(items),
         "checked": checked,
         "abnormal": abnormal,
-        "items": [serialize_item(item) for item in items],
+        "items": [serialize_item(item) for item in items] if include_items else [],
     }
 
 

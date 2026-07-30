@@ -23,7 +23,7 @@ from app.models.scan_binding import AssetScanBinding
 from app.models.scrap import ScrapRequest
 from app.models.stocktake import StocktakeItem, StocktakeTask
 from app.models.user import UserDirectory
-from app.api.stocktake import StocktakeItemSubmit, submit_item
+from app.api.stocktake import StocktakeItemSubmit, serialize_task, submit_item
 from app.api.company import list_companies, list_company_assets
 from app.core.schema_compat import current_timestamp_sql
 from app.schemas.asset import AssetBatchImport, AssetBatchUpdateCreate, AssetCreate, AssetImportRow, AssetUpdate
@@ -360,6 +360,19 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertFalse(repeated["asset_info_updated"])
         self.assertEqual(repeated["review_status"], "已确认")
         self.assertEqual(self.db.query(Lifecycle).filter(Lifecycle.asset_id == asset.asset_id).count(), lifecycle_count)
+
+    def test_stocktake_task_summary_can_omit_asset_items(self):
+        task = StocktakeTask(id="ST-TEST-SUMMARY", name="Summary", status="进行中")
+        task.items = [
+            StocktakeItem(asset_id="ITAM-000001", result="正常"),
+            StocktakeItem(asset_id="ITAM-000002", result="未盘"),
+        ]
+
+        summary = serialize_task(task, include_items=False)
+
+        self.assertEqual(summary["total"], 2)
+        self.assertEqual(summary["checked"], 1)
+        self.assertEqual(summary["items"], [])
 
     def test_asset_residual_methods_use_distinct_curves_and_minimum_floor(self):
         base_config = {

@@ -377,7 +377,6 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { BrowserMultiFormatReader } from '@zxing/browser'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { Box, Camera, CircleCheck, FolderOpened, HomeFilled, Search, Setting } from '@element-plus/icons-vue'
@@ -385,7 +384,7 @@ import { getAssets, inboundAsset, outboundAsset } from '../../api/asset'
 import { createRepairRecord, getRepairFaultTypes } from '../../api/repair'
 import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
-import { getStocktakeTasks, submitStocktakeItem } from '../../api/stocktake'
+import { getStocktakeTaskItems, getStocktakeTasks, submitStocktakeItem } from '../../api/stocktake'
 import { getTodoItems } from '../../api/todo'
 import { resolveScanBinding } from '../../api/scanBinding'
 import TodoAssetActions from '../../components/TodoAssetActions.vue'
@@ -425,6 +424,7 @@ const todoLoading = ref(false)
 const todoAssetActionsRef = ref(null)
 const stocktakeTasks = ref([])
 const visibleStocktakeTasks = ref([])
+const currentStocktakeItem = ref(null)
 const scanRuntimeStatus = ref(feishuRuntimeStatus())
 const scanRuntimeError = ref('')
 const scanInfoDialogVisible = ref(false)
@@ -439,6 +439,10 @@ const lastScan = reactive({ mode: '', code: '', at: 0 })
 const scanFeedback = reactive({ visible: false, tone: 'info', title: '等待扫码', detail: '请扫描或输入资产编号。' })
 let browserScannerControls = null
 let browserScanResolve = null
+let usersRequest = null
+let locationsRequest = null
+let faultTypesRequest = null
+let stocktakeTasksRequest = null
 const showMobileAppbar = computed(() => !scanRuntimeStatus.value.isFeishu)
 const form = reactive(defaultForm())
 
@@ -448,10 +452,6 @@ const OUTBOUND_ALLOWED_STATUSES = ['in_stock', 'idle']
 const activeStocktakeTasks = computed(() => stocktakeTasks.value.filter(task => OPEN_STOCKTAKE_STATUSES.includes(task.status)))
 const currentMode = computed(() => modes.find(item => item.value === mode.value) || modes[0])
 const selectedTask = computed(() => stocktakeTasks.value.find(task => task.id === form.task_id))
-const currentStocktakeItem = computed(() => {
-  if (!selectedTask.value || !asset.value) return null
-  return selectedTask.value.items.find(item => item.asset_id === asset.value.asset_id || item.sn === asset.value.sn) || null
-})
 const stocktakeProgress = computed(() => (selectedTask.value?.total ? Math.round((Number(selectedTask.value.checked || 0) / Number(selectedTask.value.total || 0)) * 100) : 0))
 const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
 const activeFaultTypes = computed(() => faultTypes.value.filter(item => item.enabled !== '停用'))
@@ -505,18 +505,7 @@ onMounted(async () => {
   window.addEventListener('offline', handleOffline)
   store.syncSessionFromStorage()
   if (!store.isAuthenticated) return
-  const [userRows, locationRows, faultRows] = await Promise.all([
-    getUsers().catch(() => []),
-    getLocations().catch(() => []),
-    getRepairFaultTypes().catch(() => [])
-  ])
-  users.value = userRows
-  locations.value = locationRows
-  faultTypes.value = faultRows
-  filteredUsers.value = users.value.slice(0, 20)
-  resetLocationOptions()
-  resetFaultTypeOptions()
-  await Promise.all([loadStocktakeTasks(), loadTodos()])
+  await loadTodos()
   if (isOnline.value && pendingJobs.value.length) retryPendingJobs()
 })
 
@@ -547,11 +536,66 @@ function defaultForm() {
 }
 
 async function loadStocktakeTasks() {
-  stocktakeTasks.value = await getStocktakeTasks()
+  stocktakeTasks.value = await getStocktakeTasks({ status: '进行中', includeItems: false })
   resetTaskOptions()
   if (!activeStocktakeTasks.value.some(task => task.id === form.task_id)) {
     form.task_id = activeStocktakeTasks.value[0]?.id || ''
   }
+}
+
+function ensureStocktakeTasks() {
+  if (!stocktakeTasksRequest) {
+    stocktakeTasksRequest = loadStocktakeTasks().catch(() => {
+      stocktakeTasks.value = []
+      resetTaskOptions()
+    })
+  }
+  return stocktakeTasksRequest
+}
+
+function ensureUsers() {
+  if (!usersRequest) {
+    usersRequest = getUsers()
+      .then(rows => {
+        users.value = rows
+        filteredUsers.value = rows.slice(0, 20)
+      })
+      .catch(() => {
+        users.value = []
+        filteredUsers.value = []
+      })
+  }
+  return usersRequest
+}
+
+function ensureLocations() {
+  if (!locationsRequest) {
+    locationsRequest = getLocations()
+      .then(rows => {
+        locations.value = rows
+        visibleLocations.value = activeLocations.value.slice(0, 30)
+      })
+      .catch(() => {
+        locations.value = []
+        visibleLocations.value = []
+      })
+  }
+  return locationsRequest
+}
+
+function ensureFaultTypes() {
+  if (!faultTypesRequest) {
+    faultTypesRequest = getRepairFaultTypes()
+      .then(rows => {
+        faultTypes.value = rows
+        visibleFaultTypes.value = activeFaultTypes.value.slice(0, 30)
+      })
+      .catch(() => {
+        faultTypes.value = []
+        visibleFaultTypes.value = []
+      })
+  }
+  return faultTypesRequest
 }
 
 function taskLabel(task) {
@@ -577,6 +621,7 @@ function selectSection(value) {
   activeSection.value = value
   if (value === 'stocktake') {
     mode.value = 'stocktake'
+    ensureStocktakeTasks()
   } else if (value === 'repair') {
     mode.value = 'repair'
   } else if (value === 'work' && mode.value === 'stocktake') {
@@ -670,8 +715,18 @@ async function scanByBrowser() {
   browserScannerVisible.value = true
   await nextTick()
 
+  let scannerModule
+  try {
+    scannerModule = await import('@zxing/browser')
+  } catch {
+    browserScannerVisible.value = false
+    scanRuntimeError.value = '扫码组件加载失败，请检查网络后重试'
+    return ''
+  }
+
   return new Promise(resolve => {
     browserScanResolve = resolve
+    const { BrowserMultiFormatReader } = scannerModule
     const reader = new BrowserMultiFormatReader()
     reader.decodeFromConstraints(
       {
@@ -742,16 +797,17 @@ async function loadAsset() {
   const resolvedAsset = await resolveAssetFromScan(assetCode.value)
   const candidates = assetCodeCandidates(assetCode.value)
   if (mode.value === 'stocktake') {
+    await ensureStocktakeTasks()
     if (!selectedTask.value) return ElMessage.warning('请先选择后台创建的盘点任务')
-    const taskItem = resolvedAsset
-      ? selectedTask.value.items.find(item => item.asset_id === resolvedAsset.asset_id)
-      : selectedTask.value.items.find(item => assetCodeMatches(item, assetCode.value))
+    const taskItem = await findStocktakeItem(resolvedAsset, candidates)
     if (!taskItem) {
       asset.value = null
+      currentStocktakeItem.value = null
       assetDialogVisible.value = false
       setScanFeedback('danger', '不在任务内', `${code} 不属于当前盘点任务，请核对任务或标签。`)
       return ElMessage.error('该资产不在当前盘点任务范围内')
     }
+    currentStocktakeItem.value = taskItem
     asset.value = taskItemToAsset(taskItem)
     assetDialogVisible.value = true
     form.location = taskItem.book_location || ''
@@ -805,11 +861,29 @@ async function resolveAssetFromScan(value) {
 
 function resetAsset() {
   asset.value = null
+  currentStocktakeItem.value = null
   assetCode.value = ''
   assetDialogVisible.value = false
 }
 
-function searchUsers(query = '') {
+async function findStocktakeItem(resolvedAsset, candidates) {
+  const keywords = resolvedAsset?.asset_id
+    ? [resolvedAsset.asset_id]
+    : candidates
+  for (const keyword of keywords) {
+    const result = await getStocktakeTaskItems(selectedTask.value.id, {
+      keyword,
+      page: 1,
+      page_size: 20
+    })
+    const matched = result.list.find(item => assetCodeMatches(item, keyword)) || result.list[0]
+    if (matched) return matched
+  }
+  return null
+}
+
+async function searchUsers(query = '') {
+  await ensureUsers()
   const keyword = query.trim().toLowerCase()
   filteredUsers.value = users.value
     .filter(user => !keyword || [user.user_id, user.username, user.display_name, user.dept_name, user.dept_id].join(' ').toLowerCase().includes(keyword))
@@ -827,22 +901,26 @@ function searchTasks(query = '') {
     .slice(0, 30)
 }
 
-function resetLocationOptions() {
+async function resetLocationOptions() {
+  await ensureLocations()
   visibleLocations.value = activeLocations.value.slice(0, 30)
 }
 
-function searchLocations(query = '') {
+async function searchLocations(query = '') {
+  await ensureLocations()
   const keyword = query.trim().toLowerCase()
   visibleLocations.value = activeLocations.value
     .filter(item => !keyword || [item.name, item.code, item.type, item.owner_dept].join(' ').toLowerCase().includes(keyword))
     .slice(0, 30)
 }
 
-function resetFaultTypeOptions() {
+async function resetFaultTypeOptions() {
+  await ensureFaultTypes()
   visibleFaultTypes.value = activeFaultTypes.value.slice(0, 30)
 }
 
-function searchFaultTypes(query = '') {
+async function searchFaultTypes(query = '') {
+  await ensureFaultTypes()
   const keyword = query.trim().toLowerCase()
   visibleFaultTypes.value = activeFaultTypes.value
     .filter(item => !keyword || [item.name, item.description].join(' ').toLowerCase().includes(keyword))
@@ -1003,10 +1081,13 @@ function taskItemToAsset(item) {
 function applyStocktakeItem(saved) {
   const task = selectedTask.value
   if (!task) return
-  const item = task.items.find(row => row.asset_id === saved.asset_id)
-  if (item) Object.assign(item, saved)
-  task.checked = task.items.filter(row => row.result !== '未盘').length
-  task.abnormal = task.items.filter(row => ['盘盈', '盘亏', '位置不符', '状态不符'].includes(row.result)).length
+  const wasUnchecked = currentStocktakeItem.value?.result === '未盘'
+  const wasAbnormal = ['盘盈', '盘亏', '位置不符', '使用人不符', '状态不符'].includes(currentStocktakeItem.value?.result)
+  const isAbnormal = ['盘盈', '盘亏', '位置不符', '使用人不符', '状态不符'].includes(saved.result)
+  currentStocktakeItem.value = saved
+  if (wasUnchecked && saved.result !== '未盘') task.checked = Number(task.checked || 0) + 1
+  if (!wasAbnormal && isAbnormal) task.abnormal = Number(task.abnormal || 0) + 1
+  if (wasAbnormal && !isAbnormal) task.abnormal = Math.max(0, Number(task.abnormal || 0) - 1)
   if (task.status !== '已完成' && task.total && task.checked === task.total) task.status = '待确认'
   else if (task.status === '待开始') task.status = '进行中'
 }
