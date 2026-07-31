@@ -172,10 +172,17 @@ async function configureJsapi() {
 }
 
 async function doConfigureJsapi(url) {
-  const config = await request.get('/scan-bindings/feishu-jsapi-signature', {
-    params: { url },
-    silentError: true
-  })
+  let config
+  try {
+    config = await request.get('/scan-bindings/feishu-jsapi-signature', {
+      params: { url },
+      silentError: true
+    })
+  } catch (error) {
+    const message = describeSignatureRequestError(error)
+    lastScanError = message
+    throw new Error(message)
+  }
   await new Promise((resolve, reject) => {
     const timer = window.setTimeout(() => reject(new Error('Feishu JSAPI config timeout')), 8000)
     const fail = error => {
@@ -244,10 +251,25 @@ function extractScanText(result) {
 function describeError(error) {
   if (!error) return ''
   if (typeof error === 'string') return error
-  if (error.message) return error.message
+  if (error.userMessage) return error.userMessage
+  const details = [error.errMsg, error.errString, error.message]
+    .filter(Boolean)
+    .filter((value, index, rows) => rows.indexOf(value) === index)
+  const codes = [error.errno, error.errCode, error.errorCode]
+    .filter(value => value !== undefined && value !== null && value !== '')
+  if (details.length || codes.length) {
+    return [details.join('；'), codes.length ? `错误码：${codes.join('/')}` : ''].filter(Boolean).join('；')
+  }
   try {
     return JSON.stringify(error)
   } catch {
     return String(error)
   }
+}
+
+function describeSignatureRequestError(error) {
+  if (error?.response?.status === 404) {
+    return 'JSAPI 签名接口返回 404，请检查网关是否将 /backend 转发到 ITAM 后端'
+  }
+  return describeError(error) || '无法获取飞书 JSAPI 签名参数'
 }

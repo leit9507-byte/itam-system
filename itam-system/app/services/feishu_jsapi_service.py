@@ -97,7 +97,15 @@ class FeishuJsapiService:
 
     @staticmethod
     def fetch_jsapi_ticket(tenant_access_token: str) -> tuple[str, int]:
-        request = UrlRequest(DEFAULT_JSAPI_TICKET_URL, headers={"Authorization": f"Bearer {tenant_access_token}"}, method="GET")
+        request = UrlRequest(
+            DEFAULT_JSAPI_TICKET_URL,
+            data=b"{}",
+            headers={
+                "Authorization": f"Bearer {tenant_access_token}",
+                "Content-Type": "application/json; charset=utf-8",
+            },
+            method="POST",
+        )
         try:
             with urlopen(request, timeout=15) as response:
                 result = json.loads(response.read().decode("utf-8") or "{}")

@@ -661,9 +661,19 @@ async function scanCode() {
     return
   }
   if (fromFeishu) return handleScanResult(fromFeishu)
+  if (isFeishuClient()) {
+    if (scanRuntimeError.value) {
+      setScanFeedback('danger', '飞书扫码不可用', scanRuntimeError.value)
+      scanInfoDialogVisible.value = true
+      ElMessage.error('飞书扫码鉴权失败，请查看具体原因')
+    } else {
+      ElMessage.info('飞书扫码未返回内容，请重新扫码')
+    }
+    return
+  }
   const fromBrowser = await scanByBrowser()
   if (fromBrowser) return handleScanResult(fromBrowser)
-  ElMessage.info(isFeishuClient() ? '飞书扫码未返回内容，请确认已在飞书客户端内打开' : '当前环境暂未开放摄像头扫码，请手动输入资产编号')
+  ElMessage.info('当前环境暂未开放摄像头扫码，请手动输入资产编号')
 }
 
 function refreshScanRuntime() {
@@ -688,7 +698,6 @@ async function scanByFeishu() {
       return SCAN_CANCELLED
     }
     scanRuntimeError.value = error?.message || String(error || '')
-    if (isFeishuClient()) ElMessage.warning('飞书 JSAPI 鉴权失败，已切换到浏览器扫码')
     return ''
   }
 }

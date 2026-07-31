@@ -1,6 +1,7 @@
 import unittest
 from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
+from unittest.mock import patch
 
 from openpyxl import load_workbook
 from sqlalchemy import create_engine
@@ -33,6 +34,7 @@ from app.schemas.user import UserPermissionUpdate, UserUpsert
 from app.services.asset_service import AssetService, AssetValidationError
 from app.services.asset_residual_service import AssetResidualService
 from app.services.dashboard_service import DashboardService
+from app.services.feishu_jsapi_service import FeishuJsapiService
 from app.services.identity_service import IdentityService
 from app.services.purchase_service import PurchaseService
 from app.services.repair_service import RepairService
@@ -373,6 +375,33 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(summary["total"], 2)
         self.assertEqual(summary["checked"], 1)
         self.assertEqual(summary["items"], [])
+
+    def test_feishu_jsapi_ticket_uses_post_request(self):
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"code":0,"data":{"ticket":"ticket-1","expire_in":7200}}'
+
+        def fake_urlopen(request, timeout):
+            captured["request"] = request
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+        with patch("app.services.feishu_jsapi_service.urlopen", side_effect=fake_urlopen):
+            ticket, expires_in = FeishuJsapiService.fetch_jsapi_ticket("tenant-token")
+
+        self.assertEqual(ticket, "ticket-1")
+        self.assertEqual(expires_in, 7200)
+        self.assertEqual(captured["request"].get_method(), "POST")
+        self.assertEqual(captured["request"].data, b"{}")
+        self.assertEqual(captured["request"].get_header("Authorization"), "Bearer tenant-token")
 
     def test_asset_residual_methods_use_distinct_curves_and_minimum_floor(self):
         base_config = {
