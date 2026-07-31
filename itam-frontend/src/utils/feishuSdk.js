@@ -37,6 +37,23 @@ export async function scanByFeishuSdk() {
   return callScanCode(bridge)
 }
 
+export async function prepareFeishuScanSdk() {
+  if (!isFeishuClient() && import.meta.env.VITE_FEISHU_SDK_AUTO_LOAD !== 'true') return false
+  try {
+    const bridge = await getFeishuBridge()
+    if (!bridge?.scanCode) {
+      lastScanError = '飞书客户端未提供 scanCode 能力，请确认应用已发布并配置 JSAPI 权限'
+      return false
+    }
+    await waitForReady(bridge)
+    lastScanError = ''
+    return true
+  } catch (error) {
+    lastScanError = describeError(error) || '飞书扫码能力初始化失败'
+    return false
+  }
+}
+
 export function getLastFeishuScanError() {
   return lastScanError
 }
@@ -215,9 +232,13 @@ async function doConfigureJsapi(url) {
 function callScanCode(bridge) {
   return new Promise(resolve => {
     let settled = false
+    const timer = window.setTimeout(() => {
+      finish('', new Error('飞书扫码调用超时，请关闭当前页面后从飞书工作台重新进入'))
+    }, 15000)
     const finish = (value, error) => {
       if (settled) return
       settled = true
+      window.clearTimeout(timer)
       const text = extractScanText(value)
       if (text) lastScanError = ''
       else if (error) lastScanError = describeError(error)

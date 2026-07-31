@@ -101,8 +101,15 @@
 
       <div class="scan-box">
         <div class="scan-searchbar">
-          <button type="button" class="scan-trigger" aria-label="扫码" @click="scanCode">
-            <el-icon><Camera /></el-icon>
+          <button
+            type="button"
+            class="scan-trigger"
+            :class="{ scanning }"
+            :disabled="scanning"
+            :aria-label="scanning ? '正在打开扫码' : '扫码'"
+            @click.stop.prevent="scanCode"
+          >
+            <el-icon :class="{ 'is-loading': scanning }"><Loading v-if="scanning" /><Camera v-else /></el-icon>
           </button>
           <el-input
             v-model="assetCode"
@@ -379,7 +386,7 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index'
-import { Box, Camera, CircleCheck, FolderOpened, HomeFilled, Search, Setting } from '@element-plus/icons-vue'
+import { Box, Camera, CircleCheck, FolderOpened, HomeFilled, Loading, Search, Setting } from '@element-plus/icons-vue'
 import { getAssets, inboundAsset, outboundAsset } from '../../api/asset'
 import { createRepairRecord, getRepairFaultTypes } from '../../api/repair'
 import { getLocations } from '../../api/location'
@@ -390,7 +397,7 @@ import { resolveScanBinding } from '../../api/scanBinding'
 import TodoAssetActions from '../../components/TodoAssetActions.vue'
 import { useAppStore } from '../../store'
 import { assetCodeCandidates, assetCodeMatches, parseAssetCode } from '../../utils/assetCode'
-import { feishuRuntimeStatus, getLastFeishuScanError, isFeishuClient, scanByFeishuSdk } from '../../utils/feishuSdk'
+import { feishuRuntimeStatus, getLastFeishuScanError, isFeishuClient, prepareFeishuScanSdk, scanByFeishuSdk } from '../../utils/feishuSdk'
 import { getStorageJson, setStorageItem } from '../../utils/storage'
 
 const router = useRouter()
@@ -427,6 +434,7 @@ const visibleStocktakeTasks = ref([])
 const currentStocktakeItem = ref(null)
 const scanRuntimeStatus = ref(feishuRuntimeStatus())
 const scanRuntimeError = ref('')
+const scanning = ref(false)
 const scanInfoDialogVisible = ref(false)
 const browserScannerVisible = ref(false)
 const browserVideoRef = ref(null)
@@ -506,6 +514,9 @@ onMounted(async () => {
   store.syncSessionFromStorage()
   if (!store.isAuthenticated) return
   await loadTodos()
+  if (isFeishuClient()) {
+    prepareFeishuScanSdk().finally(refreshScanRuntime)
+  }
   if (isOnline.value && pendingJobs.value.length) retryPendingJobs()
 })
 
@@ -652,28 +663,35 @@ function fillExample() {
 }
 
 async function scanCode() {
-  refreshScanRuntime()
-  scanRuntimeError.value = ''
-  const fromFeishu = await scanByFeishu()
-  refreshScanRuntime()
-  if (fromFeishu === SCAN_CANCELLED) {
+  if (scanning.value) return
+  scanning.value = true
+  try {
+    refreshScanRuntime()
     scanRuntimeError.value = ''
-    return
-  }
-  if (fromFeishu) return handleScanResult(fromFeishu)
-  if (isFeishuClient()) {
-    if (scanRuntimeError.value) {
-      setScanFeedback('danger', '飞书扫码不可用', scanRuntimeError.value)
-      scanInfoDialogVisible.value = true
-      ElMessage.error('飞书扫码鉴权失败，请查看具体原因')
-    } else {
-      ElMessage.info('飞书扫码未返回内容，请重新扫码')
+    setScanFeedback('info', '正在打开扫码', '正在调用飞书或浏览器扫码能力。')
+    const fromFeishu = await scanByFeishu()
+    refreshScanRuntime()
+    if (fromFeishu === SCAN_CANCELLED) {
+      scanRuntimeError.value = ''
+      return
     }
-    return
+    if (fromFeishu) return handleScanResult(fromFeishu)
+    if (isFeishuClient()) {
+      if (scanRuntimeError.value) {
+        setScanFeedback('danger', '飞书扫码不可用', scanRuntimeError.value)
+        scanInfoDialogVisible.value = true
+        ElMessage.error('飞书扫码鉴权失败，请查看具体原因')
+      } else {
+        ElMessage.info('飞书扫码未返回内容，请重新扫码')
+      }
+      return
+    }
+    const fromBrowser = await scanByBrowser()
+    if (fromBrowser) return handleScanResult(fromBrowser)
+    ElMessage.info('当前环境暂未开放摄像头扫码，请手动输入资产编号')
+  } finally {
+    scanning.value = false
   }
-  const fromBrowser = await scanByBrowser()
-  if (fromBrowser) return handleScanResult(fromBrowser)
-  ElMessage.info('当前环境暂未开放摄像头扫码，请手动输入资产编号')
 }
 
 function refreshScanRuntime() {
@@ -1614,6 +1632,8 @@ function statusType(value) {
 }
 
 .scan-trigger {
+  position: relative;
+  z-index: 2;
   display: grid;
   place-items: center;
   width: 34px;
@@ -1623,6 +1643,30 @@ function statusType(value) {
   background: #ff6b6b;
   color: #fff;
   font-size: 18px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.scan-trigger:active {
+  transform: scale(0.94);
+}
+
+.scan-trigger.scanning,
+.scan-trigger:disabled {
+  background: #94a3b8;
+  cursor: wait;
+  opacity: 1;
+}
+
+.scan-trigger .is-loading {
+  animation: scan-loading 0.9s linear infinite;
+}
+
+@keyframes scan-loading {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .scan-inline-input {
