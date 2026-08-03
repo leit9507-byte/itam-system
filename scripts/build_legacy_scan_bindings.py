@@ -33,8 +33,8 @@ def write_sql(path: Path, rows: list[dict]) -> None:
     lines = [
         "START TRANSACTION;",
         "",
-        "-- Bind legacy asset id as scan content. Full URLs such as",
-        "-- https://it.forevernine.net/hardware/1602 are also resolved by extracting 1602.",
+        "-- Bind legacy asset id as scan content. Legacy asset URLs ending in",
+        "-- /hardware/1602 are also resolved by extracting 1602.",
         "",
     ]
     for row in rows:
