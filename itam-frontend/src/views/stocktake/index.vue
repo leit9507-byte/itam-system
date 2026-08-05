@@ -16,6 +16,7 @@
           clearable
           @change="load"
         />
+        <el-button @click="downloadStocktakeItemsCsv">导出盘点明细</el-button>
         <el-button type="primary" @click="openCreate">创建盘点任务</el-button>
       </div>
     </div>
@@ -270,6 +271,7 @@ import { assetStatuses, getAssets } from '../../api/asset'
 import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
 import { resolveScanBinding } from '../../api/scanBinding'
+import { downloadStocktakeItemsCsv } from '../../api/reporting'
 import { parseAssetCode } from '../../utils/assetCode'
 
 const tasks = ref([])

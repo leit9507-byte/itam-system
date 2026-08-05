@@ -67,7 +67,7 @@
               {{ group.asset_count }} 台 / ￥{{ "%.0f"|format(group.total_price or 0) }}
               <ul class="asset-list">
                 {% for asset in group.assets %}
-                <li>{{ asset.asset_id }} - {{ asset.asset_name }}（￥{{ "%.0f"|format(asset.price or 0) }}）</li>
+                <li>{{ asset.asset_id }} / {{ asset.asset_no or '-' }} - {{ asset.asset_info or asset.asset_name }}（￥{{ "%.0f"|format(asset.price or 0) }}）</li>
                 {% endfor %}
               </ul>
             </td>
@@ -99,7 +99,7 @@
         <tbody>
           {% for item in result.asset_violations %}
           <tr>
-            <td>{{ item.asset_id }}<br>{{ item.asset_name }}</td>
+            <td>{{ item.asset_id }} / {{ item.asset_no or '-' }}<br>{{ item.asset_info or item.asset_name }}</td>
             <td>{{ item.type or item.rule }}</td>
             <td class="{{ item.severity }}">{{ item.severity }}</td>
             <td>{{ item.owner_name or '-' }}<br><span class="muted">{{ item.dept or '' }}</span></td>

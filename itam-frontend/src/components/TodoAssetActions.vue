@@ -197,12 +197,19 @@ async function openUserReclaimDialog(item) {
   Object.assign(reclaimDialog.form, { location: '', remark: '离职资产回收入库' })
   processing.value = true
   try {
-    const [{ list }] = await Promise.all([getAssets({ page: 1, page_size: 500 }), ensureOptions()])
+    const ownerUserId = item.user_id || item.username
+    if (!ownerUserId) {
+      ElMessage.warning('未找到离职人员标识，无法查询名下资产')
+      return
+    }
+    const [{ list }] = await Promise.all([
+      getAssets({ owner_user_id: ownerUserId, page: 1, page_size: 0 }),
+      ensureOptions()
+    ])
     reclaimDialog.assets = list.filter(asset => {
       if (!['in_use', 'borrowed', 'out_stock', 'repair'].includes(asset.status)) return false
       if (item.asset_ids?.length) return item.asset_ids.includes(asset.asset_id)
-      const ownerValues = [asset.owner_user_id, asset.owner, asset.owner_username]
-      return ownerValues.includes(item.user_id) || ownerValues.includes(item.username)
+      return true
     })
     if (!reclaimDialog.assets.length) {
       ElMessage.info('该人员当前没有需要回收的资产')

@@ -16,6 +16,7 @@
           clearable
           @change="refresh"
         />
+        <el-button @click="downloadRepairsCsv">导出维修台账</el-button>
         <el-button @click="openFaultTypeDialog">故障类型设置</el-button>
         <el-button type="primary" @click="load">刷新</el-button>
       </div>
@@ -192,6 +193,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import echarts from '../../utils/echarts'
 import { deleteRepairFaultType, finishRepairRecord, getRepairDashboard, getRepairFaultTypes, getRepairRecords, saveRepairFaultType } from '../../api/repair'
+import { downloadRepairsCsv } from '../../api/reporting'
 
 const records = ref([])
 const trendRef = ref(null)

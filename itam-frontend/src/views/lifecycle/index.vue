@@ -22,6 +22,7 @@
           style="width: 260px"
           @change="load"
         />
+        <el-button @click="downloadLifecycleCsv">导出生命周期</el-button>
         <el-button @click="load">刷新</el-button>
       </div>
     </div>
@@ -59,6 +60,7 @@
 <script setup>
 import { reactive, onMounted, ref } from 'vue'
 import { getLifecycleList } from '../../api/asset'
+import { downloadLifecycleCsv } from '../../api/reporting'
 
 const items = ref([])
 const keyword = ref('')

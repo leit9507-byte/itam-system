@@ -18,6 +18,7 @@ from app.core.database import get_db
 from app.core.security import can_view_all_data, scoped_dept_id, scoped_user_identities, operator_from_request, user_context_from_request
 from app.models.asset import Asset
 from app.models.checkout import AssetCheckout
+from app.models.lifecycle import Lifecycle
 from app.models.repair import RepairRecord
 from app.models.report import AuditReportArchive
 from app.models.scrap import ScrapRequest
@@ -139,10 +140,10 @@ def get_audit_report_archive(db: Session, report_no: str, request: Request) -> A
 @router.get("/assets.csv")
 def export_assets_csv(request: Request, db: Session = Depends(get_db)):
     rows = [
-        [asset.asset_id, asset.asset_no, asset.name, asset.category, asset.brand, asset.model, asset.sn, asset.status, asset.owner_user_id, asset.dept_id, asset.location, asset.purchase_price, AssetResidualService.calculate_asset(asset, db=db)]
+        [asset.asset_id, asset.asset_no, asset_info(asset), asset.name, asset.category, asset.brand, asset.model, asset.sn, asset.status, asset.owner_user_id, asset.dept_id, asset.location, asset.purchase_price, AssetResidualService.calculate_asset(asset, db=db), asset.purchase_approval_no, asset.purchase_supplier_name]
         for asset in scoped_assets_query(db, request).order_by(Asset.asset_id.asc()).all()
     ]
-    return csv_response("assets.csv", ["asset_id", "asset_no", "name", "category", "brand", "model", "sn", "status", "owner_user_id", "dept_id", "location", "purchase_price", "current_residual_value"], rows)
+    return csv_response("assets.csv", ["资产ID", "资产编号", "资产信息", "名称", "类型", "品牌", "型号", "SN", "状态", "责任人", "部门", "位置", "采购价值", "当前残值", "采购审批单号", "采购供应商"], rows)
 
 
 @router.get("/department-assets.csv")
@@ -152,6 +153,7 @@ def export_department_assets_csv(request: Request, db: Session = Depends(get_db)
             asset.dept_id or "",
             asset.asset_id,
             asset.asset_no or "",
+            asset_info(asset),
             asset.name,
             asset.category,
             asset.brand or "",
@@ -166,7 +168,7 @@ def export_department_assets_csv(request: Request, db: Session = Depends(get_db)
         ]
         for asset in scoped_assets_query(db, request).order_by(Asset.dept_id.asc(), Asset.asset_id.asc()).all()
     ]
-    return csv_response("department-assets.csv", ["部门", "资产ID", "资产编号", "名称", "类型", "品牌", "型号", "SN", "状态", "责任人", "位置", "资产价值", "当前残值", "创建时间"], rows)
+    return csv_response("department-assets.csv", ["部门", "资产ID", "资产编号", "资产信息", "名称", "类型", "品牌", "型号", "SN", "状态", "责任人", "位置", "资产价值", "当前残值", "创建时间"], rows)
 
 
 @router.get("/person-holdings.csv")
@@ -186,6 +188,7 @@ def export_person_holdings_csv(request: Request, db: Session = Depends(get_db)):
             (user.dept_name or user.dept_id) if user else asset.dept_id or "",
             asset.asset_id,
             asset.asset_no or "",
+            asset_info(asset),
             asset.name,
             asset.category,
             asset.status or "",
@@ -194,7 +197,7 @@ def export_person_holdings_csv(request: Request, db: Session = Depends(get_db)):
             money(AssetResidualService.calculate_asset(asset, db=db)),
             date_text(asset.created_at),
         ])
-    return csv_response("person-holdings.csv", ["人员ID", "姓名", "部门", "资产ID", "资产编号", "名称", "类型", "状态", "位置", "资产价值", "当前残值", "创建时间"], rows)
+    return csv_response("person-holdings.csv", ["人员ID", "姓名", "部门", "资产ID", "资产编号", "资产信息", "名称", "类型", "状态", "位置", "资产价值", "当前残值", "创建时间"], rows)
 
 
 @router.get("/overdue-borrowings.csv")
@@ -212,6 +215,7 @@ def export_overdue_borrowings_csv(request: Request, db: Session = Depends(get_db
         rows.append([
             checkout.asset_id,
             asset.asset_no or "",
+            asset_info(asset),
             asset.name,
             checkout.checkout_type,
             checkout.assignee_user_id or "",
@@ -223,7 +227,148 @@ def export_overdue_borrowings_csv(request: Request, db: Session = Depends(get_db
             checkout.location or asset.location or "",
             checkout.remark or "",
         ])
-    return csv_response("overdue-borrowings.csv", ["资产ID", "资产编号", "名称", "领用类型", "持有人ID", "持有人", "部门", "领用时间", "到期时间", "逾期天数", "位置", "备注"], rows)
+    return csv_response("overdue-borrowings.csv", ["资产ID", "资产编号", "资产信息", "名称", "领用类型", "持有人ID", "持有人", "部门", "领用时间", "到期时间", "逾期天数", "位置", "备注"], rows)
+
+
+@router.get("/borrowings.csv")
+def export_borrowings_csv(request: Request, db: Session = Depends(get_db)):
+    scoped_asset_ids = scoped_asset_id_query(db, request)
+    rows = [[
+        checkout.asset_id,
+        asset.asset_no or "",
+        asset_info(asset),
+        checkout.checkout_type,
+        checkout.assignee_user_id or "",
+        checkout.assignee_name or "",
+        checkout.dept_id or asset.dept_id or "",
+        checkout.status,
+        date_text(checkout.checked_out_at),
+        date_text(checkout.due_date),
+        date_text(checkout.checked_in_at),
+        checkout.location or asset.location or "",
+        checkout.checkin_location or "",
+        checkout.remark or "",
+        checkout.checkin_remark or "",
+    ] for checkout, asset in (
+        db.query(AssetCheckout, Asset)
+        .join(Asset, AssetCheckout.asset_id == Asset.asset_id)
+        .filter(Asset.asset_id.in_(scoped_asset_ids))
+        .order_by(AssetCheckout.checked_out_at.desc(), AssetCheckout.id.desc())
+        .all()
+    )]
+    return csv_response("borrowings.csv", ["资产ID", "资产编号", "资产信息", "借用类型", "人员ID", "人员", "部门", "记录状态", "借用时间", "计划归还", "实际归还", "使用位置", "归还位置", "借用备注", "归还备注"], rows)
+
+
+@router.get("/repairs.csv")
+def export_repairs_csv(request: Request, db: Session = Depends(get_db)):
+    scoped_asset_ids = scoped_asset_id_query(db, request)
+    rows = [[
+        repair.repair_no,
+        repair.asset_id,
+        asset.asset_no or "",
+        asset_info(asset),
+        repair.repair_type,
+        repair.fault_reason,
+        money(repair.repair_cost),
+        repair.vendor or "",
+        repair.status,
+        repair.repair_result or "",
+        date_text(repair.repair_time),
+        date_text(repair.finish_time),
+        repair.operator or "",
+        repair.remark or "",
+    ] for repair, asset in (
+        db.query(RepairRecord, Asset)
+        .join(Asset, RepairRecord.asset_id == Asset.asset_id)
+        .filter(Asset.asset_id.in_(scoped_asset_ids))
+        .order_by(RepairRecord.repair_time.desc(), RepairRecord.id.desc())
+        .all()
+    )]
+    return csv_response("repairs.csv", ["维修单号", "资产ID", "资产编号", "资产信息", "维修类型", "故障原因", "维修费用", "维修供应商", "状态", "维修结果", "送修时间", "完成时间", "登记人", "备注"], rows)
+
+
+@router.get("/stocktake-items.csv")
+def export_stocktake_items_csv(request: Request, db: Session = Depends(get_db)):
+    scoped_asset_ids = scoped_asset_id_query(db, request)
+    rows = [[
+        task.id,
+        task.name,
+        task.status,
+        item.asset_id,
+        asset.asset_no or "",
+        asset_info(asset),
+        item.sn or asset.sn or "",
+        item.book_status or "",
+        item.book_owner_user_id or "",
+        item.actual_owner_user_id or "",
+        item.book_location or "",
+        item.actual_location or "",
+        item.result,
+        item.checker or "",
+        date_text(item.checked_at),
+        item.review_status,
+        item.reviewed_by or "",
+        date_text(item.reviewed_at),
+        item.remark or "",
+    ] for item, task, asset in (
+        db.query(StocktakeItem, StocktakeTask, Asset)
+        .join(StocktakeTask, StocktakeItem.task_id == StocktakeTask.id)
+        .join(Asset, StocktakeItem.asset_id == Asset.asset_id)
+        .filter(Asset.asset_id.in_(scoped_asset_ids))
+        .order_by(StocktakeTask.created_at.desc(), StocktakeItem.id.asc())
+        .all()
+    )]
+    return csv_response("stocktake-items.csv", ["盘点任务ID", "盘点任务", "任务状态", "资产ID", "资产编号", "资产信息", "SN", "账面状态", "账面使用人", "实际使用人", "账面位置", "实际位置", "盘点结果", "盘点人", "盘点时间", "复核状态", "复核人", "复核时间", "备注"], rows)
+
+
+@router.get("/purchase-assets.csv")
+def export_purchase_assets_csv(request: Request, db: Session = Depends(get_db)):
+    query = (
+        scoped_assets_query(db, request)
+        .filter(Asset.purchase_approval_no.isnot(None), Asset.purchase_approval_no != "")
+        .order_by(Asset.purchase_approval_no.asc(), Asset.asset_id.asc())
+    )
+    rows = [[
+        (asset.config or {}).get("purchase_no") or "",
+        asset.purchase_approval_no or "",
+        asset.asset_id,
+        asset.asset_no or "",
+        asset_info(asset),
+        asset.sn or "",
+        asset.category,
+        asset.status,
+        asset.purchase_supplier_name or "",
+        money(asset.purchase_price),
+        date_text(asset.purchase_date),
+        asset.owner_user_id or "",
+        asset.dept_id or "",
+        asset.location or "",
+    ] for asset in query.all()]
+    return csv_response("purchase-assets.csv", ["采购单号", "采购审批单号", "资产ID", "资产编号", "资产信息", "SN", "类型", "状态", "采购供应商", "采购价值", "采购日期", "责任人", "部门", "位置"], rows)
+
+
+@router.get("/lifecycle.csv")
+def export_lifecycle_csv(request: Request, db: Session = Depends(get_db)):
+    scoped_asset_ids = scoped_asset_id_query(db, request)
+    rows = [[
+        lifecycle.id,
+        lifecycle.asset_id,
+        asset.asset_no or "",
+        asset_info(asset),
+        lifecycle.action_type,
+        lifecycle.from_status or "",
+        lifecycle.to_status or "",
+        lifecycle.operator or "",
+        lifecycle.remark or "",
+        date_text(lifecycle.timestamp),
+    ] for lifecycle, asset in (
+        db.query(Lifecycle, Asset)
+        .join(Asset, Lifecycle.asset_id == Asset.asset_id)
+        .filter(Asset.asset_id.in_(scoped_asset_ids))
+        .order_by(Lifecycle.timestamp.desc(), Lifecycle.id.desc())
+        .all()
+    )]
+    return csv_response("asset-lifecycle.csv", ["流水ID", "资产ID", "资产编号", "资产信息", "操作类型", "原状态", "新状态", "操作人", "说明", "操作时间"], rows)
 
 
 @router.get("/warranty-expiring.csv")
@@ -234,6 +379,7 @@ def export_warranty_expiring_csv(request: Request, days: int = 90, db: Session =
         [
             asset.asset_id,
             asset.asset_no or "",
+            asset_info(asset),
             asset.name,
             asset.category,
             asset.brand or "",
@@ -252,16 +398,25 @@ def export_warranty_expiring_csv(request: Request, days: int = 90, db: Session =
         .order_by(Asset.warranty_expire_date.asc(), Asset.asset_id.asc())
         .all()
     ]
-    return csv_response("warranty-expiring.csv", ["资产ID", "资产编号", "名称", "类型", "品牌", "型号", "SN", "状态", "责任人", "部门", "位置", "采购日期", "质保到期", "剩余天数"], rows)
+    return csv_response("warranty-expiring.csv", ["资产ID", "资产编号", "资产信息", "名称", "类型", "品牌", "型号", "SN", "状态", "责任人", "部门", "位置", "采购日期", "质保到期", "剩余天数"], rows)
 
 
 @router.get("/scrap-disposal-ledger.csv")
 def export_scrap_disposal_ledger_csv(request: Request, db: Session = Depends(get_db)):
     scoped_asset_ids = scoped_asset_id_query(db, request)
-    rows = [
-        [
+    rows = []
+    query = (
+        db.query(ScrapRequest, Asset)
+        .join(Asset, ScrapRequest.asset_id == Asset.asset_id)
+        .filter(ScrapRequest.asset_id.in_(scoped_asset_ids))
+        .order_by(ScrapRequest.created_at.desc(), ScrapRequest.id.desc())
+    )
+    for row, asset in query.all():
+        rows.append([
             row.request_no,
             row.asset_id,
+            asset.asset_no or "",
+            asset_info(asset),
             row.asset_name,
             row.asset_sn or "",
             row.category or "",
@@ -284,13 +439,8 @@ def export_scrap_disposal_ledger_csv(request: Request, db: Session = Depends(get
             date_text(row.disposed_at),
             row.disposal_remark or "",
             date_text(row.created_at),
-        ]
-        for row in db.query(ScrapRequest)
-        .filter(ScrapRequest.asset_id.in_(scoped_asset_ids))
-        .order_by(ScrapRequest.created_at.desc(), ScrapRequest.id.desc())
-        .all()
-    ]
-    return csv_response("scrap-disposal-ledger.csv", ["报废单号", "资产ID", "资产名称", "SN", "类型", "品牌", "型号", "责任人", "部门", "位置", "采购价值", "状态", "申请人", "报废原因", "退役时间", "退役审批单号", "处置方式", "报废领走人", "预计残值", "最终残值", "处置人", "处置时间", "处置备注", "申请时间"], rows)
+        ])
+    return csv_response("scrap-disposal-ledger.csv", ["报废单号", "资产ID", "资产编号", "资产信息", "资产名称", "SN", "类型", "品牌", "型号", "责任人", "部门", "位置", "采购价值", "状态", "申请人", "报废原因", "退役时间", "退役审批单号", "处置方式", "报废领走人", "预计残值", "最终残值", "处置人", "处置时间", "处置备注", "申请时间"], rows)
 
 
 @router.get("/audit-report.xlsx")
@@ -324,7 +474,7 @@ def export_assets_pdf(request: Request, db: Session = Depends(get_db)):
     y -= 28
     c.setFont("Helvetica", 9)
     for asset in scoped_assets_query(db, request).order_by(Asset.asset_id.asc()).all():
-        line = f"{asset.asset_id} | {asset.name} | {asset.category} | {asset.status} | {asset.owner_user_id or '-'} | {asset.location or '-'}"
+        line = f"{asset.asset_id} | {asset.asset_no or '-'} | {asset_info(asset)} | {asset.category} | {asset.status} | {asset.owner_user_id or '-'} | {asset.location or '-'}"
         c.drawString(40, y, line[:120])
         y -= 16
         if y < 40:
@@ -481,6 +631,10 @@ def money(value) -> float:
     return float(value or 0)
 
 
+def asset_info(asset: Asset) -> str:
+    return " / ".join(str(value) for value in [asset.name, asset.brand, asset.model] if value)
+
+
 def build_audit_summary_sheet(sheet, result: dict) -> None:
     sheet.title = "审计概览"
     rows = [
@@ -497,13 +651,15 @@ def build_audit_summary_sheet(sheet, result: dict) -> None:
 
 
 def build_audit_violations_sheet(sheet, violations: list[dict]) -> None:
-    sheet.append(["范围", "规则", "等级", "资产ID", "资产名称", "责任人", "部门", "说明", "处理结论", "答复原因", "答复人"])
+    sheet.append(["范围", "规则", "等级", "资产ID", "资产编号", "资产信息", "资产名称", "责任人", "部门", "说明", "处理结论", "答复原因", "答复人"])
     for item in violations:
         sheet.append([
             item.get("audit_scope", ""),
             item.get("rule", ""),
             item.get("severity", ""),
             item.get("asset_id", ""),
+            item.get("asset_no", ""),
+            item.get("asset_info", ""),
             item.get("asset_name", ""),
             item.get("owner_name") or item.get("owner_user_id") or "",
             item.get("dept", ""),

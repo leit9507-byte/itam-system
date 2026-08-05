@@ -6,6 +6,7 @@
         <p class="page-subtitle">资产实际完成处置后，登记退役时间、处置方式、审批单号和处理结果</p>
       </div>
       <div class="header-actions">
+        <el-button @click="downloadScrapDisposalLedgerCsv">导出处置台账</el-button>
         <el-button :disabled="!batchDisposableRows.length" type="warning" @click="openBatchDispose('变卖')">批量变卖</el-button>
         <el-button :disabled="!batchDisposableRows.length" type="primary" @click="openBatchDispose()">批量退役登记</el-button>
         <el-button @click="load">刷新</el-button>
@@ -321,6 +322,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { disposeScrapRequest, getScrapFlows, getScrapRequests } from '../../api/asset'
 import { getSuppliers } from '../../api/supplier'
 import { getUsers } from '../../api/user'
+import { downloadScrapDisposalLedgerCsv } from '../../api/reporting'
 
 const requests = ref([])
 const allRequests = ref([])

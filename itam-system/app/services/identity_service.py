@@ -364,7 +364,10 @@ class IdentityService:
                 provider.last_test_message = str(exc)[:255]
         else:
             provider.last_test_status = "success"
-            provider.last_test_message = f"{provider.provider_type.upper()} configuration looks valid"
+            if provider.provider_type == "feishu":
+                provider.last_test_message = "Feishu JSAPI credentials are configured; login and directory sync are disabled"
+            else:
+                provider.last_test_message = f"{provider.provider_type.upper()} configuration looks valid"
         db.commit()
         db.refresh(provider)
         return provider
@@ -373,6 +376,8 @@ class IdentityService:
     def sync_users(db: Session, provider_id: int | None, users: list[UserUpsert]) -> tuple[int, int, int, list[UserDirectory]]:
         IdentityService.ensure_seed(db)
         provider = db.get(IdentityProviderConfig, provider_id) if provider_id else None
+        if provider and provider.provider_type != "ldap":
+            raise ValueError("Only LDAP identity providers support directory synchronization")
         source = provider.provider_type if provider else None
         sync_limit = int((provider.config or {}).get("sync_limit", 200)) if provider else 200
         if users:

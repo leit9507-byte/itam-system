@@ -6,6 +6,7 @@
         <p class="page-subtitle">支持批量导入、批量编辑、批量维修、出入库、责任人绑定、供应商关联和报废处置登记</p>
       </div>
       <div class="header-actions">
+        <el-button @click="downloadAssetCsv">导出资产台账</el-button>
         <el-button @click="downloadTemplate">下载导入模板</el-button>
         <el-button type="primary" @click="openImportDialog">批量导入资产</el-button>
       </div>
@@ -495,6 +496,7 @@ import { getDeviceTypes, getProducts } from '../../api/product'
 import { createRepairRecords, getRepairFaultTypes } from '../../api/repair'
 import { getSuppliers } from '../../api/supplier'
 import { getUsers } from '../../api/user'
+import { downloadAssetCsv } from '../../api/reporting'
 
 const router = useRouter()
 const route = useRoute()

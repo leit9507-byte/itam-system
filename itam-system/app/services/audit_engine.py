@@ -63,7 +63,9 @@ class AuditEngine:
             **item,
             "violation_key": violation_key,
             "person_group_key": person_group_key,
+            "asset_no": asset.asset_no if asset else "",
             "asset_name": asset.name if asset else "",
+            "asset_info": self._asset_info(asset),
             "category": asset.category if asset else "",
             "brand": asset.brand if asset else "",
             "model": asset.model if asset else "",
@@ -77,6 +79,12 @@ class AuditEngine:
             "responder": response.responder if response else "",
             "response_updated_at": response.updated_at if response else None,
         }
+
+    @staticmethod
+    def _asset_info(asset: Asset | None) -> str:
+        if not asset:
+            return ""
+        return " / ".join(str(value) for value in [asset.name, asset.brand, asset.model] if value)
 
     def _person_groups(self, violations: list[dict], responses: dict[str, AuditResponse]) -> list[dict]:
         grouped = {}

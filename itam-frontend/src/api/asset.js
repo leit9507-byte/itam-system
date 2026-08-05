@@ -43,6 +43,7 @@ export async function getAssets(params = {}) {
       category: params.category || undefined,
       company: params.company || undefined,
       supplier: params.supplier || undefined,
+      owner_user_id: params.owner_user_id || undefined,
       risk_filter: params.risk_filter || undefined,
       page: params.page || undefined,
       page_size: params.page_size ?? params.pageSize ?? undefined

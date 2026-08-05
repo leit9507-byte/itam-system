@@ -6,6 +6,7 @@
         <p class="page-subtitle">登记设备借用、计划归还时间、实际归还和逾期未归还情况</p>
       </div>
       <div class="header-actions">
+        <el-button @click="downloadBorrowingsCsv">导出借用台账</el-button>
         <el-button @click="openBatchCheckout">批量借用</el-button>
         <el-button type="primary" :disabled="!selectedOpenRows.length" @click="openBatchCheckin">批量归还</el-button>
       </div>
@@ -157,6 +158,7 @@ import { ElMessage } from 'element-plus'
 import { batchCheckinAssets, batchCheckoutAssets, getAssets, getCheckoutRecords } from '../../api/asset'
 import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
+import { downloadBorrowingsCsv } from '../../api/reporting'
 
 const router = useRouter()
 const route = useRoute()

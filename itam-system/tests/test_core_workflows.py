@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from unittest.mock import patch
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from starlette.requests import Request
@@ -23,7 +23,7 @@ from app.models.repair import RepairRecord
 from app.models.scan_binding import AssetScanBinding
 from app.models.scrap import ScrapRequest
 from app.models.stocktake import StocktakeItem, StocktakeTask
-from app.models.user import UserDirectory
+from app.models.user import IdentityProviderConfig, UserDirectory
 from app.api.stocktake import StocktakeItemSubmit, serialize_task, submit_item
 from app.api.company import list_companies, list_company_assets
 from app.core.schema_compat import current_timestamp_sql
@@ -40,6 +40,7 @@ from app.services.purchase_service import PurchaseService
 from app.services.repair_service import RepairService
 from app.services.scrap_service import ScrapService
 from app.services.todo_service import TodoService
+from app.api.reporting import asset_info, build_audit_violations_sheet
 from app.api.product import (
     batch_update_product_retirement_years,
     create_product,
@@ -66,6 +67,90 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertTrue(hasattr(app.models, "Company"))
         self.assertTrue(hasattr(app.models, "Location"))
         self.assertTrue(hasattr(app.models, "ScrapRequest"))
+
+    def test_feishu_provider_cannot_sync_directory_users(self):
+        provider = IdentityProviderConfig(
+            name="Feishu JSAPI",
+            provider_type="feishu",
+            enabled=True,
+            config={"app_id": "cli_test", "app_secret": "secret"},
+        )
+        self.db.add(provider)
+        self.db.commit()
+
+        with self.assertRaisesRegex(ValueError, "Only LDAP identity providers"):
+            IdentityService.sync_users(
+                self.db,
+                provider.id,
+                [UserUpsert(username="should-not-import", display_name="Should Not Import")],
+            )
+
+        self.assertIsNone(
+            self.db.query(UserDirectory).filter(UserDirectory.username == "should-not-import").first()
+        )
+
+    def test_asset_list_owner_filter_resolves_legacy_username(self):
+        user = UserDirectory(
+            user_id="LDAP-1001",
+            username="former.user",
+            display_name="Former User",
+            source="ldap",
+            status="resigned",
+        )
+        owned = Asset(
+            asset_id="ITAM-RECLAIM-001",
+            asset_no="ITAM-RECLAIM-001",
+            name="Former user's laptop",
+            category="Laptop",
+            status="in_use",
+            owner_user_id="former.user",
+        )
+        unrelated = Asset(
+            asset_id="ITAM-RECLAIM-002",
+            asset_no="ITAM-RECLAIM-002",
+            name="Other laptop",
+            category="Laptop",
+            status="in_use",
+            owner_user_id="another.user",
+        )
+        self.db.add_all([user, owned, unrelated])
+        self.db.commit()
+
+        result = AssetService.list_assets(
+            self.db,
+            page=1,
+            page_size=10,
+            user_context={"role": "admin"},
+            owner_user_id=user.user_id,
+        )
+
+        self.assertEqual(result["total"], 1)
+        self.assertEqual(result["list"][0]["asset_id"], owned.asset_id)
+
+    def test_asset_export_identity_fields_are_explicit(self):
+        asset = Asset(
+            asset_id="ITAM-EXPORT-001",
+            asset_no="ASSET-NO-001",
+            name="ThinkPad T14",
+            category="Laptop",
+            brand="Lenovo",
+            model="T14",
+        )
+        self.assertEqual(asset_info(asset), "ThinkPad T14 / Lenovo / T14")
+
+        workbook = Workbook()
+        sheet = workbook.active
+        build_audit_violations_sheet(sheet, [{
+            "asset_id": asset.asset_id,
+            "asset_no": asset.asset_no,
+            "asset_info": asset_info(asset),
+            "asset_name": asset.name,
+        }])
+
+        headers = [cell.value for cell in sheet[1]]
+        self.assertIn("资产ID", headers)
+        self.assertIn("资产编号", headers)
+        self.assertIn("资产信息", headers)
 
     def test_timezone_free_api_datetime_uses_app_timezone(self):
         payload = AssetCreate(

@@ -30,6 +30,26 @@ export function downloadOverdueBorrowingsCsv() {
   return downloadBlob('/reports/overdue-borrowings.csv', 'overdue-borrowings.csv')
 }
 
+export function downloadBorrowingsCsv() {
+  return downloadBlob('/reports/borrowings.csv', 'borrowings.csv')
+}
+
+export function downloadRepairsCsv() {
+  return downloadBlob('/reports/repairs.csv', 'repairs.csv')
+}
+
+export function downloadStocktakeItemsCsv() {
+  return downloadBlob('/reports/stocktake-items.csv', 'stocktake-items.csv')
+}
+
+export function downloadPurchaseAssetsCsv() {
+  return downloadBlob('/reports/purchase-assets.csv', 'purchase-assets.csv')
+}
+
+export function downloadLifecycleCsv() {
+  return downloadBlob('/reports/lifecycle.csv', 'asset-lifecycle.csv')
+}
+
 export function downloadWarrantyExpiringCsv(days = 90) {
   return downloadBlob(`/reports/warranty-expiring.csv?days=${days}`, 'warranty-expiring.csv')
 }

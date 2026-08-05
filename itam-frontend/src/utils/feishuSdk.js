@@ -58,26 +58,6 @@ export function getLastFeishuScanError() {
   return lastScanError
 }
 
-export async function requestFeishuLoginCode(appId, scopeList = []) {
-  if (!appId) throw new Error('缺少飞书 App ID')
-  if (!isFeishuClient() && import.meta.env.VITE_FEISHU_SDK_AUTO_LOAD !== 'true') {
-    throw new Error('当前不是飞书客户端环境')
-  }
-  await loadFeishuSdk()
-  const bridge = window.tt || window.lark
-  if (bridge?.requestAccess) {
-    try {
-      return await callRequestAccess(bridge, appId, scopeList)
-    } catch (error) {
-      if (!isRequestAccessUnsupported(error)) throw error
-    }
-  }
-  if (bridge?.requestAuthCode) {
-    return callRequestAuthCode(bridge, appId)
-  }
-  throw new Error('当前飞书客户端不支持免登 JSAPI')
-}
-
 async function getFeishuBridge() {
   if (window.tt?.scanCode) return window.tt
   if (window.lark?.scanCode) return window.lark
@@ -120,37 +100,6 @@ function loadScript(src) {
     script.onerror = () => reject(new Error(`Feishu JS SDK load failed: ${src}`))
     document.head.appendChild(script)
   })
-}
-
-function callRequestAccess(bridge, appId, scopeList) {
-  return new Promise((resolve, reject) => {
-    bridge.requestAccess({
-      appID: appId,
-      scopeList,
-      success: result => resolve(result?.code || result?.data?.code || ''),
-      fail: reject
-    })
-  }).then(code => {
-    if (!code) throw new Error('飞书免登未返回授权码')
-    return code
-  })
-}
-
-function callRequestAuthCode(bridge, appId) {
-  return new Promise((resolve, reject) => {
-    bridge.requestAuthCode({
-      appId,
-      success: result => resolve(result?.code || result?.data?.code || ''),
-      fail: reject
-    })
-  }).then(code => {
-    if (!code) throw new Error('飞书免登未返回授权码')
-    return code
-  })
-}
-
-function isRequestAccessUnsupported(error) {
-  return Number(error?.errno) === 103 || /requestAccess|unsupported|not support/i.test(describeError(error))
 }
 
 async function waitForReady(bridge) {

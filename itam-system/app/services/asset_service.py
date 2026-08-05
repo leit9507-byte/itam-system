@@ -1066,6 +1066,7 @@ class AssetService:
         supplier: str | None = None,
         user_context: dict | None = None,
         risk_filter: str | None = None,
+        owner_user_id: str | None = None,
     ) -> dict:
         users = AssetService.users_by_identity(db)
         query = db.query(Asset)
@@ -1097,6 +1098,17 @@ class AssetService:
         if company:
             stored = AssetService.normalize_company(company)
             query = query.filter(Asset.company.is_(None) if stored is None else Asset.company == stored)
+        clean_owner_user_id = AssetService.normalize_blank(owner_user_id)
+        if clean_owner_user_id:
+            owner = AssetService.find_user(db, clean_owner_user_id)
+            owner_identities = {clean_owner_user_id}
+            if owner:
+                owner_identities.update(
+                    value
+                    for value in [owner.user_id, owner.username, owner.external_id, owner.email]
+                    if value
+                )
+            query = query.filter(Asset.owner_user_id.in_(owner_identities))
         query = AssetService.apply_asset_risk_filter(query, risk_filter)
 
         total = query.count()

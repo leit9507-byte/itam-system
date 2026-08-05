@@ -19,7 +19,12 @@
       <div class="export-grid">
         <el-button @click="downloadDepartmentAssetsCsv">部门资产清单</el-button>
         <el-button @click="downloadPersonHoldingsCsv">人员持有清单</el-button>
+        <el-button @click="downloadPurchaseAssetsCsv">采购资产清单</el-button>
+        <el-button @click="downloadBorrowingsCsv">借用记录台账</el-button>
         <el-button @click="downloadOverdueBorrowingsCsv">逾期借用清单</el-button>
+        <el-button @click="downloadRepairsCsv">维修记录台账</el-button>
+        <el-button @click="downloadStocktakeItemsCsv">盘点明细台账</el-button>
+        <el-button @click="downloadLifecycleCsv">生命周期台账</el-button>
         <el-button @click="downloadWarrantyExpiringCsv(90)">即将过保清单</el-button>
         <el-button @click="downloadScrapDisposalLedgerCsv">报废处置台账</el-button>
       </div>
@@ -110,7 +115,7 @@
 import { ElMessage } from 'element-plus'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { downloadArchivedAuditReport, generateReport, getReportHtml, getReports } from '../../api/audit'
-import { downloadAssetCsv, downloadAssetPdf, downloadAuditReport, downloadAuditReportExcel, downloadDepartmentAssetsCsv, downloadOverdueBorrowingsCsv, downloadPersonHoldingsCsv, downloadScrapDisposalLedgerCsv, downloadWarrantyExpiringCsv, getReportAnalytics } from '../../api/reporting'
+import { downloadAssetCsv, downloadAssetPdf, downloadAuditReport, downloadAuditReportExcel, downloadBorrowingsCsv, downloadDepartmentAssetsCsv, downloadLifecycleCsv, downloadOverdueBorrowingsCsv, downloadPersonHoldingsCsv, downloadPurchaseAssetsCsv, downloadRepairsCsv, downloadScrapDisposalLedgerCsv, downloadStocktakeItemsCsv, downloadWarrantyExpiringCsv, getReportAnalytics } from '../../api/reporting'
 
 const reports = ref([])
 const previewHtml = ref('')

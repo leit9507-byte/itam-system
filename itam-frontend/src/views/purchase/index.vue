@@ -6,6 +6,7 @@
         <p class="page-subtitle">一张采购单可包含多种设备，支持供应商、审批单号、验收明细和自动入库</p>
       </div>
       <div class="toolbar">
+        <el-button @click="downloadPurchaseAssetsCsv">导出采购资产</el-button>
         <el-button @click="goCatalog('/device-type')">设备类型</el-button>
         <el-button @click="goCatalog('/product')">产品档案</el-button>
         <el-button type="primary" @click="openCreate">创建采购单</el-button>
@@ -177,6 +178,7 @@ import { createPurchase, getPurchases } from '../../api/purchase'
 import { getProducts } from '../../api/product'
 import { getSuppliers } from '../../api/supplier'
 import { getUsers } from '../../api/user'
+import { downloadPurchaseAssetsCsv } from '../../api/reporting'
 import PurchaseAcceptanceDialog from '../../components/PurchaseAcceptanceDialog.vue'
 
 const purchases = ref([])

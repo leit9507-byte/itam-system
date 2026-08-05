@@ -374,7 +374,7 @@
                 <template #default="{ row }">
                   <el-button link type="primary" @click="editProvider(row)">编辑</el-button>
                   <el-button link type="warning" @click="testProvider(row)">测试</el-button>
-                  <el-button link type="success" @click="syncFromProvider(row)">同步</el-button>
+                  <el-button v-if="row.provider_type === 'ldap'" link type="success" @click="syncFromProvider(row)">同步</el-button>
                   <el-button link type="danger" @click="removeProvider(row)">删除</el-button>
                 </template>
               </el-table-column>
