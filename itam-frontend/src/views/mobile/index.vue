@@ -200,19 +200,39 @@
 
     <el-dialog v-if="asset" v-model="assetDialogVisible" :title="currentMode.formTitle" width="92%" class="mobile-asset-dialog" append-to-body>
       <div class="asset-main">
-        <div>
+        <div class="asset-title">
           <strong>{{ asset.name }}</strong>
-          <span>{{ asset.asset_id }}</span>
+          <span>{{ assetProductLabel(asset) }}</span>
         </div>
         <el-tag :type="statusType(asset.status)">{{ statusLabel(asset.status) }}</el-tag>
-        <el-button text type="primary" @click="copyAssetId">复制</el-button>
       </div>
-      <div class="asset-meta">
-        <span>责任人：{{ asset.owner_name || asset.owner || '未分配' }}</span>
-        <span>位置：{{ asset.location || asset.warehouse || '-' }}</span>
-        <span>SN：{{ asset.sn || '-' }}</span>
-        <span>采购审批单号：{{ asset.purchase_approval_no || '-' }}</span>
+
+      <div class="asset-code-grid">
+        <div class="asset-code-item asset-code-primary">
+          <span>资产编号</span>
+          <strong>{{ asset.asset_no || asset.asset_id || '-' }}</strong>
+          <el-button link type="primary" @click="copyAssetNo">复制</el-button>
+        </div>
+        <div class="asset-code-item">
+          <span>SN</span>
+          <strong>{{ asset.sn || '-' }}</strong>
+        </div>
+        <div class="asset-code-item">
+          <span>资产 ID</span>
+          <strong>{{ asset.asset_id || '-' }}</strong>
+        </div>
+        <div class="asset-code-item">
+          <span>所属公司</span>
+          <strong>{{ asset.company || '-' }}</strong>
+        </div>
       </div>
+
+      <dl class="asset-meta">
+        <div><dt>使用人</dt><dd>{{ assetOwnerLabel(asset) }}</dd></div>
+        <div><dt>部门</dt><dd>{{ asset.dept_name || asset.dept || asset.dept_id || '-' }}</dd></div>
+        <div><dt>位置</dt><dd>{{ asset.location || asset.warehouse || '-' }}</dd></div>
+        <div><dt>采购审批单号</dt><dd>{{ asset.purchase_approval_no || '-' }}</dd></div>
+      </dl>
 
       <div v-if="['work', 'repair', 'stocktake'].includes(activeSection)" class="mobile-dialog-form">
         <el-form label-position="top">
@@ -387,7 +407,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { Box, Camera, CircleCheck, FolderOpened, HomeFilled, Loading, Search, Setting } from '@element-plus/icons-vue'
-import { getAssets, inboundAsset, outboundAsset } from '../../api/asset'
+import { getAssetById, getAssets, inboundAsset, outboundAsset } from '../../api/asset'
 import { createRepairRecord, getRepairFaultTypes } from '../../api/repair'
 import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
@@ -835,7 +855,15 @@ async function loadAsset() {
       return ElMessage.error('该资产不在当前盘点任务范围内')
     }
     currentStocktakeItem.value = taskItem
-    asset.value = taskItemToAsset(taskItem)
+    let fullAsset = resolvedAsset
+    if (!fullAsset) {
+      try {
+        fullAsset = await getAssetById(taskItem.asset_id)
+      } catch {
+        fullAsset = null
+      }
+    }
+    asset.value = { ...(fullAsset || {}), ...taskItemToAsset(taskItem) }
     assetDialogVisible.value = true
     form.location = taskItem.book_location || ''
     form.owner_user_id = taskItem.book_owner_user_id || ''
@@ -880,7 +908,12 @@ async function loadAsset() {
 async function resolveAssetFromScan(value) {
   try {
     const result = await resolveScanBinding(value)
-    return result?.bound ? result.asset : null
+    if (!result?.bound || !result.asset?.asset_id) return null
+    try {
+      return await getAssetById(result.asset.asset_id)
+    } catch {
+      return normalizeScannedAsset(result.asset)
+    }
   } catch {
     return null
   }
@@ -975,10 +1008,22 @@ function locationLabel(item) {
   return meta ? `${item.name} (${meta})` : item.name
 }
 
-async function copyAssetId() {
-  if (!asset.value?.asset_id) return
-  await navigator.clipboard?.writeText(asset.value.asset_id).catch(() => null)
+async function copyAssetNo() {
+  const value = asset.value?.asset_no || asset.value?.asset_id
+  if (!value) return
+  await navigator.clipboard?.writeText(value).catch(() => null)
   ElMessage.success('资产编号已复制')
+}
+
+function assetProductLabel(item = {}) {
+  return [item.category, item.brand, item.model].filter(Boolean).join(' / ') || '未填写产品信息'
+}
+
+function assetOwnerLabel(item = {}) {
+  const name = item.owner_name || item.owner_display_name || ''
+  const account = item.owner_username || item.owner || item.owner_user_id || ''
+  if (name && account && name !== account) return `${name} (${account})`
+  return name || account || '未分配'
 }
 
 async function submitWork() {
@@ -1091,6 +1136,7 @@ function taskItemToAsset(item) {
   const owner = users.value.find(user => user.user_id === item.book_owner_user_id)
   return {
     asset_id: item.asset_id,
+    asset_no: item.asset_no || item.asset_id,
     name: item.name,
     sn: item.sn,
     status: item.book_status,
@@ -1098,10 +1144,19 @@ function taskItemToAsset(item) {
     owner_user_id: item.book_owner_user_id || '',
     owner_name: owner?.display_name || '',
     location: item.book_location,
-    warehouse: item.book_location,
-    category: '',
-    brand: '',
-    model: ''
+    warehouse: item.book_location
+  }
+}
+
+function normalizeScannedAsset(item = {}) {
+  return {
+    ...item,
+    asset_no: item.asset_no || item.asset_id || '',
+    owner: item.owner_user_id || '',
+    owner_name: item.owner_display_name || item.owner_name || '',
+    dept: item.dept_id || '',
+    dept_name: item.dept_name || '',
+    warehouse: item.location || ''
   }
 }
 
@@ -2024,9 +2079,13 @@ function statusType(value) {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+}
+
+.asset-title {
+  min-width: 0;
+  flex: 1;
 }
 
 .mobile-asset-dialog :deep(.el-dialog) {
@@ -2049,6 +2108,7 @@ function statusType(value) {
   display: block;
   font-size: 19px;
   line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .asset-main span {
@@ -2056,9 +2116,76 @@ function statusType(value) {
   margin-top: 2px;
 }
 
-.asset-meta {
+.asset-code-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.asset-code-item {
+  position: relative;
+  min-width: 0;
+  min-height: 72px;
+  padding: 10px 12px;
+  border: 1px solid #dce8f5;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.asset-code-item span {
+  display: block;
+  margin-bottom: 5px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.asset-code-item strong {
+  display: block;
+  color: #172033;
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.asset-code-primary {
+  padding-right: 48px;
+  border-color: #b9d6ff;
+  background: #eef6ff;
+}
+
+.asset-code-primary :deep(.el-button) {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  min-height: 32px;
+  padding: 0 4px;
+}
+
+.asset-meta {
+  gap: 0;
+  margin: 12px 0 0;
+  border-top: 1px solid #e7eef7;
   font-size: 13px;
+}
+
+.asset-meta > div {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 2px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.asset-meta dt {
+  color: #64748b;
+}
+
+.asset-meta dd {
+  min-width: 0;
+  margin: 0;
+  color: #24324a;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .asset-actions {
