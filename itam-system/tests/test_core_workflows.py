@@ -127,6 +127,50 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(result["total"], 1)
         self.assertEqual(result["list"][0]["asset_id"], owned.asset_id)
 
+    def test_asset_list_owner_filter_resolves_compound_ldap_owner(self):
+        user = UserDirectory(
+            user_id="LDAP-1002",
+            username="gami",
+            display_name="简嘉铭",
+            email="gami@example.com",
+            source="ldap",
+            status="resigned",
+        )
+        owned = Asset(
+            asset_id="ITAM-RECLAIM-003",
+            asset_no="ITAM-RECLAIM-003",
+            name="Legacy imported laptop",
+            category="Laptop",
+            status="in_use",
+            owner_user_id="Gami-简嘉铭",
+        )
+        self.db.add_all([user, owned])
+        self.db.commit()
+
+        result = AssetService.list_assets(
+            self.db,
+            page=1,
+            page_size=10,
+            user_context={"role": "admin"},
+            owner_user_id=user.user_id,
+        )
+
+        self.assertEqual(result["total"], 1)
+        self.assertEqual(result["list"][0]["asset_id"], owned.asset_id)
+
+    def test_find_user_resolves_compound_legacy_owner(self):
+        user = UserDirectory(
+            user_id="LDAP-1003",
+            username="tian",
+            display_name="何中天",
+            source="ldap",
+            status="resigned",
+        )
+        self.db.add(user)
+        self.db.commit()
+
+        self.assertEqual(AssetService.find_user(self.db, "Tian-何中天").user_id, user.user_id)
+
     def test_asset_export_identity_fields_are_explicit(self):
         asset = Asset(
             asset_id="ITAM-EXPORT-001",

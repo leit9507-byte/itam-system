@@ -1105,10 +1105,24 @@ class AssetService:
             if owner:
                 owner_identities.update(
                     value
-                    for value in [owner.user_id, owner.username, owner.external_id, owner.email]
+                    for value in [owner.user_id, owner.username, owner.external_id, owner.email, owner.display_name]
                     if value
                 )
-            query = query.filter(Asset.owner_user_id.in_(owner_identities))
+            normalized_identities = {
+                str(value).strip().casefold()
+                for value in owner_identities
+                if str(value).strip()
+            }
+            owner_value = func.lower(func.trim(Asset.owner_user_id))
+            identity_filters = [owner_value.in_(normalized_identities)]
+            for identity in normalized_identities:
+                for separator in ["-", "_", "/", "\\", "|", ",", ";", ":", "，", "；", "：", " "]:
+                    identity_filters.extend([
+                        owner_value.like(f"{identity}{separator}%"),
+                        owner_value.like(f"%{separator}{identity}"),
+                        owner_value.like(f"%{separator}{identity}{separator}%"),
+                    ])
+            query = query.filter(or_(*identity_filters))
         query = AssetService.apply_asset_risk_filter(query, risk_filter)
 
         total = query.count()
@@ -2004,22 +2018,48 @@ class AssetService:
     def find_user(db: Session, value: str | None) -> UserDirectory | None:
         if not value:
             return None
-        candidates = [value]
-        if value.startswith("ldap:"):
-            candidates.append(value.removeprefix("ldap:"))
-        lowered = value.lower()
+        clean_value = str(value).strip()
+        candidates = [clean_value]
+        if clean_value.startswith("ldap:"):
+            candidates.append(clean_value.removeprefix("ldap:"))
+        lowered = clean_value.lower()
         if "cn=" in lowered:
             cn_part = lowered.split("cn=", 1)[1].split(",", 1)[0]
             if cn_part:
                 candidates.append(cn_part)
+        candidate_keys = {item.casefold() for item in candidates if item}
+        exact = (
+            db.query(UserDirectory)
+            .filter(
+                or_(
+                    func.lower(UserDirectory.user_id).in_(candidate_keys),
+                    func.lower(UserDirectory.username).in_(candidate_keys),
+                    func.lower(UserDirectory.external_id).in_(candidate_keys),
+                    func.lower(UserDirectory.email).in_(candidate_keys),
+                    func.lower(UserDirectory.display_name).in_(candidate_keys),
+                )
+            )
+            .first()
+        )
+        if exact:
+            return exact
+        compound_candidates = [
+            item.strip()
+            for item in re.split(r"[\s\-_/\\|,;:，；：()（）]+", clean_value)
+            if item.strip()
+        ]
+        if not compound_candidates:
+            return None
+        compound_candidate_keys = {item.casefold() for item in compound_candidates}
         return (
             db.query(UserDirectory)
             .filter(
                 or_(
-                    UserDirectory.user_id.in_(candidates),
-                    UserDirectory.username.in_(candidates),
-                    UserDirectory.external_id.in_(candidates),
-                    UserDirectory.email.in_(candidates),
+                    func.lower(UserDirectory.user_id).in_(compound_candidate_keys),
+                    func.lower(UserDirectory.username).in_(compound_candidate_keys),
+                    func.lower(UserDirectory.external_id).in_(compound_candidate_keys),
+                    func.lower(UserDirectory.email).in_(compound_candidate_keys),
+                    func.lower(UserDirectory.display_name).in_(compound_candidate_keys),
                 )
             )
             .first()
@@ -2039,7 +2079,7 @@ class AssetService:
         users = db.query(UserDirectory).all()
         mapping: dict[str, UserDirectory] = {}
         for user in users:
-            for value in [user.user_id, user.username, user.external_id, user.email]:
+            for value in [user.user_id, user.username, user.external_id, user.email, user.display_name]:
                 if value:
                     mapping[value] = user
         return mapping
