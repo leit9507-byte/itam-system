@@ -775,6 +775,29 @@ class CoreWorkflowTest(unittest.TestCase):
 
         self.assertFalse(any(item["type"] == "onboarding_assign" and item.get("user_id") == "U-ONBOARD-OLD" for item in todos))
 
+    def test_onboarding_todo_does_not_match_shared_ldap_dn_parts(self):
+        alice_id = "ldap:cn=alice,ou=users,dc=example,dc=com"
+        bob_id = "ldap:cn=bob,ou=users,dc=example,dc=com"
+        self.db.add(UserDirectory(user_id=alice_id, username="alice", display_name="Alice", status="active"))
+        self.db.add(UserDirectory(user_id=bob_id, username="bob", display_name="Bob", status="active"))
+        self.db.add(
+            Asset(
+                asset_id="ITAM-LDAP-OWNER",
+                asset_no="ITAM-LDAP-OWNER",
+                name="Laptop",
+                category="Laptop",
+                status="in_use",
+                owner_user_id=alice_id,
+            )
+        )
+        self.db.commit()
+
+        todos = TodoService.list_todos(self.db, {"role": "admin"})
+        onboarding_user_ids = {item.get("user_id") for item in todos if item["type"] == "onboarding_assign"}
+
+        self.assertNotIn(alice_id, onboarding_user_ids)
+        self.assertIn(bob_id, onboarding_user_ids)
+
     def test_onboarding_todo_skips_users_marked_no_asset_required(self):
         self.db.add(
             UserDirectory(

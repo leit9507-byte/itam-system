@@ -11,6 +11,7 @@ from app.schemas.asset import AssetBatchCheckinCreate, AssetBatchCheckoutCreate,
 from app.schemas.repair import RepairCreate
 from app.services.asset_service import AssetService, AssetValidationError
 from app.services.repair_service import RepairService
+from app.services.todo_service import TodoService
 
 
 router = APIRouter(prefix="/asset", tags=["Asset"])
@@ -102,12 +103,16 @@ def get_asset(asset_id: str, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/checkouts/batch-checkout")
 def batch_checkout_assets(payload: AssetBatchCheckoutCreate, request: Request, db: Session = Depends(get_db)):
-    return AssetService.batch_checkout_assets(db, payload, operator_from_request(request), user_context_from_request(request))
+    result = AssetService.batch_checkout_assets(db, payload, operator_from_request(request), user_context_from_request(request))
+    TodoService.invalidate()
+    return result
 
 
 @router.post("/batch-outbound")
 def batch_outbound_assets(payload: AssetBatchCheckoutCreate, request: Request, db: Session = Depends(get_db)):
-    return AssetService.batch_checkout_assets(db, payload, operator_from_request(request), user_context_from_request(request))
+    result = AssetService.batch_checkout_assets(db, payload, operator_from_request(request), user_context_from_request(request))
+    TodoService.invalidate()
+    return result
 
 
 @router.post("/checkouts/batch-checkin")

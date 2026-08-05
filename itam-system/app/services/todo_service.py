@@ -326,6 +326,10 @@ class TodoService:
         raw = TodoService.identity_key(value)
         if not raw:
             return set()
+        ldap_cn = re.search(r"(?:^|[:,/])cn=([^,/:]+)", raw)
+        if ldap_cn:
+            # LDAP DN 中的 ou/dc 等片段由所有目录用户共享，不能作为人员别名。
+            return {raw, ldap_cn.group(1).strip().casefold()}
         parts = {
             item.strip().casefold()
             for item in re.split(r"[\s\-_/\\|,;:，；：()（）]+", raw)
