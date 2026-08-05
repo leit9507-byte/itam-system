@@ -221,13 +221,10 @@
           <span>资产 ID</span>
           <strong>{{ asset.asset_id || '-' }}</strong>
         </div>
-        <div class="asset-code-item">
-          <span>所属公司</span>
-          <strong>{{ asset.company || '-' }}</strong>
-        </div>
       </div>
 
       <dl class="asset-meta">
+        <div><dt>所属公司</dt><dd>{{ asset.company || '-' }}</dd></div>
         <div><dt>使用人</dt><dd>{{ assetOwnerLabel(asset) }}</dd></div>
         <div><dt>部门</dt><dd>{{ asset.dept_name || asset.dept || asset.dept_id || '-' }}</dd></div>
         <div><dt>位置</dt><dd>{{ asset.location || asset.warehouse || '-' }}</dd></div>
@@ -2089,13 +2086,41 @@ function statusType(value) {
 }
 
 .mobile-asset-dialog :deep(.el-dialog) {
-  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  width: min(92vw, 440px) !important;
+  max-height: calc(100vh - 28px);
+  max-height: calc(100dvh - 28px);
+  margin: 14px auto;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.mobile-asset-dialog :deep(.el-dialog__header) {
+  flex: 0 0 auto;
+  padding: 16px 18px 12px;
+  margin-right: 0;
+}
+
+.mobile-asset-dialog :deep(.el-dialog__title) {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.mobile-asset-dialog :deep(.el-dialog__headerbtn) {
+  top: 10px;
+  right: 10px;
+  width: 36px;
+  height: 36px;
 }
 
 .mobile-asset-dialog :deep(.el-dialog__body) {
-  padding-top: 4px;
-  max-height: 72vh;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 8px 18px 18px;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .mobile-dialog-form {
@@ -2106,14 +2131,16 @@ function statusType(value) {
 
 .asset-main strong {
   display: block;
-  font-size: 19px;
-  line-height: 1.25;
+  font-size: 17px;
+  line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
 .asset-main span {
   display: block;
-  margin-top: 2px;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .asset-code-grid {
@@ -2125,8 +2152,8 @@ function statusType(value) {
 .asset-code-item {
   position: relative;
   min-width: 0;
-  min-height: 72px;
-  padding: 10px 12px;
+  min-height: 58px;
+  padding: 8px 10px;
   border: 1px solid #dce8f5;
   border-radius: 8px;
   background: #f8fbff;
@@ -2148,6 +2175,7 @@ function statusType(value) {
 }
 
 .asset-code-primary {
+  grid-column: 1 / -1;
   padding-right: 48px;
   border-color: #b9d6ff;
   background: #eef6ff;
@@ -2170,9 +2198,9 @@ function statusType(value) {
 
 .asset-meta > div {
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
+  grid-template-columns: 80px minmax(0, 1fr);
   gap: 10px;
-  padding: 9px 2px;
+  padding: 8px 2px;
   border-bottom: 1px solid #edf2f7;
 }
 
@@ -2186,6 +2214,24 @@ function statusType(value) {
   color: #24324a;
   text-align: right;
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 360px) {
+  .mobile-asset-dialog :deep(.el-dialog__header) {
+    padding: 14px 14px 10px;
+  }
+
+  .mobile-asset-dialog :deep(.el-dialog__body) {
+    padding: 6px 14px 14px;
+  }
+
+  .asset-code-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .asset-code-primary {
+    grid-column: auto;
+  }
 }
 
 .asset-actions {
