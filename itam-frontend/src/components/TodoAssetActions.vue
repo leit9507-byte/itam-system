@@ -4,11 +4,14 @@
     <el-form :model="assignDialog.form" label-width="100px" class="todo-asset-form">
       <el-form-item label="选择资产" required>
         <el-select
-          v-model="assignDialog.form.asset_id"
+          v-model="assignDialog.form.asset_ids"
+          multiple
           filterable
           remote
           reserve-keyword
           clearable
+          collapse-tags
+          collapse-tags-tooltip
           placeholder="搜索资产编号、名称、序列号"
           :remote-method="searchAssignableAssets"
           :teleported="false"
@@ -17,12 +20,38 @@
         >
           <el-option v-for="item in assignDialog.assets" :key="item.asset_id" :label="assetLabel(item)" :value="item.asset_id">
             <div class="asset-option">
-              <strong>{{ item.asset_id }}</strong>
+              <strong>{{ item.asset_no || item.asset_id }}</strong>
               <span>{{ item.name || '-' }}</span>
-              <small>{{ [item.brand, item.model, item.sn, item.location || '未填写位置'].filter(Boolean).join(' / ') }}</small>
+              <small>{{ [item.asset_no ? `ID ${item.asset_id}` : '', item.brand, item.model, item.sn, item.location || '未填写位置'].filter(Boolean).join(' / ') }}</small>
             </div>
           </el-option>
         </el-select>
+      </el-form-item>
+      <el-form-item v-if="mobile" label="扫码添加">
+        <div class="assign-scan-row">
+          <el-input
+            v-model="assignDialog.scanInput"
+            clearable
+            placeholder="扫码或输入资产编号"
+            @keyup.enter="addAssignAssetByCode(assignDialog.scanInput)"
+          />
+          <el-button type="primary" :loading="assignDialog.scanning" @click="scanAssignAsset">
+            <el-icon><Camera /></el-icon>
+            继续扫码
+          </el-button>
+        </div>
+      </el-form-item>
+      <el-form-item v-if="selectedAssignAssets.length" :label="`已选 ${selectedAssignAssets.length} 台`">
+        <div class="selected-asset-list">
+          <div v-for="item in selectedAssignAssets" :key="item.asset_id" class="selected-asset-row">
+            <div>
+              <strong>{{ item.asset_no || item.asset_id }}</strong>
+              <span>{{ item.name || '-' }}</span>
+              <small>{{ [item.sn ? `SN ${item.sn}` : '', item.location || '未填写位置'].filter(Boolean).join(' / ') }}</small>
+            </div>
+            <el-button text type="danger" aria-label="移除资产" @click="removeAssignAsset(item.asset_id)">移除</el-button>
+          </div>
+        </div>
       </el-form-item>
       <el-form-item label="使用位置">
         <el-select v-model="assignDialog.form.location" filterable clearable placeholder="选择使用位置" :teleported="false" popper-class="todo-location-select-popper" style="width: 100%">
@@ -36,7 +65,7 @@
     <template #footer>
       <el-button @click="assignDialog.visible = false">取消</el-button>
       <el-button :loading="processing" @click="skipAssetAssignment">不需要分配公司资产</el-button>
-      <el-button type="primary" :loading="processing" @click="submitAssign">确认分配</el-button>
+      <el-button type="primary" :loading="processing" @click="submitAssign">{{ mobile ? '分配' : '确认分配' }} {{ selectedAssignAssets.length }} 台</el-button>
     </template>
   </el-dialog>
 
@@ -71,13 +100,17 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getAssets, inboundAsset, outboundAsset } from '../api/asset'
+import { Camera } from '@element-plus/icons-vue'
+import { batchCheckoutAssets, getAssetById, getAssets, inboundAsset } from '../api/asset'
 import { getLocations } from '../api/location'
+import { resolveScanBinding } from '../api/scanBinding'
 import { getUsers, updateUserAssetAssignment } from '../api/user'
+import { assetCodeCandidates, assetCodeMatches, parseAssetCode } from '../utils/assetCode'
 
 const emit = defineEmits(['completed'])
 const props = defineProps({
-  mobile: { type: Boolean, default: false }
+  mobile: { type: Boolean, default: false },
+  scanCodeProvider: { type: Function, default: null }
 })
 const processing = ref(false)
 const users = ref([])
@@ -86,7 +119,9 @@ const assignDialog = reactive({
   visible: false,
   todo: null,
   assets: [],
-  form: { asset_id: '', location: '', remark: '入职资产分配' }
+  scanInput: '',
+  scanning: false,
+  form: { asset_ids: [], location: '', remark: '入职资产分配' }
 })
 const reclaimDialog = reactive({
   visible: false,
@@ -102,6 +137,10 @@ const reclaimDialogWidth = computed(() => (props.mobile ? 'min(360px, calc(100vw
 const dialogClass = computed(() => ['todo-action-dialog', { 'todo-action-dialog--mobile': props.mobile }])
 
 const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
+const selectedAssignAssets = computed(() => {
+  const selected = new Set(assignDialog.form.asset_ids)
+  return assignDialog.assets.filter(item => selected.has(item.asset_id))
+})
 
 async function handle(item) {
   if (item.type === 'onboarding_assign') {
@@ -125,14 +164,16 @@ async function handle(item) {
 
 async function openAssignDialog(item) {
   assignDialog.todo = item
-  Object.assign(assignDialog.form, { asset_id: '', location: '', remark: '入职资产分配' })
+  assignDialog.scanInput = ''
+  Object.assign(assignDialog.form, { asset_ids: [], location: '', remark: '入职资产分配' })
   await ensureOptions()
   assignDialog.assets = await loadAssignableAssets('')
   assignDialog.visible = true
 }
 
 async function searchAssignableAssets(keyword = '') {
-  assignDialog.assets = await loadAssignableAssets(keyword)
+  const rows = await loadAssignableAssets(keyword)
+  assignDialog.assets = mergeAssetOptions(assignDialog.assets.filter(item => assignDialog.form.asset_ids.includes(item.asset_id)), rows)
 }
 
 async function loadAssignableAssets(keyword = '') {
@@ -141,13 +182,13 @@ async function loadAssignableAssets(keyword = '') {
 }
 
 async function submitAssign() {
-  if (!assignDialog.form.asset_id) return ElMessage.warning('请选择要分配的资产')
+  if (!assignDialog.form.asset_ids.length) return ElMessage.warning('请至少选择一台要分配的资产')
   const todo = assignDialog.todo
   processing.value = true
   try {
     await ensureUsers()
     const user = users.value.find(item => item.user_id === todo.user_id || item.username === todo.username)
-    await outboundAsset(assignDialog.form.asset_id, {
+    const result = await batchCheckoutAssets(assignDialog.form.asset_ids, {
       outboundTarget: 'user',
       toStatus: 'in_use',
       owner_user_id: user?.user_id || todo.user_id || todo.username,
@@ -157,14 +198,84 @@ async function submitAssign() {
       location: assignDialog.form.location,
       remark: assignDialog.form.remark || '入职资产分配'
     })
-    ElMessage.success('入职资产已分配')
-    assignDialog.visible = false
+    const success = Number(result?.success || 0)
+    const failed = Number(result?.failed || 0)
+    if (failed) {
+      const failedIds = new Set((result.errors || []).map(item => item.asset_id))
+      assignDialog.form.asset_ids = assignDialog.form.asset_ids.filter(id => failedIds.has(id))
+      const first = result.errors?.[0]
+      ElMessage.warning(`成功分配 ${success} 台，失败 ${failed} 台${first ? `：${first.asset_id} ${first.message}` : ''}`)
+      if (!success) return
+    } else {
+      ElMessage.success(`已分配 ${success} 台入职资产`)
+      assignDialog.visible = false
+    }
     emit('completed')
   } catch (error) {
     ElMessage.error(`分配失败：${error?.message || '请稍后重试'}`)
   } finally {
     processing.value = false
   }
+}
+
+async function scanAssignAsset() {
+  if (assignDialog.scanning) return
+  assignDialog.scanning = true
+  try {
+    let raw = assignDialog.scanInput.trim()
+    if (!raw && props.scanCodeProvider) raw = await props.scanCodeProvider()
+    if (!raw) {
+      if (!props.scanCodeProvider) ElMessage.info('请扫码或输入资产编号')
+      return
+    }
+    await addAssignAssetByCode(raw)
+  } finally {
+    assignDialog.scanning = false
+  }
+}
+
+async function addAssignAssetByCode(raw) {
+  const code = parseAssetCode(raw)
+  if (!code) return ElMessage.warning('未读取到有效的资产编号或二维码内容')
+  try {
+    const found = await resolveAssignableAsset(raw)
+    if (!found) return ElMessage.error(`未找到资产：${code}`)
+    if (!['in_stock', 'idle'].includes(found.status)) {
+      return ElMessage.warning(`${found.asset_no || found.asset_id} 当前状态不可分配`)
+    }
+    if (assignDialog.form.asset_ids.includes(found.asset_id)) {
+      assignDialog.scanInput = ''
+      return ElMessage.info(`${found.asset_no || found.asset_id} 已在待分配清单中`)
+    }
+    assignDialog.assets = mergeAssetOptions(assignDialog.assets, [found])
+    assignDialog.form.asset_ids.push(found.asset_id)
+    assignDialog.scanInput = ''
+    ElMessage.success(`已添加 ${found.asset_no || found.asset_id}，可继续扫码`)
+  } catch (error) {
+    ElMessage.error(`资产识别失败：${error?.message || '请稍后重试'}`)
+  }
+}
+
+async function resolveAssignableAsset(raw) {
+  const binding = await resolveScanBinding(raw).catch(() => null)
+  if (binding?.bound && binding.asset?.asset_id) {
+    return getAssetById(binding.asset.asset_id).catch(() => binding.asset)
+  }
+  for (const candidate of assetCodeCandidates(raw)) {
+    const { list } = await getAssets({ keyword: candidate, page: 1, page_size: 10 })
+    const found = list.find(item => assetCodeMatches(item, candidate)) || list[0]
+    if (found) return found
+  }
+  return null
+}
+
+function removeAssignAsset(assetId) {
+  assignDialog.form.asset_ids = assignDialog.form.asset_ids.filter(id => id !== assetId)
+}
+
+function mergeAssetOptions(...groups) {
+  const rows = groups.flat().filter(Boolean)
+  return [...new Map(rows.map(item => [item.asset_id, item])).values()]
 }
 
 async function skipAssetAssignment() {
@@ -271,7 +382,7 @@ async function ensureOptions() {
 }
 
 function assetLabel(item) {
-  return `${item.asset_id} ${item.name || ''} ${item.sn || ''} ${item.location || ''}`.trim()
+  return `${item.asset_no || item.asset_id} ${item.asset_no ? item.asset_id : ''} ${item.name || ''} ${item.sn || ''} ${item.location || ''}`.trim()
 }
 
 function locationLabel(item) {
@@ -331,6 +442,48 @@ defineExpose({ handle })
   margin-top: 14px;
 }
 
+.assign-scan-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  width: 100%;
+}
+
+.selected-asset-list {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+
+.selected-asset-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid #dbe7f5;
+  border-radius: 6px;
+  background: #f8fbff;
+}
+
+.selected-asset-row > div {
+  display: grid;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.selected-asset-row strong,
+.selected-asset-row span,
+.selected-asset-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-asset-row small {
+  color: #64748b;
+}
+
 :deep(.todo-asset-select-popper) {
   max-width: min(560px, calc(100vw - 48px));
 }
@@ -366,10 +519,15 @@ defineExpose({ handle })
 :global(.todo-action-dialog--mobile .el-dialog__footer) {
   flex: 0 0 auto;
   padding: 10px 16px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 :global(.todo-action-dialog--mobile .el-dialog__footer .el-button) {
   min-width: 0;
+  margin-left: 0;
   padding-inline: 14px;
 }
 
@@ -417,6 +575,10 @@ defineExpose({ handle })
 
   .todo-asset-form :deep(.el-form-item__content) {
     margin-left: 0 !important;
+  }
+
+  .assign-scan-row {
+    grid-template-columns: minmax(0, 1fr) 112px;
   }
 }
 </style>

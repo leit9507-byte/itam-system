@@ -54,7 +54,7 @@
       </div>
       <el-empty v-else description="暂无待办事项" :image-size="64" />
     </el-card>
-    <TodoAssetActions ref="todoAssetActionsRef" mobile @completed="loadTodos" />
+    <TodoAssetActions ref="todoAssetActionsRef" mobile :scan-code-provider="scanTodoAssetCode" @completed="loadTodos" />
 
     <section v-if="activeSection === 'work'" class="mode-strip">
       <button v-for="item in workModes" :key="item.value" type="button" class="mode-card" :class="{ active: mode === item.value }" @click="selectMode(item.value)">
@@ -706,6 +706,32 @@ async function scanCode() {
     const fromBrowser = await scanByBrowser()
     if (fromBrowser) return handleScanResult(fromBrowser)
     ElMessage.info('当前环境暂未开放摄像头扫码，请手动输入资产编号')
+  } finally {
+    scanning.value = false
+  }
+}
+
+async function scanTodoAssetCode() {
+  if (scanning.value) return ''
+  scanning.value = true
+  try {
+    refreshScanRuntime()
+    scanRuntimeError.value = ''
+    const fromFeishu = await scanByFeishu()
+    refreshScanRuntime()
+    if (fromFeishu === SCAN_CANCELLED) return ''
+    if (fromFeishu) return fromFeishu
+    if (isFeishuClient()) {
+      if (scanRuntimeError.value) {
+        scanInfoDialogVisible.value = true
+        ElMessage.error('飞书扫码鉴权失败，请查看具体原因')
+      }
+      return ''
+    }
+    const fromBrowser = await scanByBrowser()
+    if (fromBrowser) return fromBrowser
+    ElMessage.info('当前环境暂未开放摄像头扫码，可手动输入资产编号')
+    return ''
   } finally {
     scanning.value = false
   }
