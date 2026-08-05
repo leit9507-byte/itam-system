@@ -313,11 +313,18 @@ class IdentityService:
     @staticmethod
     def list_providers(db: Session) -> list[IdentityProviderConfig]:
         IdentityService.ensure_seed(db)
-        return db.query(IdentityProviderConfig).order_by(IdentityProviderConfig.id.asc()).all()
+        return (
+            db.query(IdentityProviderConfig)
+            .filter(IdentityProviderConfig.provider_type == "ldap")
+            .order_by(IdentityProviderConfig.id.asc())
+            .all()
+        )
 
     @staticmethod
     def save_provider(db: Session, payload: IdentityProviderSave, provider_id: int | None = None) -> IdentityProviderConfig:
         provider = db.get(IdentityProviderConfig, provider_id) if provider_id else None
+        if provider and provider.provider_type != "ldap":
+            raise ValueError("non-LDAP configuration must be managed from its dedicated settings module")
         if not provider:
             provider = IdentityProviderConfig()
             db.add(provider)
@@ -336,6 +343,8 @@ class IdentityService:
         provider = db.get(IdentityProviderConfig, provider_id)
         if not provider:
             raise ValueError("identity provider not found")
+        if provider.provider_type != "ldap":
+            raise ValueError("non-LDAP configuration must be managed from its dedicated settings module")
         db.delete(provider)
         db.commit()
 
@@ -344,10 +353,11 @@ class IdentityService:
         provider = db.get(IdentityProviderConfig, provider_id)
         if not provider:
             raise ValueError("identity provider not found")
+        if provider.provider_type != "ldap":
+            raise ValueError("non-LDAP configuration must be managed from its dedicated settings module")
 
         required = {
             "ldap": ["host", "base_dn"],
-            "feishu": ["app_id", "app_secret"],
         }.get(provider.provider_type, [])
         missing = [key for key in required if not (provider.config or {}).get(key)]
         if missing:
@@ -364,10 +374,7 @@ class IdentityService:
                 provider.last_test_message = str(exc)[:255]
         else:
             provider.last_test_status = "success"
-            if provider.provider_type == "feishu":
-                provider.last_test_message = "Feishu JSAPI credentials are configured; login and directory sync are disabled"
-            else:
-                provider.last_test_message = f"{provider.provider_type.upper()} configuration looks valid"
+            provider.last_test_message = f"{provider.provider_type.upper()} configuration looks valid"
         db.commit()
         db.refresh(provider)
         return provider

@@ -184,10 +184,13 @@ def create_provider(payload: IdentityProviderSave, request: Request, db: Session
 
 @router.put("/identity/providers/{provider_id}", response_model=IdentityProviderOut)
 def update_provider(provider_id: int, payload: IdentityProviderSave, request: Request, db: Session = Depends(get_db)):
-    row = IdentityService.save_provider(db, payload, provider_id)
-    AuditLogService.record_operation(db, "identity", "update_provider", operator_from_request(request), "identity_provider", str(provider_id), f"更新身份源 {row.name}")
-    db.commit()
-    return row
+    try:
+        row = IdentityService.save_provider(db, payload, provider_id)
+        AuditLogService.record_operation(db, "identity", "update_provider", operator_from_request(request), "identity_provider", str(provider_id), f"更新身份源 {row.name}")
+        db.commit()
+        return row
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.delete("/identity/providers/{provider_id}")

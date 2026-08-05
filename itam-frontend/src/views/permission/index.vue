@@ -292,7 +292,6 @@
               <el-form-item label="类型">
                 <el-select v-model="providerForm.provider_type" style="width: 100%">
                   <el-option label="LDAP / AD" value="ldap" />
-                  <el-option label="飞书应用（仅 JSAPI）" value="feishu" />
                 </el-select>
               </el-form-item>
               <el-form-item label="启用"><el-switch v-model="providerForm.enabled" /></el-form-item>
@@ -331,19 +330,6 @@
                   show-icon
                   :closable="false"
                   title="OpenLDAP 常用 uid/cn/mail/ou；AD 常用 sAMAccountName/displayName/mail/department。登录过滤器中的 {username} 会自动替换为登录账号。"
-                />
-              </template>
-
-              <template v-else-if="providerForm.provider_type === 'feishu'">
-                <el-divider content-position="left">JSAPI 鉴权</el-divider>
-                <el-form-item label="App ID" required><el-input v-model="providerConfig.app_id" placeholder="cli_xxxxxxxxxxxxxxxx" /></el-form-item>
-                <el-form-item label="App Secret" required><el-input v-model="providerConfig.app_secret" type="password" show-password placeholder="飞书应用 App Secret" /></el-form-item>
-                <el-alert
-                  class="config-help"
-                  type="info"
-                  show-icon
-                  :closable="false"
-                  title="此配置只用于生成飞书 JSAPI 签名和移动端扫码，不提供飞书登录，也不会发起飞书审批。"
                 />
               </template>
 
@@ -388,68 +374,6 @@
                 layout="total, sizes, prev, pager, next"
               />
             </div>
-          </el-card>
-        </div>
-      </el-tab-pane>
-
-      <el-tab-pane v-if="!isPersonnelMode" label="移动端配置" name="mobile-config">
-        <div class="mobile-config-grid">
-          <el-card shadow="never">
-            <template #header>访问入口</template>
-            <el-descriptions border :column="1" class="mobile-config-desc">
-              <el-descriptions-item label="移动端地址">
-                <div class="copy-row">
-                  <span>{{ mobileConfig.mobileUrl }}</span>
-                  <el-button link type="primary" @click="copyText(mobileConfig.mobileUrl)">复制</el-button>
-                </div>
-              </el-descriptions-item>
-              <el-descriptions-item label="飞书工作台地址">
-                <div class="copy-row">
-                  <span>{{ mobileConfig.mobileUrl }}</span>
-                  <el-button link type="primary" @click="copyText(mobileConfig.mobileUrl)">复制</el-button>
-                </div>
-              </el-descriptions-item>
-              <el-descriptions-item label="扫码内容示例">
-                <div class="copy-row">
-                  <span>{{ mobileConfig.scanExample }}</span>
-                  <el-button link type="primary" @click="copyText(mobileConfig.scanExample)">复制</el-button>
-                </div>
-              </el-descriptions-item>
-            </el-descriptions>
-
-            <div class="mobile-checks">
-              <div v-for="item in mobileConfigChecks" :key="item.label" class="mobile-check-item">
-                <el-tag :type="item.ok ? 'success' : 'warning'">{{ item.ok ? '已就绪' : '需配置' }}</el-tag>
-                <div>
-                  <strong>{{ item.label }}</strong>
-                  <span>{{ item.tip }}</span>
-                </div>
-              </div>
-            </div>
-          </el-card>
-
-          <el-card shadow="never">
-            <template #header>飞书应用配置</template>
-            <el-steps direction="vertical" :active="5" finish-status="success" class="mobile-steps">
-              <el-step title="应用能力" description="在飞书开放平台创建企业自建应用，网页应用或工作台入口指向移动端地址。" />
-              <el-step title="安全域名" :description="mobileConfig.host ? `把 ${mobileConfig.host} 加入网页应用安全域名。` : '把当前系统域名加入网页应用安全域名。'" />
-              <el-step title="JS SDK" description="需要原生扫码时启用飞书 JS SDK，并确保页面使用 HTTPS 或飞书客户端内访问。" />
-              <el-step title="应用凭证" description="在身份源配置中新增“飞书应用（仅 JSAPI）”，填写 App ID 和 App Secret。" />
-              <el-step title="发布应用" description="权限、域名、工作台入口变更后发布应用，移动端扫码才会按最新配置生效。" />
-            </el-steps>
-          </el-card>
-
-          <el-card shadow="never">
-            <template #header>前端环境变量</template>
-            <el-table :data="mobileEnvRows" border stripe>
-              <el-table-column prop="key" label="变量" width="220" />
-              <el-table-column prop="value" label="当前值" min-width="220">
-                <template #default="{ row }">{{ row.value || '未配置' }}</template>
-              </el-table-column>
-              <el-table-column prop="desc" label="说明" min-width="260" />
-            </el-table>
-            <el-input class="env-snippet" :model-value="mobileConfig.envSnippet" type="textarea" :rows="5" readonly />
-            <el-button type="primary" @click="copyText(mobileConfig.envSnippet)">复制环境变量示例</el-button>
           </el-card>
         </div>
       </el-tab-pane>
@@ -611,9 +535,6 @@ const loginResult = ref(null)
 const selectedUserId = ref('')
 const selectedRole = ref('user')
 const permissionSaving = ref(false)
-const runtimeOrigin = typeof window !== 'undefined' ? window.location.origin : ''
-const runtimeProtocol = typeof window !== 'undefined' ? window.location.protocol : ''
-const runtimeHost = typeof window !== 'undefined' ? window.location.host : ''
 const providerForm = reactive(defaultProviderForm())
 const providerConfig = reactive(defaultConfig())
 const loginForm = reactive({ provider: 'local', username: 'admin', password: 'admin' })
@@ -632,46 +553,9 @@ const offboardingUsers = computed(() => users.value.filter(user => isInactiveUse
 const pagedOnboardingUsers = computed(() => paginate(onboardingUsers.value, onboardingPagination))
 const pagedOffboardingUsers = computed(() => paginate(offboardingUsers.value, offboardingPagination))
 const pagedPermissions = computed(() => paginate(permissions.value, permissionPagination))
-const supportedProviders = computed(() => providers.value.filter(item => ['ldap', 'feishu'].includes(item.provider_type)))
+const supportedProviders = computed(() => providers.value.filter(item => item.provider_type === 'ldap'))
 const pagedProviders = computed(() => paginate(supportedProviders.value, providerPagination))
 const selectedPermissionUser = computed(() => users.value.find(user => user.user_id === selectedUserId.value) || null)
-const mobileConfig = computed(() => {
-  const publicUrl = import.meta.env.VITE_MOBILE_PUBLIC_URL || `${runtimeOrigin}/mobile`
-  return {
-    mobileUrl: publicUrl,
-    host: safeUrlHost(publicUrl) || runtimeHost,
-    scanExample: `${runtimeOrigin || 'https://it.example.com'}/hardware/1982`,
-    feishuSdkUrl: import.meta.env.VITE_FEISHU_SDK_URL || '',
-    feishuSdkAutoLoad: import.meta.env.VITE_FEISHU_SDK_AUTO_LOAD || '',
-    envSnippet: [
-      `VITE_MOBILE_PUBLIC_URL=${publicUrl}`,
-      'VITE_FEISHU_SDK_URL=https://lf-scm-cn.feishucdn.com/lark/op/h5-js-sdk-1.5.44.js',
-      'VITE_FEISHU_SDK_AUTO_LOAD=true'
-    ].join('\n')
-  }
-})
-const mobileConfigChecks = computed(() => [
-  {
-    label: '移动端访问地址',
-    ok: Boolean(mobileConfig.value.mobileUrl),
-    tip: '飞书工作台、二维码或企业微信内嵌入口都使用这个地址。'
-  },
-  {
-    label: 'HTTPS 或本地调试',
-    ok: runtimeProtocol === 'https:' || ['localhost', '127.0.0.1'].includes((runtimeHost.split(':')[0] || '').toLowerCase()),
-    tip: '浏览器摄像头扫码通常要求 HTTPS；飞书客户端内扫码也建议使用 HTTPS。'
-  },
-  {
-    label: '飞书 JS SDK',
-    ok: Boolean(mobileConfig.value.feishuSdkUrl || mobileConfig.value.feishuSdkAutoLoad === 'true'),
-    tip: '配置后移动端会优先调用飞书原生扫码，失败时再回退浏览器扫码。'
-  }
-])
-const mobileEnvRows = computed(() => [
-  { key: 'VITE_MOBILE_PUBLIC_URL', value: import.meta.env.VITE_MOBILE_PUBLIC_URL || '', desc: '移动端对外访问地址，用于飞书工作台和配置指引展示。' },
-  { key: 'VITE_FEISHU_SDK_URL', value: import.meta.env.VITE_FEISHU_SDK_URL || '', desc: '飞书 JS SDK 地址；内网环境可换成企业可访问的镜像地址。' },
-  { key: 'VITE_FEISHU_SDK_AUTO_LOAD', value: import.meta.env.VITE_FEISHU_SDK_AUTO_LOAD || '', desc: '设为 true 时非飞书客户端也尝试加载 SDK，便于调试。' }
-])
 const permissionActions = [
   { label: '读取', value: 'read' },
   { label: '写入', value: 'write' },
@@ -993,10 +877,6 @@ function defaultConfig(type = 'ldap') {
       default_role: 'user',
       sync_limit: '200',
       test_username: ''
-    },
-    feishu: {
-      app_id: '',
-      app_secret: ''
     }
   }
   return { ...(samples[type] || samples.ldap) }
@@ -1019,10 +899,6 @@ async function saveProvider() {
   }
   if (providerForm.provider_type === 'ldap' && (!providerConfig.host || !providerConfig.bind_dn || !providerConfig.base_dn)) {
     ElMessage.warning('请填写 LDAP 服务器地址、绑定账号和搜索根 DN')
-    return
-  }
-  if (providerForm.provider_type === 'feishu' && (!providerConfig.app_id || !providerConfig.app_secret)) {
-    ElMessage.warning('请填写飞书应用 App ID 和 App Secret')
     return
   }
   const payload = {
@@ -1053,21 +929,7 @@ function buildProviderConfig() {
 }
 
 function providerTypeLabel(type) {
-  return { ldap: 'LDAP / AD', feishu: '飞书 JSAPI' }[type] || type
-}
-
-async function copyText(text) {
-  if (!text) return
-  await navigator.clipboard?.writeText(text).catch(() => null)
-  ElMessage.success('已复制')
-}
-
-function safeUrlHost(url) {
-  try {
-    return new URL(url).host
-  } catch {
-    return ''
-  }
+  return { ldap: 'LDAP / AD' }[type] || type
 }
 
 async function testProvider(row) {
@@ -1134,63 +996,6 @@ function paginate(rows, pagination) {
   gap: 16px;
 }
 
-.mobile-config-grid {
-  display: grid;
-  grid-template-columns: minmax(360px, 0.9fr) minmax(420px, 1.1fr);
-  gap: 16px;
-}
-
-.mobile-config-grid > .el-card:last-child {
-  grid-column: 1 / -1;
-}
-
-.mobile-config-desc {
-  margin-bottom: 16px;
-}
-
-.copy-row {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.copy-row span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.mobile-checks {
-  display: grid;
-  gap: 10px;
-}
-
-.mobile-check-item {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
-  padding: 10px 12px;
-  border: 1px solid #dbe7f3;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.mobile-check-item div {
-  display: grid;
-  gap: 4px;
-}
-
-.mobile-check-item span,
-.mobile-steps :deep(.el-step__description) {
-  color: #64748b;
-  line-height: 1.6;
-}
-
-.env-snippet {
-  margin: 12px 0;
-}
 
 .rbac-toolbar {
   display: flex;
@@ -1299,13 +1104,8 @@ function paginate(rows, pagination) {
 }
 
 @media (max-width: 1100px) {
-  .provider-grid,
-  .mobile-config-grid {
+  .provider-grid {
     grid-template-columns: 1fr;
-  }
-
-  .mobile-config-grid > .el-card:last-child {
-    grid-column: auto;
   }
 }
 </style>

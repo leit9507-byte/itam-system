@@ -44,6 +44,7 @@
         <template #title><el-icon><Tools /></el-icon><span>系统设置</span></template>
         <el-menu-item v-if="canRead('rbac')" index="/permission">权限管理</el-menu-item>
         <el-menu-item v-if="canRead('identity')" index="/personnel">人员管理</el-menu-item>
+        <el-menu-item v-if="canRead('identity')" index="/feishu-config">飞书配置</el-menu-item>
         <el-menu-item v-if="canRead('identity')" index="/notification">消息通知</el-menu-item>
         <el-menu-item v-if="canRead('asset')" index="/residual-rule">残值规则</el-menu-item>
         <el-menu-item v-if="canRead('ops')" index="/ops">运维面板</el-menu-item>

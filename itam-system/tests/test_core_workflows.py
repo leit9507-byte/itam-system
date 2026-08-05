@@ -26,6 +26,7 @@ from app.models.stocktake import StocktakeItem, StocktakeTask
 from app.models.user import IdentityProviderConfig, UserDirectory
 from app.api.stocktake import StocktakeItemSubmit, serialize_task, submit_item
 from app.api.company import list_companies, list_company_assets
+from app.api.settings import feishu_config_out
 from app.core.schema_compat import current_timestamp_sql
 from app.schemas.asset import AssetBatchImport, AssetBatchUpdateCreate, AssetCreate, AssetImportRow, AssetUpdate
 from app.schemas.purchase import PurchaseAcceptanceReceive
@@ -88,6 +89,38 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertIsNone(
             self.db.query(UserDirectory).filter(UserDirectory.username == "should-not-import").first()
         )
+
+    def test_identity_provider_list_only_contains_ldap(self):
+        ldap = IdentityProviderConfig(name="LDAP", provider_type="ldap", enabled=True, config={})
+        feishu = IdentityProviderConfig(
+            name="Feishu JSAPI",
+            provider_type="feishu",
+            enabled=True,
+            config={"app_id": "cli_test", "app_secret": "secret"},
+        )
+        self.db.add_all([ldap, feishu])
+        self.db.commit()
+
+        providers = IdentityService.list_providers(self.db)
+
+        self.assertTrue(providers)
+        self.assertTrue(all(provider.provider_type == "ldap" for provider in providers))
+
+    def test_feishu_config_output_never_exposes_secret(self):
+        provider = IdentityProviderConfig(
+            name="Feishu JSAPI",
+            provider_type="feishu",
+            enabled=True,
+            config={"app_id": "cli_test", "app_secret": "secret"},
+        )
+        self.db.add(provider)
+        self.db.commit()
+
+        result = feishu_config_out(provider)
+
+        self.assertEqual(result["app_id"], "cli_test")
+        self.assertTrue(result["app_secret_configured"])
+        self.assertNotIn("app_secret", result)
 
     def test_asset_list_owner_filter_resolves_legacy_username(self):
         user = UserDirectory(

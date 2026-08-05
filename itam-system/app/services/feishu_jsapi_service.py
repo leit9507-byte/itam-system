@@ -20,6 +20,13 @@ class FeishuJsapiService:
     _ticket_cache: dict[str, tuple[str, float]] = {}
 
     @staticmethod
+    def clear_cache(app_id: str | None = None) -> None:
+        if app_id:
+            FeishuJsapiService._ticket_cache.pop(app_id, None)
+            return
+        FeishuJsapiService._ticket_cache.clear()
+
+    @staticmethod
     def build_signature(db: Session, url: str) -> dict:
         clean_url = FeishuJsapiService.clean_url(url)
         app_id, app_secret = FeishuJsapiService.find_credentials(db)

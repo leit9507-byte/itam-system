@@ -39,6 +39,7 @@ const routes = [
       { path: 'permission', name: 'Permission', component: () => import('../views/permission/index.vue'), props: { mode: 'permission' }, meta: { title: '权限管理', resource: 'rbac' } },
       { path: 'personnel', name: 'Personnel', component: () => import('../views/permission/index.vue'), props: { mode: 'personnel' }, meta: { title: '人员管理', resource: 'identity' } },
       { path: 'notification', name: 'Notification', component: () => import('../views/notification/index.vue'), meta: { title: '消息通知', resource: 'identity' } },
+      { path: 'feishu-config', name: 'FeishuConfig', component: () => import('../views/feishu-config/index.vue'), meta: { title: '飞书配置', resource: 'identity' } },
       { path: 'residual-rule', name: 'ResidualRule', component: () => import('../views/residual-rule/index.vue'), meta: { title: '残值计算规则', resource: 'asset' } },
       { path: 'ops', name: 'Ops', component: () => import('../views/ops/index.vue'), meta: { title: '运维面板', resource: 'ops' } }
     ]
