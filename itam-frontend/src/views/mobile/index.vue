@@ -8,7 +8,7 @@
 
     <section v-if="!store.isAuthenticated" class="mobile-auth-panel">
       <strong>需要登录后使用移动作业</strong>
-      <p>请先登录资产管理系统，再进行扫码盘点、入库、出库、维修和待办处理。</p>
+      <p>请先登录资产管理系统，再进行资产查询、出入库、盘点、维修和待办处理。</p>
       <el-button type="primary" size="large" @click="goMobileLogin">去登录</el-button>
     </section>
 
@@ -55,14 +55,6 @@
       <el-empty v-else description="暂无待办事项" :image-size="64" />
     </el-card>
     <TodoAssetActions ref="todoAssetActionsRef" mobile :scan-code-provider="scanTodoAssetCode" @completed="loadTodos" />
-
-    <section v-if="activeSection === 'work'" class="mode-strip">
-      <button v-for="item in workModes" :key="item.value" type="button" class="mode-card" :class="{ active: mode === item.value }" @click="selectMode(item.value)">
-        <el-icon><component :is="item.icon" /></el-icon>
-        <span>{{ item.label }}</span>
-        <small>{{ item.hint }}</small>
-      </button>
-    </section>
 
     <el-card v-if="activeSection === 'stocktake'" shadow="never" class="mobile-panel">
       <template #header>
@@ -231,7 +223,38 @@
         <div><dt>采购审批单号</dt><dd>{{ asset.purchase_approval_no || '-' }}</dd></div>
       </dl>
 
-      <div v-if="['work', 'repair', 'stocktake'].includes(activeSection)" class="mobile-dialog-form">
+      <section v-if="activeSection === 'work'" class="asset-operation-panel">
+        <div class="asset-operation-heading">
+          <strong>选择资产操作</strong>
+          <span>{{ assetOperationHint }}</span>
+        </div>
+        <div class="asset-operation-grid">
+          <button
+            type="button"
+            class="asset-operation-button inbound"
+            :class="{ active: mode === 'inbound' }"
+            :disabled="!canInboundAsset"
+            @click="selectAssetOperation('inbound')"
+          >
+            <el-icon><Box /></el-icon>
+            <span>入库</span>
+            <small>{{ canInboundAsset ? '归还或恢复在库' : '当前状态不可入库' }}</small>
+          </button>
+          <button
+            type="button"
+            class="asset-operation-button outbound"
+            :class="{ active: mode === 'outbound' }"
+            :disabled="!canOutboundAsset"
+            @click="selectAssetOperation('outbound')"
+          >
+            <el-icon><CircleCheck /></el-icon>
+            <span>出库</span>
+            <small>{{ canOutboundAsset ? '分配人员或出库到地址' : '当前状态不可出库' }}</small>
+          </button>
+        </div>
+      </section>
+
+      <div v-if="activeSection !== 'work' || ['inbound', 'outbound'].includes(mode)" class="mobile-dialog-form">
         <el-form label-position="top">
         <template v-if="mode === 'stocktake'">
           <el-form-item label="盘点任务">
@@ -422,18 +445,18 @@ const store = useAppStore()
 const SCAN_CANCELLED = Symbol('scan-cancelled')
 const QUEUE_STORAGE_KEY = 'itam_mobile_pending_jobs'
 const modes = [
+  { value: 'lookup', label: '查询资产', hint: '扫码查看资产并选择操作', icon: Search, formTitle: '资产信息', submitText: '' },
   { value: 'stocktake', label: '扫码盘点', hint: '执行后台任务', icon: Search, formTitle: '盘点确认', submitText: '提交盘点' },
   { value: 'inbound', label: '扫码入库', hint: '归还/验收入库', icon: Box, formTitle: '入库信息', submitText: '确认入库' },
   { value: 'outbound', label: '扫码出库', hint: '关联人员或地址', icon: CircleCheck, formTitle: '出库信息', submitText: '确认出库' },
   { value: 'repair', label: '维修登记', hint: '登记设备故障和维修', icon: Setting, formTitle: '维修信息', submitText: '创建维修登记' }
 ]
-const workModes = modes.filter(item => ['inbound', 'outbound'].includes(item.value))
 const outboundTargetOptions = [
   { label: '人员', value: 'user' },
   { label: '地址', value: 'location' }
 ]
 const activeSection = ref('todo')
-const mode = ref('stocktake')
+const mode = ref('lookup')
 const assetCode = ref('')
 const asset = ref(null)
 const submitting = ref(false)
@@ -480,15 +503,23 @@ const selectedTask = computed(() => stocktakeTasks.value.find(task => task.id ==
 const stocktakeProgress = computed(() => (selectedTask.value?.total ? Math.round((Number(selectedTask.value.checked || 0) / Number(selectedTask.value.total || 0)) * 100) : 0))
 const activeLocations = computed(() => locations.value.filter(item => item.status !== '停用'))
 const activeFaultTypes = computed(() => faultTypes.value.filter(item => item.enabled !== '停用'))
+const canInboundAsset = computed(() => INBOUND_ALLOWED_STATUSES.includes(asset.value?.status))
+const canOutboundAsset = computed(() => OUTBOUND_ALLOWED_STATUSES.includes(asset.value?.status))
+const assetOperationHint = computed(() => {
+  if (!asset.value) return '请先查询资产'
+  if (canInboundAsset.value) return `当前为${statusLabel(asset.value.status)}状态，可办理入库`
+  if (canOutboundAsset.value) return `当前为${statusLabel(asset.value.status)}状态，可办理出库`
+  return `当前为${statusLabel(asset.value.status)}状态，不允许出入库`
+})
 const currentSectionTitle = computed(() => {
-  if (activeSection.value === 'work') return currentMode.value.label
-  return ({ todo: '待办处理', repair: '维修登记', stocktake: '资产盘点' })[activeSection.value] || '出入库'
+  if (activeSection.value === 'work') return '查询资产'
+  return ({ todo: '待办处理', repair: '维修登记', stocktake: '资产盘点' })[activeSection.value] || '查询资产'
 })
 const sectionSubtitle = computed(() => {
   if (activeSection.value === 'todo') return '处理入职分配、离职回收和审批待办。'
   if (activeSection.value === 'repair') return '扫码选择故障设备并登记维修。'
   if (activeSection.value === 'stocktake') return '选择后台盘点任务后，现场扫码确认资产。'
-  return `${currentMode.value.hint}，扫码后按表单确认提交。`
+  return '扫码或输入编号查询资产，再选择入库或出库。'
 })
 const scanRuntimeTitle = computed(() => {
   if (scanRuntimeStatus.value.hasScanCode) return '飞书扫码能力已就绪'
@@ -505,7 +536,7 @@ const scanRuntimeDescription = computed(() => {
 const showScanRuntimeHint = computed(() => scanRuntimeError.value || !scanRuntimeStatus.value.hasScanCode)
 const sectionMenus = computed(() => [
   { value: 'todo', label: '待办', count: todos.value.length, icon: HomeFilled },
-  { value: 'work', label: '出入库', icon: Box },
+  { value: 'work', label: '查询资产', icon: Search },
   { value: 'repair', label: '维修登记', icon: Setting },
   { value: 'stocktake', label: '资产盘点', icon: FolderOpened }
 ])
@@ -652,11 +683,10 @@ function selectSection(value) {
     ensureStocktakeTasks()
   } else if (value === 'repair') {
     mode.value = 'repair'
-  } else if (value === 'work' && mode.value === 'stocktake') {
-    mode.value = 'inbound'
-  } else if (value === 'work' && mode.value === 'repair') {
-    mode.value = 'inbound'
+  } else if (value === 'work') {
+    mode.value = 'lookup'
   }
+  resetAsset()
 }
 
 async function goTodo(item) {
@@ -668,10 +698,19 @@ function selectTask() {
   resetAsset()
 }
 
-function selectMode(value) {
+function selectAssetOperation(value) {
+  if (value === 'inbound' && !canInboundAsset.value) return ElMessage.warning('当前资产状态不能入库')
+  if (value === 'outbound' && !canOutboundAsset.value) return ElMessage.warning('当前资产状态不能出库')
   mode.value = value
   const taskId = form.task_id
-  Object.assign(form, defaultForm(), { task_id: taskId })
+  const location = asset.value?.location || asset.value?.warehouse || ''
+  Object.assign(form, defaultForm(), { task_id: taskId, location })
+  if (value === 'outbound') {
+    ensureUsers()
+    ensureLocations()
+  } else {
+    ensureLocations()
+  }
 }
 
 function fillExample() {
@@ -863,6 +902,7 @@ function goMobileLogin() {
 async function loadAsset() {
   const code = parseAssetCode(assetCode.value)
   if (!code) return ElMessage.warning('请先扫码或输入资产编号')
+  if (activeSection.value === 'work') mode.value = 'lookup'
   setScanFeedback('info', '正在识别', `正在解析 ${code}。`)
   const resolvedAsset = await resolveAssetFromScan(assetCode.value)
   const candidates = assetCodeCandidates(assetCode.value)
@@ -947,6 +987,11 @@ function resetAsset() {
   currentStocktakeItem.value = null
   assetCode.value = ''
   assetDialogVisible.value = false
+  if (activeSection.value === 'work') {
+    mode.value = 'lookup'
+    const taskId = form.task_id
+    Object.assign(form, defaultForm(), { task_id: taskId })
+  }
 }
 
 async function findStocktakeItem(resolvedAsset, candidates) {
@@ -1077,6 +1122,10 @@ async function submitWork() {
 }
 
 function buildSubmitJob() {
+  if (mode.value === 'lookup') {
+    ElMessage.warning('请选择入库或出库操作')
+    return null
+  }
   if (mode.value === 'stocktake') {
     if (selectedTask.value && !OPEN_STOCKTAKE_STATUSES.includes(selectedTask.value.status)) {
       setScanFeedback('warning', '任务未开启', '移动端只能执行已开启的盘点任务。')
@@ -1605,61 +1654,8 @@ function statusType(value) {
   color: #1764e8;
 }
 
-.mode-strip {
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  padding: 2px 2px 8px;
-  scroll-snap-type: x proximity;
-}
-
-.mode-strip::-webkit-scrollbar,
 .mobile-bottom-menu::-webkit-scrollbar {
   display: none;
-}
-
-.mode-card {
-  flex: 0 0 132px;
-  min-height: 74px;
-  padding: 12px;
-  border: 1px solid #e3edf8;
-  border-radius: 16px;
-  background: #ffffff;
-  text-align: left;
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  align-items: center;
-  column-gap: 7px;
-  row-gap: 2px;
-  scroll-snap-align: start;
-  box-shadow: 0 10px 22px rgba(40, 83, 130, 0.07);
-}
-
-.mode-card.active {
-  border-color: rgba(23, 100, 232, 0.28);
-  background: linear-gradient(180deg, #ffffff 0%, #edf5ff 100%);
-  box-shadow: 0 14px 28px rgba(23, 100, 232, 0.16);
-}
-
-.mode-card .el-icon {
-  grid-row: span 2;
-  font-size: 20px;
-  color: #2563eb;
-}
-
-.mode-card span {
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.mode-card small {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  color: #64748b;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .card-header {
@@ -2242,6 +2238,90 @@ function statusType(value) {
   overflow-wrap: anywhere;
 }
 
+.asset-operation-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #e7eef7;
+}
+
+.asset-operation-heading {
+  display: grid;
+  gap: 2px;
+}
+
+.asset-operation-heading strong {
+  color: #172033;
+  font-size: 15px;
+}
+
+.asset-operation-heading span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.asset-operation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.asset-operation-button {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 2px 7px;
+  align-items: center;
+  min-width: 0;
+  min-height: 68px;
+  padding: 9px 10px;
+  border: 1px solid #d8e5f4;
+  border-radius: 8px;
+  background: #fff;
+  color: #24324a;
+  text-align: left;
+}
+
+.asset-operation-button .el-icon {
+  grid-row: span 2;
+  font-size: 22px;
+  color: #2563eb;
+}
+
+.asset-operation-button span {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.asset-operation-button small {
+  min-width: 0;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-operation-button.active {
+  border-color: #70a8ff;
+  background: #eef6ff;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.asset-operation-button:disabled {
+  border-color: #e5e7eb;
+  background: #f8fafc;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.asset-operation-button:disabled .el-icon,
+.asset-operation-button:disabled small {
+  color: #a8b1bf;
+}
+
 @media (max-width: 360px) {
   .mobile-asset-dialog :deep(.el-dialog__header) {
     padding: 14px 14px 10px;
@@ -2433,9 +2513,6 @@ function statusType(value) {
     scroll-snap-align: start;
   }
 
-  .mode-card {
-    flex-basis: 118px;
-  }
 }
 </style>
 
