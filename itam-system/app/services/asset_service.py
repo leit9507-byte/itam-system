@@ -2015,7 +2015,7 @@ class AssetService:
         )
 
     @staticmethod
-    def find_user(db: Session, value: str | None) -> UserDirectory | None:
+    def find_user(db: Session, value: str | None, active_only: bool = False) -> UserDirectory | None:
         if not value:
             return None
         clean_value = str(value).strip()
@@ -2028,7 +2028,7 @@ class AssetService:
             if cn_part:
                 candidates.append(cn_part)
         candidate_keys = {item.casefold() for item in candidates if item}
-        exact = (
+        exact_query = (
             db.query(UserDirectory)
             .filter(
                 or_(
@@ -2039,8 +2039,10 @@ class AssetService:
                     func.lower(UserDirectory.display_name).in_(candidate_keys),
                 )
             )
-            .first()
         )
+        if active_only:
+            exact_query = exact_query.filter(func.lower(UserDirectory.status) == "active")
+        exact = exact_query.first()
         if exact:
             return exact
         compound_candidates = [
@@ -2051,7 +2053,7 @@ class AssetService:
         if not compound_candidates:
             return None
         compound_candidate_keys = {item.casefold() for item in compound_candidates}
-        return (
+        compound_query = (
             db.query(UserDirectory)
             .filter(
                 or_(
@@ -2062,8 +2064,10 @@ class AssetService:
                     func.lower(UserDirectory.display_name).in_(compound_candidate_keys),
                 )
             )
-            .first()
         )
+        if active_only:
+            compound_query = compound_query.filter(func.lower(UserDirectory.status) == "active")
+        return compound_query.first()
 
     @staticmethod
     def sync_owner_department(db: Session, asset: Asset) -> UserDirectory | None:

@@ -10,7 +10,6 @@ from app.core.database import get_db
 from app.core.security import operator_from_request, user_context_from_request
 from app.models.asset import Asset
 from app.models.stocktake import StocktakeItem, StocktakeScanLog, StocktakeTask
-from app.models.user import UserDirectory
 from app.schemas.asset import AssetUpdate
 from app.services.audit_log_service import AuditLogService
 from app.services.asset_service import AssetService, AssetValidationError
@@ -144,18 +143,23 @@ def submit_item(task_id: str, asset_id: str, payload: StocktakeItemSubmit, reque
     if item.book_owner_user_id is None:
         item.book_owner_user_id = asset.owner_user_id or ""
     actual_location = (payload.actual_location or "").strip()
+    book_owner_user_id = AssetService.normalize_blank(item.book_owner_user_id)
     actual_owner_user_id = (
         AssetService.normalize_blank(payload.actual_owner_user_id)
         if payload.actual_owner_user_id is not None
-        else AssetService.normalize_blank(item.book_owner_user_id)
+        else book_owner_user_id
     )
     if actual_owner_user_id:
-        user = db.query(UserDirectory).filter(UserDirectory.user_id == actual_owner_user_id, UserDirectory.status == "active").first()
+        user = AssetService.find_user(db, actual_owner_user_id, active_only=True)
         if not user:
             raise HTTPException(status_code=400, detail="选择的使用人不存在或已离职")
+        actual_owner_user_id = user.user_id
+
+    book_owner = AssetService.find_user(db, book_owner_user_id, active_only=True) or AssetService.find_user(db, book_owner_user_id)
+    canonical_book_owner_id = book_owner.user_id if book_owner else book_owner_user_id
 
     location_mismatch = actual_location != (item.book_location or "").strip()
-    owner_mismatch = actual_owner_user_id != AssetService.normalize_blank(item.book_owner_user_id)
+    owner_mismatch = actual_owner_user_id != canonical_book_owner_id
     item.actual_location = actual_location
     item.actual_owner_user_id = actual_owner_user_id
     item.result = normalize_stocktake_result(payload.result, owner_mismatch, location_mismatch)
@@ -165,7 +169,10 @@ def submit_item(task_id: str, asset_id: str, payload: StocktakeItemSubmit, reque
     item.asset_info_updated = False
 
     updated_fields: list[str] = []
-    owner_needs_update = actual_owner_user_id != AssetService.normalize_blank(asset.owner_user_id)
+    asset_owner_user_id = AssetService.normalize_blank(asset.owner_user_id)
+    asset_owner = AssetService.find_user(db, asset_owner_user_id, active_only=True) or AssetService.find_user(db, asset_owner_user_id)
+    canonical_asset_owner_id = asset_owner.user_id if asset_owner else asset_owner_user_id
+    owner_needs_update = actual_owner_user_id != canonical_asset_owner_id
     location_needs_update = actual_location != (asset.location or "").strip()
     if payload.update_asset_info:
         updates: dict = {}

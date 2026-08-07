@@ -525,6 +525,64 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(repeated["review_status"], "已确认")
         self.assertEqual(self.db.query(Lifecycle).filter(Lifecycle.asset_id == asset.asset_id).count(), lifecycle_count)
 
+    def test_mobile_stocktake_accepts_legacy_owner_label_for_active_ldap_user(self):
+        ldap_user_id = "ldap:cn=young,ou=users,dc=example,dc=com"
+        legacy_owner = "young-杨标标"
+        self.db.add(
+            UserDirectory(
+                user_id="ldap:cn=young-old,ou=users,dc=example,dc=com",
+                username="young-old",
+                display_name=legacy_owner,
+                dept_id="D1",
+                status="resigned",
+            )
+        )
+        self.db.add(
+            UserDirectory(
+                user_id=ldap_user_id,
+                username="young",
+                display_name=legacy_owner,
+                dept_id="D1",
+                status="active",
+            )
+        )
+        asset = self.add_asset(status="in_use")
+        asset.owner_user_id = legacy_owner
+        asset.dept_id = "D1"
+        asset.location = "Room A"
+        task = StocktakeTask(id="ST-LDAP-OWNER", name="LDAP owner stocktake", status="进行中")
+        task.items.append(
+            StocktakeItem(
+                asset_id=asset.asset_id,
+                name=asset.name,
+                book_status=asset.status,
+                book_location=asset.location,
+                book_owner_user_id=legacy_owner,
+                result="未盘",
+            )
+        )
+        self.db.add(task)
+        self.db.commit()
+
+        request = Request({"type": "http", "method": "POST", "path": f"/stocktake/tasks/{task.id}/items/{asset.asset_id}", "headers": []})
+        request.state.user = {"user_id": "admin", "username": "admin", "display_name": "Admin", "role": "admin"}
+        result = submit_item(
+            task.id,
+            asset.asset_id,
+            StocktakeItemSubmit(
+                actual_location="Room A",
+                actual_owner_user_id=legacy_owner,
+                update_asset_info=False,
+                result="正常",
+            ),
+            request,
+            self.db,
+        )
+
+        self.assertEqual(result["actual_owner_user_id"], ldap_user_id)
+        self.assertEqual(result["result"], "正常")
+        self.assertFalse(result["asset_info_updated"])
+
     def test_stocktake_task_summary_can_omit_asset_items(self):
         task = StocktakeTask(id="ST-TEST-SUMMARY", name="Summary", status="进行中")
         task.items = [
