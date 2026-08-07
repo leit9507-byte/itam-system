@@ -65,6 +65,7 @@ class TodoService:
         scraps = scrap_result["list"]
         repairs = repair_result["list"]
         assets = asset_query.order_by(Asset.created_at.desc()).limit(TodoService.SOURCE_LIMIT).all()
+        offboarding_assets = TodoService.offboarding_assets_from_db(db, user_context)
         users = TodoService.scoped_users(db, user_context)
         inactive_user_map = TodoService.inactive_user_map(users)
         assigned_user_ids = TodoService.assigned_user_ids_from_db(db, user_context)
@@ -74,7 +75,7 @@ class TodoService:
             *TodoService.purchase_todos(purchases),
             *TodoService.scrap_todos(scraps),
             *TodoService.ready_scrap_todos(assets),
-            *TodoService.offboarding_todos(assets, inactive_user_map),
+            *TodoService.offboarding_todos(offboarding_assets, inactive_user_map),
             *TodoService.borrow_due_todos(assets),
             *TodoService.repair_todos(repairs),
         ]
@@ -187,7 +188,10 @@ class TodoService:
         for asset in assets:
             if asset.status not in {"in_use", "borrowed", "out_stock", "repair"}:
                 continue
-            user = inactive_user_map.get(asset.owner_user_id or "")
+            user = next(
+                (inactive_user_map.get(key) for key in TodoService.identity_keys(asset.owner_user_id) if inactive_user_map.get(key)),
+                None,
+            )
             if not user:
                 continue
             key = user.user_id or user.username or asset.owner_user_id
@@ -219,6 +223,15 @@ class TodoService:
                 "target_query": {"action": "reclaim", "user_id": user.user_id, "username": user.username or "", "name": name},
             })
         return rows
+
+    @staticmethod
+    def offboarding_assets_from_db(db: Session, user_context: dict) -> list[Asset]:
+        return (
+            AssetService.apply_data_scope(db.query(Asset), user_context)
+            .filter(Asset.status.in_(["in_use", "borrowed", "out_stock", "repair"]))
+            .filter(Asset.owner_user_id.isnot(None), Asset.owner_user_id != "")
+            .all()
+        )
 
     @staticmethod
     def borrow_due_todos(assets: list[Asset]) -> list[dict]:
@@ -277,9 +290,9 @@ class TodoService:
         for user in users:
             if str(user.status or "").lower() not in TodoService.INACTIVE_STATUSES:
                 continue
-            for value in [user.user_id, user.username]:
-                if value:
-                    mapping[value] = user
+            for value in [user.user_id, user.username, user.external_id, user.email, user.display_name]:
+                for key in TodoService.identity_keys(value):
+                    mapping[key] = user
         return mapping
 
     @staticmethod

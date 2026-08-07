@@ -46,7 +46,13 @@
               <template #default="{ row }">
                 <el-button link type="primary" @click="openUserPermission(row)">配置权限</el-button>
                 <el-button v-if="row.status === 'active'" link type="primary" @click="goAssetAssign(row)">资产分配</el-button>
-                <el-button v-if="isInactiveUser(row.status)" link type="warning" @click="goAssetReclaim(row)">离职回收</el-button>
+                <el-button
+                  v-if="isInactiveUser(row.status)"
+                  link
+                  :type="hasPendingReclaim(row) ? 'warning' : 'info'"
+                  :disabled="!hasPendingReclaim(row)"
+                  @click="goAssetReclaim(row)"
+                >{{ hasPendingReclaim(row) ? '离职回收' : '回收完成' }}</el-button>
                 <el-button link type="danger" :disabled="row.source !== 'local' || row.username === 'admin' || isInactiveUser(row.status)" @click="removeUser(row)">标记离职</el-button>
               </template>
             </el-table-column>
@@ -119,7 +125,12 @@
             </el-table-column>
             <el-table-column label="操作" width="150" fixed="right">
               <template #default="{ row }">
-                <el-button link type="warning" @click="goAssetReclaim(row)">离职回收</el-button>
+                <el-button
+                  link
+                  :type="hasPendingReclaim(row) ? 'warning' : 'info'"
+                  :disabled="!hasPendingReclaim(row)"
+                  @click="goAssetReclaim(row)"
+                >{{ hasPendingReclaim(row) ? '离职回收' : '回收完成' }}</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -498,6 +509,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAppStore } from '../../store'
 import TodoAssetActions from '../../components/TodoAssetActions.vue'
+import { getTodoItems } from '../../api/todo'
 import {
   createIdentityProvider,
   deleteUser,
@@ -529,6 +541,7 @@ const pageSubtitle = computed(() =>
 )
 const activeTab = ref(isPersonnelMode.value ? 'users' : 'user-permissions')
 const users = ref([])
+const offboardingTodos = ref([])
 const providers = ref([])
 const permissions = ref([])
 const loginResult = ref(null)
@@ -604,7 +617,9 @@ watch(
 )
 
 async function loadUsers() {
-  users.value = await getUsers()
+  const [userRows, todoRows] = await Promise.all([getUsers(), getTodoItems()])
+  users.value = userRows
+  offboardingTodos.value = todoRows.filter(item => item.type === 'offboarding_reclaim')
   if (!selectedUserId.value && users.value.length) {
     selectedUserId.value = users.value[0].user_id
     selectPermissionUser(selectedUserId.value)
@@ -796,6 +811,13 @@ async function goAssetAssign(row) {
     name: row.display_name || row.username || row.user_id,
     owner: row.display_name || row.username || row.user_id
   })
+}
+
+function hasPendingReclaim(row) {
+  return offboardingTodos.value.some(item =>
+    (item.user_id && item.user_id === row.user_id) ||
+    (item.username && item.username === row.username)
+  )
 }
 
 async function markNoAssetRequired(row) {

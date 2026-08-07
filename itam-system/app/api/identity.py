@@ -90,6 +90,7 @@ def delete_user(user_id: str, request: Request, db: Session = Depends(get_db)):
         user = IdentityService.delete_local_user(db, user_id)
         AuditLogService.record_operation(db, "identity", "delete_user", operator_from_request(request), "user", user_id, f"删除/离职用户 {user_id}")
         db.commit()
+        TodoService.invalidate()
         return {"message": "user marked resigned", "user": user}
     except ValueError as exc:
         message = str(exc)
@@ -124,8 +125,8 @@ def update_user_asset_assignment(user_id: str, payload: UserAssetAssignmentUpdat
             f"更新用户资产分配要求 {user_id}",
             payload.model_dump(),
         )
-        TodoService.invalidate()
         db.commit()
+        TodoService.invalidate()
         return row
     except ValueError as exc:
         message = str(exc)
@@ -148,6 +149,7 @@ def sync_users(payload: SyncUsersRequest, request: Request, db: Session = Depend
             {"provider_id": payload.provider_id, "submitted_users": len(payload.users or [])},
         )
         db.commit()
+        TodoService.invalidate()
         return {"created": created, "updated": updated, "offboarded": offboarded, "users": users}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

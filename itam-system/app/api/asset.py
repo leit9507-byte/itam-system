@@ -117,12 +117,16 @@ def batch_outbound_assets(payload: AssetBatchCheckoutCreate, request: Request, d
 
 @router.post("/checkouts/batch-checkin")
 def batch_checkin_assets(payload: AssetBatchCheckinCreate, request: Request, db: Session = Depends(get_db)):
-    return AssetService.batch_checkin_assets(db, payload, operator_from_request(request), user_context_from_request(request))
+    result = AssetService.batch_checkin_assets(db, payload, operator_from_request(request), user_context_from_request(request))
+    TodoService.invalidate()
+    return result
 
 
 @router.post("/batch-inbound")
 def batch_inbound_assets(payload: AssetBatchCheckinCreate, request: Request, db: Session = Depends(get_db)):
-    return AssetService.batch_checkin_assets(db, payload, operator_from_request(request), user_context_from_request(request))
+    result = AssetService.batch_checkin_assets(db, payload, operator_from_request(request), user_context_from_request(request))
+    TodoService.invalidate()
+    return result
 
 
 @router.post("/batch-update")
@@ -251,7 +255,9 @@ def change_asset_status(asset_id: str, payload: AssetStatusChange, request: Requ
 @router.post("/{asset_id}/checkout", response_model=AssetOut)
 def checkout_asset(asset_id: str, payload: AssetCheckoutCreate, request: Request, db: Session = Depends(get_db)):
     try:
-        return AssetService.checkout_asset(db, asset_id, payload, operator_from_request(request), user_context_from_request(request))
+        result = AssetService.checkout_asset(db, asset_id, payload, operator_from_request(request), user_context_from_request(request))
+        TodoService.invalidate()
+        return result
     except AssetValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
@@ -261,7 +267,9 @@ def checkout_asset(asset_id: str, payload: AssetCheckoutCreate, request: Request
 @router.post("/{asset_id}/checkin", response_model=AssetOut)
 def checkin_asset(asset_id: str, payload: AssetCheckinCreate, request: Request, db: Session = Depends(get_db)):
     try:
-        return AssetService.checkin_asset(db, asset_id, payload, operator_from_request(request), user_context_from_request(request))
+        result = AssetService.checkin_asset(db, asset_id, payload, operator_from_request(request), user_context_from_request(request))
+        TodoService.invalidate()
+        return result
     except AssetValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:

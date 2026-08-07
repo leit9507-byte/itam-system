@@ -872,6 +872,64 @@ class CoreWorkflowTest(unittest.TestCase):
 
         self.assertFalse(any(item["type"] == "onboarding_assign" and item.get("user_id") == "U-ONBOARD-2" for item in todos))
 
+    def test_offboarding_todo_matches_imported_owner_alias(self):
+        self.db.add(
+            UserDirectory(
+                user_id="ldap:cn=gami,ou=users,dc=example,dc=com",
+                username="Gami",
+                display_name="Gami-简嘉铭",
+                email="gami@example.com",
+                status="resigned",
+            )
+        )
+        self.db.add(
+            Asset(
+                asset_id="ITAM-OFFBOARD-1",
+                asset_no="ITAM-OFFBOARD-1",
+                name="Laptop",
+                category="Laptop",
+                status="in_use",
+                owner_user_id="Gami-简嘉铭",
+            )
+        )
+        self.db.commit()
+
+        todos = TodoService.list_todos(self.db, {"role": "admin"})
+
+        reclaim = [item for item in todos if item["type"] == "offboarding_reclaim"]
+        self.assertEqual(len(reclaim), 1)
+        self.assertEqual(reclaim[0]["asset_ids"], ["ITAM-OFFBOARD-1"])
+
+    def test_offboarding_todo_is_not_limited_to_recent_asset_source(self):
+        self.db.add(UserDirectory(user_id="U-OFFBOARD-OLD", username="old-user", display_name="Old User", status="resigned"))
+        self.db.add(
+            Asset(
+                asset_id="ITAM-OFFBOARD-OLD",
+                asset_no="ITAM-OFFBOARD-OLD",
+                name="Old laptop",
+                category="Laptop",
+                status="in_use",
+                owner_user_id="old-user",
+                created_at=datetime(2020, 1, 1),
+            )
+        )
+        for index in range(TodoService.SOURCE_LIMIT + 5):
+            self.db.add(
+                Asset(
+                    asset_id=f"ITAM-OFFBOARD-FILL-{index:04d}",
+                    asset_no=f"ITAM-OFFBOARD-FILL-{index:04d}",
+                    name="Fill asset",
+                    category="Laptop",
+                    status="in_stock",
+                    created_at=datetime(2026, 1, 1),
+                )
+            )
+        self.db.commit()
+
+        todos = TodoService.list_todos(self.db, {"role": "admin"})
+
+        self.assertTrue(any(item["type"] == "offboarding_reclaim" and item.get("user_id") == "U-OFFBOARD-OLD" for item in todos))
+
     def test_batch_update_rolls_back_when_any_asset_fails(self):
         self.add_asset(asset_id="ITAM-BATCH-1")
         self.add_asset(asset_id="ITAM-BATCH-2", status="scrapped")
