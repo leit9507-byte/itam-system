@@ -71,6 +71,20 @@
 
       <el-tab-pane v-if="isPersonnelMode" label="入职清单" name="onboarding">
         <el-card shadow="never">
+          <div class="personnel-filter-bar">
+            <span>入职时间</span>
+            <el-date-picker
+              v-model="onboardingDateRange"
+              type="daterange"
+              value-format="YYYY-MM-DD"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              unlink-panels
+              clearable
+            />
+            <el-button :disabled="!onboardingDateRange?.length" @click="onboardingDateRange = []">清除</el-button>
+          </div>
           <el-table :data="pagedOnboardingUsers" border stripe empty-text="暂无入职人员">
             <el-table-column prop="display_name" label="姓名" min-width="130" />
             <el-table-column prop="username" label="账号" min-width="130" />
@@ -108,6 +122,20 @@
 
       <el-tab-pane v-if="isPersonnelMode" label="离职清单" name="offboarding">
         <el-card shadow="never">
+          <div class="personnel-filter-bar">
+            <span>离职时间</span>
+            <el-date-picker
+              v-model="offboardingDateRange"
+              type="daterange"
+              value-format="YYYY-MM-DD"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              unlink-panels
+              clearable
+            />
+            <el-button :disabled="!offboardingDateRange?.length" @click="offboardingDateRange = []">清除</el-button>
+          </div>
           <el-table :data="pagedOffboardingUsers" border stripe empty-text="暂无离职人员">
             <el-table-column prop="display_name" label="姓名" min-width="130" />
             <el-table-column prop="username" label="账号" min-width="130" />
@@ -557,12 +585,18 @@ const permissionDraft = reactive({})
 const userPagination = reactive({ page: 1, pageSize: 10 })
 const onboardingPagination = reactive({ page: 1, pageSize: 10 })
 const offboardingPagination = reactive({ page: 1, pageSize: 10 })
+const onboardingDateRange = ref([])
+const offboardingDateRange = ref([])
 const permissionPagination = reactive({ page: 1, pageSize: 10 })
 const providerPagination = reactive({ page: 1, pageSize: 10 })
 const todoAssetActionsRef = ref(null)
 const pagedUsers = computed(() => paginate(users.value, userPagination))
-const onboardingUsers = computed(() => users.value.filter(user => user.status === 'active').sort((a, b) => dateValue(b.created_at) - dateValue(a.created_at)))
-const offboardingUsers = computed(() => users.value.filter(user => isInactiveUser(user.status)).sort((a, b) => dateValue(b.last_synced_at || b.created_at) - dateValue(a.last_synced_at || a.created_at)))
+const onboardingUsers = computed(() => users.value
+  .filter(user => user.status === 'active' && dateInRange(user.created_at, onboardingDateRange.value))
+  .sort((a, b) => dateValue(b.created_at) - dateValue(a.created_at)))
+const offboardingUsers = computed(() => users.value
+  .filter(user => isInactiveUser(user.status) && dateInRange(user.last_synced_at || user.created_at, offboardingDateRange.value))
+  .sort((a, b) => dateValue(b.last_synced_at || b.created_at) - dateValue(a.last_synced_at || a.created_at)))
 const pagedOnboardingUsers = computed(() => paginate(onboardingUsers.value, onboardingPagination))
 const pagedOffboardingUsers = computed(() => paginate(offboardingUsers.value, offboardingPagination))
 const pagedPermissions = computed(() => paginate(permissions.value, permissionPagination))
@@ -615,6 +649,14 @@ watch(
     activeTab.value = mode === 'personnel' ? 'users' : 'user-permissions'
   }
 )
+
+watch(onboardingDateRange, () => {
+  onboardingPagination.page = 1
+})
+
+watch(offboardingDateRange, () => {
+  offboardingPagination.page = 1
+})
 
 async function loadUsers() {
   const [userRows, todoRows] = await Promise.all([getUsers(), getTodoItems()])
@@ -954,6 +996,15 @@ function providerTypeLabel(type) {
   return { ldap: 'LDAP / AD' }[type] || type
 }
 
+function dateInRange(value, range) {
+  if (!range?.length) return true
+  const timestamp = dateValue(value)
+  if (!timestamp) return false
+  const start = new Date(`${range[0]}T00:00:00`).getTime()
+  const end = new Date(`${range[1]}T23:59:59.999`).getTime()
+  return timestamp >= start && timestamp <= end
+}
+
 async function testProvider(row) {
   const result = await testIdentityProvider(row.id)
   ElMessage[result.last_test_status === 'success' ? 'success' : 'warning'](result.last_test_message)
@@ -1128,6 +1179,30 @@ function paginate(rows, pagination) {
 @media (max-width: 1100px) {
   .provider-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+.personnel-filter-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.personnel-filter-bar > span {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.personnel-filter-bar :deep(.el-date-editor) {
+  width: min(360px, 100%);
+}
+
+@media (max-width: 640px) {
+  .personnel-filter-bar :deep(.el-date-editor) {
+    width: 100%;
   }
 }
 </style>
