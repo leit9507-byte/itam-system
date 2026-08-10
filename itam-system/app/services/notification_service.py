@@ -97,6 +97,12 @@ class NotificationService:
             return False
 
     @staticmethod
+    def asset_identity_lines(asset=None, fallback_asset_id: str | None = None) -> list[str]:
+        asset_no = getattr(asset, "asset_no", None) or fallback_asset_id or getattr(asset, "asset_id", None) or "-"
+        serial_number = getattr(asset, "sn", None) or "-"
+        return [f"资产编号：{asset_no}", f"序列号：{serial_number}"]
+
+    @staticmethod
     def preview_messages() -> list[dict]:
         samples = {
             "inbound": {
@@ -104,6 +110,7 @@ class NotificationService:
                 "lines": [
                     "资产名称：ThinkPad X1 Carbon",
                     "资产编号：ITAM-002356",
+                    "序列号：PF4A1234",
                     "状态变更：在用 -> 在库",
                     "入库位置：上海IT仓",
                     "原责任人：张三（U-ZHANGSAN）",
@@ -116,6 +123,7 @@ class NotificationService:
                 "lines": [
                     "资产名称：Dell U2723QE 显示器",
                     "资产编号：ITAM-002357",
+                    "序列号：CN0ABC123456",
                     "状态变更：在库 -> 在用",
                     "领用人：张三（U-ZHANGSAN）",
                     "所属部门：研发中心",
@@ -147,6 +155,7 @@ class NotificationService:
                 "title": "报废处置待登记",
                 "lines": [
                     "资产编号：ITAM-001288",
+                    "序列号：CN0SCRAP001",
                     "资产名称：Dell U2720Q 显示器",
                     "报废原因：维修成本过高",
                     "退役审批单号：RS-202607-001",
@@ -159,6 +168,7 @@ class NotificationService:
                 "lines": [
                     "维修单号：RP-202607-009",
                     "资产编号：ITAM-001688",
+                    "序列号：PF4REPAIR01",
                     "故障类型：屏幕异常",
                     "维修供应商：外部维修商",
                     "处理建议：维修完成后及时入库或重新分配",
@@ -179,6 +189,7 @@ class NotificationService:
                 "title": "借用资产即将到期",
                 "lines": [
                     "资产编号：ITAM-002901",
+                    "序列号：C02BORROW01",
                     "资产名称：MacBook Pro 14",
                     "借用人：李四（U-LISI）",
                     "到期时间：2026-07-09",

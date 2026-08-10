@@ -169,7 +169,7 @@ class RepairService:
             "维修任务已创建",
             [
                 f"维修单号：{record.repair_no}",
-                f"资产编号：{record.asset_id}",
+                *NotificationService.asset_identity_lines(asset, record.asset_id),
                 f"资产名称：{asset.name or '-'}",
                 f"维修类型：{record.repair_type or '-'}",
                 f"故障类型：{record.fault_reason or '-'}",
@@ -219,7 +219,7 @@ class RepairService:
             f"维修任务已处理：{record.repair_result}",
             [
                 f"维修单号：{record.repair_no}",
-                f"资产编号：{record.asset_id}",
+                *NotificationService.asset_identity_lines(asset, record.asset_id),
                 f"资产名称：{asset.name if asset else '-'}",
                 f"维修类型：{record.repair_type or '-'}",
                 f"维修结果：{record.repair_result or '-'}",

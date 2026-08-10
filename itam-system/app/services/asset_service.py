@@ -1894,7 +1894,7 @@ class AssetService:
                 "资产入库完成",
                 [
                     f"资产名称：{AssetService.asset_display_name(asset)}",
-                    f"资产编号：{asset.asset_id}",
+                    *NotificationService.asset_identity_lines(asset),
                     f"状态变更：{AssetService.status_label(from_status)} -> {AssetService.status_label(to_status)}",
                     f"入库位置：{asset.location or '-'}",
                     f"原责任人：{AssetService.user_label(previous_user, previous_owner_user_id)}",
@@ -1911,7 +1911,7 @@ class AssetService:
                 "资产出库完成",
                 [
                     f"资产名称：{AssetService.asset_display_name(asset)}",
-                    f"资产编号：{asset.asset_id}",
+                    *NotificationService.asset_identity_lines(asset),
                     f"状态变更：{AssetService.status_label(from_status)} -> {AssetService.status_label(to_status)}",
                     f"{owner_key}：{asset.location if owner_key == '公用设备位置' else owner_label}",
                     f"所属部门：{current_user.dept_name or current_user.dept_id if current_user else asset.dept_id or '-'}",

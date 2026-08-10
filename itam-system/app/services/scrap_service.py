@@ -265,7 +265,7 @@ class ScrapService:
             "报废处置待登记",
             [
                 f"报废单号：{request.request_no}",
-                f"资产编号：{request.asset_id}",
+                *NotificationService.asset_identity_lines(asset, request.asset_id),
                 f"资产名称：{request.asset_name or '-'}",
                 f"报废原因：{request.reason or '-'}",
                 f"退役审批单号：{request.retirement_approval_no or '-'}",
@@ -388,7 +388,7 @@ class ScrapService:
             "报废资产已处置",
             [
                 f"报废单号：{request.request_no}",
-                f"资产编号：{request.asset_id}",
+                *NotificationService.asset_identity_lines(asset, request.asset_id),
                 f"退役时间：{request.retirement_date.date().isoformat() if request.retirement_date else '-'}",
                 f"退役审批单号：{request.retirement_approval_no or '-'}",
                 f"处置方式：{request.disposal_method or '-'}",

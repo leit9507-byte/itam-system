@@ -37,6 +37,7 @@ from app.services.asset_residual_service import AssetResidualService
 from app.services.dashboard_service import DashboardService
 from app.services.feishu_jsapi_service import FeishuJsapiService
 from app.services.identity_service import IdentityService
+from app.services.notification_service import NotificationService
 from app.services.purchase_service import PurchaseService
 from app.services.repair_service import RepairService
 from app.services.scrap_service import ScrapService
@@ -68,6 +69,19 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertTrue(hasattr(app.models, "Company"))
         self.assertTrue(hasattr(app.models, "Location"))
         self.assertTrue(hasattr(app.models, "ScrapRequest"))
+
+    def test_asset_notification_uses_business_number_and_serial_number(self):
+        asset = Asset(
+            asset_id="874",
+            asset_no="99-PC-20211208-225",
+            name="Desktop",
+            category="Desktop",
+            sn="SN-ABC-001",
+        )
+
+        lines = NotificationService.asset_identity_lines(asset)
+
+        self.assertEqual(lines, ["资产编号：99-PC-20211208-225", "序列号：SN-ABC-001"])
 
     def test_feishu_provider_cannot_sync_directory_users(self):
         provider = IdentityProviderConfig(
