@@ -70,7 +70,7 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertTrue(hasattr(app.models, "Location"))
         self.assertTrue(hasattr(app.models, "ScrapRequest"))
 
-    def test_asset_notification_uses_business_number_and_serial_number(self):
+    def test_asset_notification_uses_asset_id_and_serial_number(self):
         asset = Asset(
             asset_id="874",
             asset_no="99-PC-20211208-225",
@@ -81,7 +81,7 @@ class CoreWorkflowTest(unittest.TestCase):
 
         lines = NotificationService.asset_identity_lines(asset)
 
-        self.assertEqual(lines, ["资产编号：99-PC-20211208-225", "序列号：SN-ABC-001"])
+        self.assertEqual(lines, ["资产编号：874", "序列号：SN-ABC-001"])
 
     def test_feishu_provider_cannot_sync_directory_users(self):
         provider = IdentityProviderConfig(

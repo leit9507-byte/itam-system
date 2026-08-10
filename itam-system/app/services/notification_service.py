@@ -98,9 +98,9 @@ class NotificationService:
 
     @staticmethod
     def asset_identity_lines(asset=None, fallback_asset_id: str | None = None) -> list[str]:
-        asset_no = getattr(asset, "asset_no", None) or fallback_asset_id or getattr(asset, "asset_id", None) or "-"
+        asset_id = getattr(asset, "asset_id", None) or fallback_asset_id or "-"
         serial_number = getattr(asset, "sn", None) or "-"
-        return [f"资产编号：{asset_no}", f"序列号：{serial_number}"]
+        return [f"资产编号：{asset_id}", f"序列号：{serial_number}"]
 
     @staticmethod
     def preview_messages() -> list[dict]:

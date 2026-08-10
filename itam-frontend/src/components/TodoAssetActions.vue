@@ -73,9 +73,7 @@
     <el-alert :title="`${reclaimDialog.userName || '该人员'} 名下可回收资产 ${reclaimDialog.assets.length} 个`" type="warning" show-icon :closable="false" />
     <el-table class="reclaim-table" :data="reclaimDialog.assets" border @selection-change="rows => (reclaimDialog.selected = rows)">
       <el-table-column type="selection" width="44" />
-      <el-table-column label="资产编号" width="160">
-        <template #default="{ row }">{{ row.asset_no || row.asset_id }}</template>
-      </el-table-column>
+      <el-table-column prop="asset_id" label="资产编号" width="130" />
       <el-table-column prop="name" label="资产名称" min-width="150" show-overflow-tooltip />
       <el-table-column prop="status" label="状态" width="110">
         <template #default="{ row }">{{ statusLabel(row.status) }}</template>
