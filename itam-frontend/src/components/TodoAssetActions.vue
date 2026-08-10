@@ -73,7 +73,9 @@
     <el-alert :title="`${reclaimDialog.userName || '该人员'} 名下可回收资产 ${reclaimDialog.assets.length} 个`" type="warning" show-icon :closable="false" />
     <el-table class="reclaim-table" :data="reclaimDialog.assets" border @selection-change="rows => (reclaimDialog.selected = rows)">
       <el-table-column type="selection" width="44" />
-      <el-table-column prop="asset_id" label="资产编号" width="130" />
+      <el-table-column label="资产编号" width="160">
+        <template #default="{ row }">{{ row.asset_no || row.asset_id }}</template>
+      </el-table-column>
       <el-table-column prop="name" label="资产名称" min-width="150" show-overflow-tooltip />
       <el-table-column prop="status" label="状态" width="110">
         <template #default="{ row }">{{ statusLabel(row.status) }}</template>
@@ -313,13 +315,12 @@ async function openUserReclaimDialog(item) {
       ElMessage.warning('未找到离职人员标识，无法查询名下资产')
       return
     }
-    const [{ list }] = await Promise.all([
-      getAssets({ owner_user_id: ownerUserId, page: 1, page_size: 0 }),
+    const [list] = await Promise.all([
+      loadReclaimAssets(item, ownerUserId),
       ensureOptions()
     ])
     reclaimDialog.assets = list.filter(asset => {
       if (!['in_use', 'borrowed', 'out_stock', 'repair'].includes(asset.status)) return false
-      if (item.asset_ids?.length) return item.asset_ids.includes(asset.asset_id)
       return true
     })
     if (!reclaimDialog.assets.length) {
@@ -332,6 +333,15 @@ async function openUserReclaimDialog(item) {
   } finally {
     processing.value = false
   }
+}
+
+async function loadReclaimAssets(item, ownerUserId) {
+  const assetIds = [...new Set((item.asset_ids || []).filter(Boolean))]
+  if (assetIds.length) {
+    return Promise.all(assetIds.map(assetId => getAssetById(assetId)))
+  }
+  const { list } = await getAssets({ owner_user_id: ownerUserId, page: 1, page_size: 0 })
+  return list
 }
 
 async function submitUserReclaim() {
