@@ -234,7 +234,7 @@ def download_asset_import_template():
 @router.post("/{asset_id}/status", response_model=AssetOut)
 def change_asset_status(asset_id: str, payload: AssetStatusChange, request: Request, db: Session = Depends(get_db)):
     try:
-        return AssetService.change_status(
+        result = AssetService.change_status(
             db,
             asset_id,
             payload.to_status,
@@ -246,6 +246,8 @@ def change_asset_status(asset_id: str, payload: AssetStatusChange, request: Requ
             payload.remark,
             user_context_from_request(request),
         )
+        TodoService.invalidate()
+        return result
     except AssetValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:

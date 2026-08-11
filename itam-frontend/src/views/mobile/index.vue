@@ -251,10 +251,21 @@
             <span>出库</span>
             <small>{{ canOutboundAsset ? '分配人员或出库到地址' : '当前状态不可出库' }}</small>
           </button>
+          <button
+            type="button"
+            class="asset-operation-button status-update"
+            :class="{ active: mode === 'status' }"
+            :disabled="!availableMobileStatusOptions.length"
+            @click="selectAssetOperation('status')"
+          >
+            <el-icon><Refresh /></el-icon>
+            <span>更新状态</span>
+            <small>{{ availableMobileStatusOptions.length ? '按状态机更新资产状态' : '当前状态不可直接更新' }}</small>
+          </button>
         </div>
       </section>
 
-      <div v-if="activeSection !== 'work' || ['inbound', 'outbound'].includes(mode)" class="mobile-dialog-form">
+      <div v-if="activeSection !== 'work' || ['inbound', 'outbound', 'status'].includes(mode)" class="mobile-dialog-form">
         <el-form label-position="top">
         <template v-if="mode === 'stocktake'">
           <el-form-item label="盘点任务">
@@ -362,6 +373,48 @@
           </el-form-item>
         </template>
 
+        <template v-if="mode === 'status'">
+          <el-form-item label="目标状态">
+            <el-select v-model="form.target_status" placeholder="选择目标状态" style="width: 100%" @change="changeStatusTarget">
+              <el-option v-for="item in availableMobileStatusOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-alert
+            class="inline-alert"
+            :title="statusUpdateDescription"
+            type="info"
+            show-icon
+            :closable="false"
+          />
+          <el-form-item v-if="statusNeedsTargetSelector" label="出库对象">
+            <el-segmented v-model="form.outboundTarget" :options="outboundTargetOptions" @change="changeOutboundTarget" />
+          </el-form-item>
+          <el-form-item v-if="statusNeedsOwner" :label="form.target_status === 'borrowed' ? '借用人' : '使用人'">
+            <el-select v-model="form.owner_user_id" filterable remote clearable reserve-keyword :remote-method="searchUsers" placeholder="搜索姓名/账号" class="mobile-select" popper-class="mobile-select-popper" @visible-change="visible => visible && searchUsers('')" @change="selectUser">
+              <el-option v-for="user in filteredUsers" :key="user.user_id" :label="`${user.display_name} (${user.username}) / ${user.dept_name || user.dept_id || '未分部门'}`" :value="user.user_id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="form.target_status === 'borrowed'" label="计划归还时间">
+            <el-date-picker v-model="form.borrow_due_date" type="date" value-format="YYYY-MM-DD" placeholder="选择计划归还时间" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="位置">
+            <el-select
+              v-model="form.location"
+              filterable
+              remote
+              clearable
+              reserve-keyword
+              :remote-method="searchLocations"
+              :placeholder="form.target_status === 'out_stock' && form.outboundTarget === 'location' ? '搜索出库地址' : '搜索资产位置'"
+              class="mobile-select" popper-class="mobile-select-popper"
+              style="width: 100%"
+              @visible-change="visible => visible && resetLocationOptions()"
+            >
+              <el-option v-for="item in visibleLocations" :key="item.id || item.name" :label="locationLabel(item)" :value="item.name" />
+            </el-select>
+          </el-form-item>
+        </template>
+
         <template v-if="mode === 'repair'">
           <el-form-item label="维修日期">
             <el-date-picker v-model="form.repair_time" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
@@ -426,8 +479,8 @@
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index'
-import { Box, Camera, CircleCheck, FolderOpened, HomeFilled, Loading, Search, Setting } from '@element-plus/icons-vue'
-import { getAssetById, getAssets, inboundAsset, outboundAsset } from '../../api/asset'
+import { Box, Camera, CircleCheck, FolderOpened, HomeFilled, Loading, Refresh, Search, Setting } from '@element-plus/icons-vue'
+import { changeAssetStatus, getAssetById, getAssets, inboundAsset, outboundAsset } from '../../api/asset'
 import { createRepairRecord, getRepairFaultTypes } from '../../api/repair'
 import { getLocations } from '../../api/location'
 import { getUsers } from '../../api/user'
@@ -449,6 +502,7 @@ const modes = [
   { value: 'stocktake', label: '扫码盘点', hint: '执行后台任务', icon: Search, formTitle: '盘点确认', submitText: '提交盘点' },
   { value: 'inbound', label: '扫码入库', hint: '归还/验收入库', icon: Box, formTitle: '入库信息', submitText: '确认入库' },
   { value: 'outbound', label: '扫码出库', hint: '关联人员或地址', icon: CircleCheck, formTitle: '出库信息', submitText: '确认出库' },
+  { value: 'status', label: '更新状态', hint: '按状态机调整资产', icon: Refresh, formTitle: '更新资产状态', submitText: '确认更新' },
   { value: 'repair', label: '维修登记', hint: '登记设备故障和维修', icon: Setting, formTitle: '维修信息', submitText: '创建维修登记' }
 ]
 const outboundTargetOptions = [
@@ -497,6 +551,21 @@ const form = reactive(defaultForm())
 const OPEN_STOCKTAKE_STATUSES = ['进行中']
 const INBOUND_ALLOWED_STATUSES = ['in_use', 'borrowed', 'out_stock', 'repair']
 const OUTBOUND_ALLOWED_STATUSES = ['in_stock', 'idle']
+const MOBILE_STATUS_TRANSITIONS = {
+  in_stock: ['idle', 'in_use', 'borrowed', 'out_stock'],
+  idle: ['in_stock', 'in_use', 'borrowed', 'out_stock'],
+  in_use: ['in_stock'],
+  borrowed: ['in_stock'],
+  out_stock: ['in_stock'],
+  repair: ['in_stock']
+}
+const MOBILE_STATUS_OPTIONS = [
+  { label: '在库', value: 'in_stock' },
+  { label: '闲置', value: 'idle' },
+  { label: '在用', value: 'in_use' },
+  { label: '借出', value: 'borrowed' },
+  { label: '已出库', value: 'out_stock' }
+]
 const activeStocktakeTasks = computed(() => stocktakeTasks.value.filter(task => OPEN_STOCKTAKE_STATUSES.includes(task.status)))
 const currentMode = computed(() => modes.find(item => item.value === mode.value) || modes[0])
 const selectedTask = computed(() => stocktakeTasks.value.find(task => task.id === form.task_id))
@@ -505,6 +574,20 @@ const activeLocations = computed(() => locations.value.filter(item => item.statu
 const activeFaultTypes = computed(() => faultTypes.value.filter(item => item.enabled !== '停用'))
 const canInboundAsset = computed(() => INBOUND_ALLOWED_STATUSES.includes(asset.value?.status))
 const canOutboundAsset = computed(() => OUTBOUND_ALLOWED_STATUSES.includes(asset.value?.status))
+const availableMobileStatusOptions = computed(() => {
+  const allowed = MOBILE_STATUS_TRANSITIONS[asset.value?.status] || []
+  return MOBILE_STATUS_OPTIONS.filter(item => allowed.includes(item.value))
+})
+const statusNeedsTargetSelector = computed(() => form.target_status === 'out_stock')
+const statusNeedsOwner = computed(() => ['in_use', 'borrowed'].includes(form.target_status) || (form.target_status === 'out_stock' && form.outboundTarget === 'user'))
+const statusUpdateDescription = computed(() => {
+  if (!form.target_status) return '请选择当前状态允许转换到的目标状态。'
+  if (form.target_status === 'in_stock') return '更新为在库会结束当前领用或出库记录，并清除使用人。'
+  if (form.target_status === 'idle') return '更新为闲置会保留资产位置，不关联使用人。'
+  if (form.target_status === 'borrowed') return '借出必须选择借用人并填写计划归还时间。'
+  if (form.target_status === 'out_stock') return '已出库可关联人员，也可以出库到具体地址。'
+  return '更新为在用会登记当前使用人、部门和位置。'
+})
 const assetOperationHint = computed(() => {
   if (!asset.value) return '请先查询资产'
   if (canInboundAsset.value) return `当前为${statusLabel(asset.value.status)}状态，可办理入库`
@@ -585,6 +668,8 @@ function defaultForm() {
     dept_id: '',
     dept_name: '',
     outboundTarget: 'user',
+    target_status: '',
+    borrow_due_date: '',
     repair_time: new Date().toISOString().slice(0, 10),
     repair_type: '普通维修',
     fault_reason: '',
@@ -701,16 +786,30 @@ function selectTask() {
 function selectAssetOperation(value) {
   if (value === 'inbound' && !canInboundAsset.value) return ElMessage.warning('当前资产状态不能入库')
   if (value === 'outbound' && !canOutboundAsset.value) return ElMessage.warning('当前资产状态不能出库')
+  if (value === 'status' && !availableMobileStatusOptions.value.length) return ElMessage.warning('当前资产状态不能在移动端直接更新')
   mode.value = value
   const taskId = form.task_id
   const location = asset.value?.location || asset.value?.warehouse || ''
-  Object.assign(form, defaultForm(), { task_id: taskId, location })
-  if (value === 'outbound') {
+  Object.assign(form, defaultForm(), {
+    task_id: taskId,
+    location,
+    target_status: value === 'status' ? availableMobileStatusOptions.value[0]?.value || '' : ''
+  })
+  if (value === 'outbound' || value === 'status') {
     ensureUsers()
     ensureLocations()
   } else {
     ensureLocations()
   }
+}
+
+function changeStatusTarget(value) {
+  form.owner_user_id = ''
+  form.owner_name = ''
+  form.dept_id = ''
+  form.dept_name = ''
+  form.borrow_due_date = ''
+  form.outboundTarget = value === 'out_stock' ? 'location' : 'user'
 }
 
 function fillExample() {
@@ -1162,6 +1261,25 @@ function buildSubmitJob() {
       return null
     }
   }
+  if (mode.value === 'status') {
+    const allowedStatuses = availableMobileStatusOptions.value.map(item => item.value)
+    if (!form.target_status || !allowedStatuses.includes(form.target_status)) {
+      ElMessage.warning('请选择当前资产允许更新到的状态')
+      return null
+    }
+    if (statusNeedsOwner.value && !form.owner_user_id) {
+      ElMessage.warning(form.target_status === 'borrowed' ? '请选择借用人' : '请选择使用人')
+      return null
+    }
+    if (form.target_status === 'borrowed' && !form.borrow_due_date) {
+      ElMessage.warning('请选择计划归还时间')
+      return null
+    }
+    if (form.target_status === 'out_stock' && form.outboundTarget === 'location' && !form.location) {
+      ElMessage.warning('请选择出库地址')
+      return null
+    }
+  }
   if (mode.value === 'repair' && !form.fault_reason) {
     ElMessage.warning('请选择故障类型')
     return null
@@ -1185,6 +1303,7 @@ async function runSubmitJob(job) {
   if (job.mode === 'stocktake') return submitStocktakeJob(job)
   if (job.mode === 'inbound') return submitInboundJob(job)
   if (job.mode === 'outbound') return submitOutboundJob(job)
+  if (job.mode === 'status') return submitStatusJob(job)
   if (job.mode === 'repair') return submitRepairJob(job)
 }
 
@@ -1262,6 +1381,36 @@ async function submitOutboundJob(job) {
     remark: job.form.remark || '移动端扫码出库'
   })
   ElMessage.success('出库成功')
+}
+
+async function submitStatusJob(job) {
+  const targetStatus = job.form.target_status
+  if (targetStatus === 'in_stock') {
+    await inboundAsset(job.asset_id, {
+      location: job.form.location,
+      remark: job.form.remark || '移动端扫码更新为在库'
+    })
+  } else if (['in_use', 'borrowed', 'out_stock'].includes(targetStatus)) {
+    await outboundAsset(job.asset_id, {
+      toStatus: targetStatus,
+      outboundTarget: job.form.outboundTarget,
+      owner_user_id: job.form.owner_user_id,
+      owner_name: job.form.owner_name,
+      dept_id: job.form.dept_id,
+      dept_name: job.form.dept_name,
+      location: job.form.location,
+      borrow_due_date: job.form.borrow_due_date,
+      remark: job.form.remark || `移动端扫码更新为${statusLabel(targetStatus)}`
+    })
+  } else {
+    await changeAssetStatus(job.asset_id, targetStatus, {
+      owner_user_id: '',
+      dept_id: '',
+      location: job.form.location,
+      remark: job.form.remark || `移动端扫码更新为${statusLabel(targetStatus)}`
+    })
+  }
+  ElMessage.success(`资产状态已更新为${statusLabel(targetStatus)}`)
 }
 
 async function submitRepairJob(job) {
@@ -2320,6 +2469,11 @@ function statusType(value) {
 .asset-operation-button:disabled .el-icon,
 .asset-operation-button:disabled small {
   color: #a8b1bf;
+}
+
+.asset-operation-button.status-update {
+  grid-column: 1 / -1;
+  min-height: 58px;
 }
 
 @media (max-width: 360px) {
