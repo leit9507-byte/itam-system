@@ -10,7 +10,6 @@ from app.models.repair import RepairFaultType, RepairRecord
 from app.schemas.repair import RepairCreate, RepairFinish
 from app.services.audit_log_service import AuditLogService
 from app.services.asset_service import AssetService
-from app.services.lifecycle_service import LifecycleService
 from app.services.notification_service import NotificationService
 from app.services.number_service import NumberService
 
@@ -142,7 +141,6 @@ class RepairService:
         ).first()
         if active:
             raise ValueError(f"asset already has an active repair record: {active.repair_no}")
-        AssetService.validate_transition(asset.status, "repair")
         record = RepairRecord(
             repair_no=RepairService.generate_repair_no(db),
             asset_id=payload.asset_id,
@@ -156,9 +154,9 @@ class RepairService:
             remark=payload.remark,
         )
         db.add(record)
-        from_status = asset.status
-        asset.status = "repair"
-        LifecycleService.record(db, asset.asset_id, "REPAIR_CREATE", from_status, "repair", payload.operator)
+        AssetService.apply_status_transition(
+            db, asset, "repair", payload.operator, remark=payload.remark, event_type="REPAIR_CREATE"
+        )
         AuditLogService.record_operation(db, "repair", "create", payload.operator, "repair", record.repair_no, f"维修创建 {record.asset_id}", payload.model_dump())
         db.commit()
         db.refresh(record)
@@ -202,12 +200,16 @@ class RepairService:
         if asset:
             if asset.status in {"scrapped", "disposed", "lost"}:
                 raise ValueError("已报废/已处置资产不能变更维修状态")
-            from_status = asset.status
-            if from_status != "repair":
-                raise ValueError(f"asset is not in repair status: {from_status}")
-            AssetService.validate_transition(from_status, payload.next_status)
-            asset.status = payload.next_status
-            LifecycleService.record(db, asset.asset_id, "REPAIR_FINISH", from_status, payload.next_status, payload.operator)
+            if asset.status != "repair":
+                raise ValueError(f"asset is not in repair status: {asset.status}")
+            AssetService.apply_status_transition(
+                db,
+                asset,
+                payload.next_status,
+                payload.operator,
+                remark=payload.remark or record.repair_result,
+                event_type="REPAIR_FINISH",
+            )
         AuditLogService.record_operation(db, "repair", "finish", payload.operator, "repair", record.repair_no, f"维修处理 {record.asset_id}：{record.repair_result}", payload.model_dump())
         db.commit()
         db.refresh(record)

@@ -153,6 +153,8 @@ class IdentityService:
         if payload.password:
             user.password_hash = hash_password(payload.password)
         user.last_synced_at = utc_now()
+        if payload.source == "ldap":
+            user.ldap_missing_sync_count = 0
 
         if commit:
             db.commit()
@@ -387,12 +389,13 @@ class IdentityService:
             raise ValueError("Only LDAP identity providers support directory synchronization")
         source = provider.provider_type if provider else None
         sync_limit = int((provider.config or {}).get("sync_limit", 200)) if provider else 200
+        sync_complete = False
         if users:
             payloads = users
         elif provider and provider.provider_type == "ldap":
             from app.services.sso_service import LdapClient
 
-            payloads = LdapClient.sync_users(provider.config or {}, limit=sync_limit)
+            payloads, sync_complete = LdapClient.sync_users_complete(provider.config or {}, page_size=sync_limit)
         else:
             raise ValueError("No users to sync. Configure an LDAP identity source, or submit explicit users.")
         created = 0
@@ -406,7 +409,8 @@ class IdentityService:
             created += 1 if was_created else 0
             updated += 0 if was_created else 1
             synced.append(user)
-        if source == "ldap" and len(payloads) < sync_limit:
+        if source == "ldap" and sync_complete:
+            offboard_grace_runs = max(int((provider.config or {}).get("offboard_grace_runs", 2)), 1)
             provider_count = db.query(IdentityProviderConfig).filter(IdentityProviderConfig.provider_type == "ldap").count()
             active_source_query = db.query(UserDirectory).filter(UserDirectory.source == source, UserDirectory.status == "active")
             if provider_count == 1:
@@ -418,10 +422,13 @@ class IdentityService:
             active_source_users = active_source_query.all()
             for user in active_source_users:
                 if user.external_id in synced_external_ids or user.username.casefold() in synced_usernames:
+                    user.ldap_missing_sync_count = 0
                     continue
-                user.status = "resigned"
+                user.ldap_missing_sync_count = int(user.ldap_missing_sync_count or 0) + 1
                 user.last_synced_at = utc_now()
-                offboarded += 1
+                if user.ldap_missing_sync_count >= offboard_grace_runs:
+                    user.status = "resigned"
+                    offboarded += 1
         db.commit()
         for user in synced:
             db.refresh(user)

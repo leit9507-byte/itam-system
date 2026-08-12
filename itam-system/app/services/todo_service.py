@@ -56,15 +56,20 @@ class TodoService:
 
     @staticmethod
     def build_todos(db: Session, user_context: dict) -> list[dict]:
-        purchase_result = PurchaseService.list_purchases(db, page=1, page_size=TodoService.SOURCE_LIMIT, user_context=user_context)
-        scrap_result = ScrapService.list_requests(db, page=1, page_size=TodoService.SOURCE_LIMIT, status="待处置", user_context=user_context)
-        repair_result = RepairService.list_records(db, page=1, page_size=TodoService.SOURCE_LIMIT, status="维修中", user_context=user_context)
+        purchase_result = PurchaseService.list_purchases(db, page=1, page_size=0, user_context=user_context)
+        scrap_result = ScrapService.list_requests(db, page=1, page_size=0, status="待处置", user_context=user_context)
+        repair_result = RepairService.list_records(db, page=1, page_size=0, status="维修中", user_context=user_context)
         asset_query = AssetService.apply_data_scope(db.query(Asset), user_context)
 
         purchases = purchase_result["list"]
         scraps = scrap_result["list"]
         repairs = repair_result["list"]
-        assets = asset_query.order_by(Asset.created_at.desc()).limit(TodoService.SOURCE_LIMIT).all()
+        assets = (
+            asset_query
+            .filter(Asset.status.in_(["borrowed", "ready_scrap"]))
+            .order_by(Asset.created_at.desc())
+            .all()
+        )
         offboarding_assets = TodoService.offboarding_assets_from_db(db, user_context)
         users = TodoService.scoped_users(db, user_context)
         inactive_user_map = TodoService.inactive_user_map(users)
@@ -343,13 +348,12 @@ class TodoService:
         if ldap_cn:
             # LDAP DN 中的 ou/dc 等片段由所有目录用户共享，不能作为人员别名。
             return {raw, ldap_cn.group(1).strip().casefold()}
-        parts = {
-            item.strip().casefold()
-            for item in re.split(r"[\s\-_/\\|,;:，；：()（）]+", raw)
-            if item.strip()
-        }
-        parts.add(raw)
-        return parts
+        keys = {raw}
+        if "-" in raw:
+            username_prefix = raw.split("-", 1)[0].strip()
+            if username_prefix:
+                keys.add(username_prefix)
+        return keys
 
     @staticmethod
     def priority_weight(priority: str | None) -> int:

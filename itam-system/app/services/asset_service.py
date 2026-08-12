@@ -36,6 +36,7 @@ from app.services.lifecycle_service import LifecycleService
 from app.services.notification_service import NotificationService
 from app.services.number_service import NumberService
 from app.services.supplier_service import SupplierService
+from app.core.security import can_view_all_data, is_department_manager, scoped_dept_id
 
 
 class AssetValidationError(ValueError):
@@ -45,7 +46,10 @@ class AssetValidationError(ValueError):
 class AssetService:
     DEFAULT_COMPANY = "未设置公司"
     ASSIGNED_STATUSES = {"in_use", "borrowed"}
-    UNASSIGNED_STATUSES = {"pending_acceptance", "in_stock", "idle", "ready_scrap"}
+    UNASSIGNED_STATUSES = {
+        "pending_acceptance", "in_stock", "idle", "ready_scrap", "pending_scrap",
+        "scrapped", "disposed", "lost",
+    }
     WORKFLOW_STATUSES = {"pending_acceptance", "pending_scrap", "scrapped", "disposed", "lost"}
     TERMINAL_STATUSES = {"scrapped", "disposed", "lost"}
     CHECKOUT_ALLOWED_FROM = {"in_stock", "idle"}
@@ -205,8 +209,11 @@ class AssetService:
         return NumberService.next(db, f"asset:{prefix}", f"{prefix}-", 6)
 
     @staticmethod
-    def create_asset(db: Session, payload: AssetCreate, operator: str = "system") -> Asset:
+    def create_asset(db: Session, payload: AssetCreate, operator: str = "system", user_context: dict | None = None) -> Asset:
         user = AssetService.find_user(db, payload.owner_user_id)
+        AssetService.ensure_writable_department(
+            (user.dept_id or user.dept_name) if user else payload.dept_id, user_context
+        )
         asset_id = getattr(payload, "asset_id", None) or AssetService.generate_asset_id(db)
         asset_no = AssetService.normalize_asset_no(payload.asset_no, asset_id)
         sn = AssetService.normalize_blank(payload.sn) or None
@@ -234,7 +241,7 @@ class AssetService:
             remark=payload.remark,
         )
         AssetService.apply_warranty_expire(asset)
-        AssetService.validate_status_owner(asset, status_changed=False)
+        AssetService.validate_status_owner(asset, status_changed=True)
         SupplierService.ensure_supplier(db, asset.purchase_supplier_name)
         db.add(asset)
         db.flush()
@@ -244,7 +251,7 @@ class AssetService:
         return AssetService.to_out(asset, user, db)
 
     @staticmethod
-    def import_assets(db: Session, payload: AssetBatchImport) -> dict:
+    def import_assets(db: Session, payload: AssetBatchImport, user_context: dict | None = None) -> dict:
         created_assets: list[Asset] = []
         updated_assets: list[Asset] = []
         errors: list[dict] = []
@@ -267,8 +274,16 @@ class AssetService:
                     asset = db.get(Asset, asset_id)
                     if not asset and payload.overwrite:
                         asset = db.query(Asset).filter(Asset.asset_no == asset_no).first()
-                        if asset and asset.asset_id != asset_id:
-                            AssetService.rename_asset_id(db, asset, asset.asset_id, asset_id, payload.operator)
+                    if asset:
+                        AssetService.ensure_writable_department(asset.dept_id, user_context)
+                    import_user = AssetService.find_user(db, normalized.owner_user_id)
+                    AssetService.ensure_writable_department(
+                        (import_user.dept_id or import_user.dept_name) if import_user
+                        else normalized.dept_id or (asset.dept_id if asset else None),
+                        user_context,
+                    )
+                    if asset and asset.asset_id != asset_id:
+                        AssetService.rename_asset_id(db, asset, asset.asset_id, asset_id, payload.operator)
                     if asset and not payload.overwrite:
                         skipped += 1
                         errors.append({"row": index, "message": f"duplicate asset_id: {asset_id}", "data": row.model_dump()})
@@ -566,14 +581,14 @@ class AssetService:
         return detail or "请检查导入数据是否符合要求"
 
     @staticmethod
-    def import_assets_from_text(db: Session, payload: AssetTextImport) -> dict:
+    def import_assets_from_text(db: Session, payload: AssetTextImport, user_context: dict | None = None) -> dict:
         items = AssetService.parse_import_text(payload.content)
-        return AssetService.import_assets(db, AssetBatchImport(operator=payload.operator, overwrite=payload.overwrite, items=items))
+        return AssetService.import_assets(db, AssetBatchImport(operator=payload.operator, overwrite=payload.overwrite, items=items), user_context)
 
     @staticmethod
-    def import_assets_from_excel(db: Session, content: bytes, operator: str = "asset-import", overwrite: bool = False) -> dict:
+    def import_assets_from_excel(db: Session, content: bytes, operator: str = "asset-import", overwrite: bool = False, user_context: dict | None = None) -> dict:
         items = AssetService.parse_import_excel(content)
-        return AssetService.import_assets(db, AssetBatchImport(operator=operator, overwrite=overwrite, items=items))
+        return AssetService.import_assets(db, AssetBatchImport(operator=operator, overwrite=overwrite, items=items), user_context)
 
     @staticmethod
     def preview_import_assets(db: Session, items: list[AssetImportRow], overwrite: bool = False) -> dict:
@@ -1213,10 +1228,31 @@ class AssetService:
         return query.filter(False)
 
     @staticmethod
+    def ensure_writable_department(dept_id: str | None, user_context: dict | None) -> None:
+        if not user_context or can_view_all_data(user_context):
+            return
+        if is_department_manager(user_context):
+            current_dept = AssetService.normalize_blank(scoped_dept_id(user_context))
+            target_dept = AssetService.normalize_blank(dept_id)
+            if current_dept and target_dept == current_dept:
+                return
+            raise AssetValidationError("Department managers can only write assets in their department")
+        raise AssetValidationError("Current account has no writable asset data scope")
+
+    @staticmethod
     def get_scoped_asset(db: Session, asset_id: str, user_context: dict | None = None) -> Asset:
         asset = AssetService.apply_data_scope(
             db.query(Asset).filter(Asset.asset_id == asset_id), user_context
         ).first()
+        if not asset:
+            raise ValueError("asset not found")
+        return asset
+
+    @staticmethod
+    def get_scoped_asset_for_update(db: Session, asset_id: str, user_context: dict | None = None) -> Asset:
+        asset = AssetService.apply_data_scope(
+            db.query(Asset).filter(Asset.asset_id == asset_id), user_context
+        ).populate_existing().with_for_update().first()
         if not asset:
             raise ValueError("asset not found")
         return asset
@@ -1483,9 +1519,36 @@ class AssetService:
         borrow_due_date: str | None = None,
         remark: str | None = None,
         user_context: dict | None = None,
+        expected_from_statuses: set[str] | None = None,
     ) -> Asset:
-        asset = AssetService.get_scoped_asset(db, asset_id, user_context)
+        asset = AssetService.get_scoped_asset_for_update(db, asset_id, user_context)
+        if expected_from_statuses is not None and asset.status not in expected_from_statuses:
+            raise AssetValidationError(f"asset status changed concurrently: {asset.status}")
+        from_status = asset.status
+        previous_owner_user_id, previous_user, user = AssetService.apply_status_transition(
+            db, asset, to_status, operator, owner_user_id, dept_id, location,
+            borrow_due_date, remark,
+        )
+        db.commit()
+        db.refresh(asset)
+        AssetService.notify_status_change(db, asset, from_status, to_status, operator, previous_user, previous_owner_user_id, user)
+        return AssetService.to_out(asset, user, db)
 
+    @staticmethod
+    def apply_status_transition(
+        db: Session,
+        asset: Asset,
+        to_status: str,
+        operator: str = "system",
+        owner_user_id: str | None = None,
+        dept_id: str | None = None,
+        location: str | None = None,
+        borrow_due_date: str | None = None,
+        remark: str | None = None,
+        event_type: str = "STATUS_CHANGE",
+        record_lifecycle: bool = True,
+        allow_workflow_statuses: bool = False,
+    ) -> tuple[str | None, UserDirectory | None, UserDirectory | None]:
         from_status = asset.status
         AssetService.validate_transition(from_status, to_status)
         if from_status in AssetService.TERMINAL_STATUSES:
@@ -1494,6 +1557,8 @@ class AssetService:
         previous_user = AssetService.find_user(db, previous_owner_user_id)
         if owner_user_id is not None:
             asset.owner_user_id = AssetService.normalize_blank(owner_user_id)
+        elif to_status in AssetService.UNASSIGNED_STATUSES:
+            asset.owner_user_id = None
         user = AssetService.sync_owner_department(db, asset)
         if dept_id is not None and not user:
             asset.dept_id = dept_id
@@ -1501,7 +1566,11 @@ class AssetService:
             asset.location = location
         asset.status = to_status
         AssetService.apply_borrow_due_date(asset, to_status, borrow_due_date)
-        AssetService.validate_status_owner(asset, status_changed=to_status != from_status)
+        AssetService.validate_status_owner(
+            asset,
+            status_changed=to_status != from_status,
+            allow_workflow_statuses=allow_workflow_statuses,
+        )
         lifecycle_remark = AssetService.inventory_lifecycle_remark(
             to_status,
             remark,
@@ -1512,7 +1581,8 @@ class AssetService:
             asset.location,
             borrow_due_date,
         )
-        LifecycleService.record(db, asset.asset_id, "STATUS_CHANGE", from_status, to_status, operator, lifecycle_remark)
+        if record_lifecycle:
+            LifecycleService.record(db, asset.asset_id, event_type, from_status, to_status, operator, lifecycle_remark)
         AssetService.sync_checkout_record(
             db,
             asset,
@@ -1525,10 +1595,7 @@ class AssetService:
             borrow_due_date,
             remark,
         )
-        db.commit()
-        db.refresh(asset)
-        AssetService.notify_status_change(db, asset, from_status, to_status, operator, previous_user, previous_owner_user_id, user)
-        return AssetService.to_out(asset, user, db)
+        return previous_owner_user_id, previous_user, user
 
     @staticmethod
     def checkout_asset(db: Session, asset_id: str, payload: AssetCheckoutCreate, operator: str = "system", user_context: dict | None = None) -> Asset:
@@ -1554,6 +1621,7 @@ class AssetService:
             payload.due_date,
             payload.remark,
             user_context,
+            expected_from_statuses=AssetService.CHECKOUT_ALLOWED_FROM,
         )
 
     @staticmethod
@@ -1573,6 +1641,7 @@ class AssetService:
             None,
             payload.remark or "资产归还入库",
             user_context=user_context,
+            expected_from_statuses=AssetService.CHECKIN_ALLOWED_FROM,
         )
 
     @staticmethod
@@ -1609,7 +1678,7 @@ class AssetService:
         borrow_due_date: str | None,
         remark: str | None,
     ) -> None:
-        if to_status == "in_stock":
+        if to_status in AssetService.UNASSIGNED_STATUSES:
             AssetService.close_open_checkout(db, asset, operator, asset.location, remark or "资产归还入库")
             return
         if to_status not in {"in_use", "borrowed", "out_stock"}:
@@ -1659,13 +1728,19 @@ class AssetService:
 
     @staticmethod
     def close_open_checkout(db: Session, asset: Asset, operator: str, location: str | None = None, remark: str | None = None) -> None:
-        checkout = AssetService.open_checkout_for_asset(db, asset.asset_id)
-        if checkout:
+        checkouts = (
+            db.query(AssetCheckout)
+            .filter(AssetCheckout.asset_id == asset.asset_id, AssetCheckout.status == "open")
+            .with_for_update()
+            .all()
+        )
+        for checkout in checkouts:
             AssetService.close_checkout(checkout, operator, location, remark)
 
     @staticmethod
     def close_checkout(checkout: AssetCheckout, operator: str, location: str | None = None, remark: str | None = None) -> None:
         checkout.status = "closed"
+        checkout.open_token = None
         checkout.checked_in_at = utc_now()
         checkout.checked_in_by = operator
         checkout.checkin_location = AssetService.normalize_blank(location)

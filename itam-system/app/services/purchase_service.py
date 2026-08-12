@@ -108,7 +108,7 @@ class PurchaseService:
     def receive_purchase(db: Session, purchase_no: str, operator: str = "system", user_context: dict | None = None) -> dict:
         purchase = PurchaseService.apply_data_scope(
             db.query(Purchase).filter(Purchase.purchase_no == purchase_no), user_context
-        ).first()
+        ).with_for_update().first()
         if not purchase:
             raise ValueError("purchase not found")
         if purchase.status == "received":
@@ -175,7 +175,7 @@ class PurchaseService:
     def accept_purchase(db: Session, purchase_no: str, payload: PurchaseAcceptanceReceive, user_context: dict | None = None) -> dict:
         purchase = PurchaseService.apply_data_scope(
             db.query(Purchase).filter(Purchase.purchase_no == purchase_no), user_context
-        ).first()
+        ).with_for_update().first()
         if not purchase:
             raise ValueError("purchase not found")
         if purchase.status == "received":

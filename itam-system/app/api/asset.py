@@ -20,7 +20,7 @@ router = APIRouter(prefix="/asset", tags=["Asset"])
 @router.post("/create", response_model=AssetOut)
 def create_asset(payload: AssetCreate, request: Request, db: Session = Depends(get_db)):
     try:
-        return AssetService.create_asset(db, payload, operator_from_request(request))
+        return AssetService.create_asset(db, payload, operator_from_request(request), user_context_from_request(request))
     except AssetValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -181,12 +181,12 @@ def update_asset(asset_id: str, payload: AssetUpdate, request: Request, db: Sess
 
 @router.post("/import", response_model=AssetImportResult)
 def import_assets(payload: AssetBatchImport, request: Request, db: Session = Depends(get_db)):
-    return AssetService.import_assets(db, payload.model_copy(update={"operator": operator_from_request(request)}))
+    return AssetService.import_assets(db, payload.model_copy(update={"operator": operator_from_request(request)}), user_context_from_request(request))
 
 
 @router.post("/import/text", response_model=AssetImportResult)
 def import_assets_from_text(payload: AssetTextImport, request: Request, db: Session = Depends(get_db)):
-    return AssetService.import_assets_from_text(db, payload.model_copy(update={"operator": operator_from_request(request)}))
+    return AssetService.import_assets_from_text(db, payload.model_copy(update={"operator": operator_from_request(request)}), user_context_from_request(request))
 
 
 @router.post("/import/text/preview")
@@ -200,7 +200,10 @@ async def import_assets_from_excel(request: Request, operator: str = "asset-impo
     if not filename.lower().endswith((".xlsx", ".xlsm")):
         raise HTTPException(status_code=400, detail="请上传 .xlsx 或 .xlsm 格式的 Excel 文件")
     try:
-        return AssetService.import_assets_from_excel(db, await file.read(), operator_from_request(request), overwrite=overwrite)
+        return AssetService.import_assets_from_excel(
+            db, await file.read(), operator_from_request(request), overwrite=overwrite,
+            user_context=user_context_from_request(request),
+        )
     except AssetValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from openpyxl import Workbook, load_workbook
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from starlette.requests import Request
 
@@ -30,7 +31,7 @@ from app.api.settings import feishu_config_out
 from app.core.schema_compat import current_timestamp_sql
 from app.schemas.asset import AssetBatchImport, AssetBatchUpdateCreate, AssetCreate, AssetImportRow, AssetUpdate
 from app.schemas.purchase import PurchaseAcceptanceReceive
-from app.schemas.repair import RepairCreate
+from app.schemas.repair import RepairCreate, RepairFinish
 from app.schemas.user import UserPermissionUpdate, UserUpsert
 from app.services.asset_service import AssetService, AssetValidationError
 from app.services.asset_residual_service import AssetResidualService
@@ -986,6 +987,137 @@ class CoreWorkflowTest(unittest.TestCase):
 
         self.assertEqual(disposed.status, "已处置")
         self.assertEqual(self.db.get(Asset, asset.asset_id).status, "scrapped")
+
+    def test_repair_finish_to_stock_closes_checkout_and_clears_owner(self):
+        asset = self.add_asset(asset_id="ITAM-REPAIR-CHECKOUT", status="borrowed")
+        asset.owner_user_id = "borrower"
+        self.db.add(AssetCheckout(
+            asset_id=asset.asset_id,
+            checkout_type="borrowed",
+            assignee_user_id="borrower",
+            status="open",
+            open_token="open",
+            checked_out_by="tester",
+        ))
+        self.db.commit()
+
+        RepairService.create_record(
+            self.db,
+            RepairCreate(asset_id=asset.asset_id, repair_time=utc_now(), fault_reason="screen"),
+            {"role": "admin"},
+        )
+        record = self.db.query(RepairRecord).filter(RepairRecord.asset_id == asset.asset_id).one()
+        RepairService.finish_record(
+            self.db,
+            record.id,
+            RepairFinish(next_status="in_stock", operator="tester"),
+            {"role": "admin"},
+        )
+
+        self.assertIsNone(self.db.get(Asset, asset.asset_id).owner_user_id)
+        checkout = self.db.query(AssetCheckout).one()
+        self.assertEqual(checkout.status, "closed")
+        self.assertIsNone(checkout.open_token)
+
+    def test_scrap_request_closes_checkout_and_disposal_is_immutable(self):
+        asset = self.add_asset(asset_id="ITAM-SCRAP-CHECKOUT", status="in_use")
+        asset.owner_user_id = "employee"
+        self.db.add(AssetCheckout(
+            asset_id=asset.asset_id,
+            checkout_type="in_use",
+            assignee_user_id="employee",
+            status="open",
+            open_token="open",
+            checked_out_by="tester",
+        ))
+        self.db.commit()
+
+        request = ScrapService.create_request(
+            self.db, asset.asset_id, {"reason": "retired"}, "tester", {"role": "admin"}
+        )
+        self.assertIsNone(self.db.get(Asset, asset.asset_id).owner_user_id)
+        self.assertEqual(self.db.query(AssetCheckout).one().status, "closed")
+
+        ScrapService.dispose(
+            self.db,
+            request.id,
+            {"retirement_approval_no": "RET-1", "disposal_method": "Recycle"},
+            "tester",
+            {"role": "admin"},
+        )
+        with self.assertRaisesRegex(ValueError, "already been registered"):
+            ScrapService.dispose(
+                self.db,
+                request.id,
+                {"retirement_approval_no": "RET-2", "disposal_method": "Recycle"},
+                "tester",
+                {"role": "admin"},
+            )
+
+    def test_create_rejects_workflow_status_and_cross_department_write(self):
+        with self.assertRaises(AssetValidationError):
+            AssetService.create_asset(
+                self.db,
+                AssetCreate(name="Invalid workflow", category="Laptop", status="pending_scrap"),
+                "tester",
+                {"role": "admin"},
+            )
+        with self.assertRaisesRegex(AssetValidationError, "their department"):
+            AssetService.create_asset(
+                self.db,
+                AssetCreate(name="Cross department", category="Laptop", dept_id="D2"),
+                "tester",
+                {"role": "dept_manager", "dept_id": "D1"},
+            )
+        imported = AssetService.import_assets(
+            self.db,
+            AssetBatchImport(items=[AssetImportRow(
+                asset_id="ITAM-CROSS-DEPT",
+                name="Cross department import",
+                category="Laptop",
+                dept_id="D2",
+            )]),
+            {"role": "dept_manager", "dept_id": "D1"},
+        )
+        self.assertEqual(imported["created"], 0)
+        self.assertTrue(imported["errors"])
+        self.assertIsNone(self.db.get(Asset, "ITAM-CROSS-DEPT"))
+
+    def test_checkout_table_rejects_two_open_rows_for_same_asset(self):
+        asset = self.add_asset(asset_id="ITAM-ONE-OPEN")
+        self.db.add_all([
+            AssetCheckout(asset_id=asset.asset_id, checkout_type="borrowed", status="open", open_token="open", checked_out_by="a"),
+            AssetCheckout(asset_id=asset.asset_id, checkout_type="borrowed", status="open", open_token="open", checked_out_by="b"),
+        ])
+        with self.assertRaises(IntegrityError):
+            self.db.commit()
+        self.db.rollback()
+
+    def test_ldap_offboarding_requires_two_complete_missing_syncs(self):
+        provider = IdentityProviderConfig(
+            name="LDAP", provider_type="ldap", enabled=True,
+            config={"sync_limit": 200, "offboard_grace_runs": 2},
+        )
+        user = UserDirectory(
+            user_id="ldap:cn=missing,dc=example,dc=com",
+            username="missing",
+            display_name="Missing User",
+            source="ldap",
+            status="active",
+        )
+        self.db.add_all([provider, user])
+        self.db.commit()
+        user.identity_provider_id = provider.id
+        self.db.commit()
+
+        with patch("app.services.sso_service.LdapClient.sync_users_complete", return_value=([], True)):
+            IdentityService.sync_users(self.db, provider.id, [])
+            self.assertEqual(user.status, "active")
+            self.assertEqual(user.ldap_missing_sync_count, 1)
+            IdentityService.sync_users(self.db, provider.id, [])
+
+        self.assertEqual(user.status, "resigned")
+        self.assertEqual(user.ldap_missing_sync_count, 2)
 
 
     def test_external_user_sync_preserves_manual_role(self):

@@ -246,6 +246,11 @@ class LdapClient:
 
     @staticmethod
     def sync_users(config: dict, limit: int = 200) -> list[UserUpsert]:
+        users, _ = LdapClient.sync_users_complete(config, page_size=limit)
+        return users
+
+    @staticmethod
+    def sync_users_complete(config: dict, page_size: int = 200) -> tuple[list[UserUpsert], bool]:
         base_dn = config.get("base_dn")
         if not base_dn:
             raise ValueError("base_dn is required")
@@ -254,7 +259,14 @@ class LdapClient:
         try:
             search_filter = config.get("sync_filter") or config.get("user_filter") or "(objectClass=person)"
             attributes = LdapClient.attributes(config)
-            entries = LdapClient.search(conn, base_dn, search_filter, attributes, size_limit=limit)
+            entries, complete = LdapClient.search_paged(
+                conn,
+                base_dn,
+                search_filter,
+                attributes,
+                page_size=max(int(page_size or 200), 1),
+                max_entries=max(int(config.get("sync_max_users", 10000)), 1),
+            )
             users: list[UserUpsert] = []
             username_attrs = LdapClient.username_candidates(config)
             for entry in entries:
@@ -274,9 +286,52 @@ class LdapClient:
                         external_id=f"ldap:{entry.entry_dn}",
                     )
                 )
-            return users
+            return users, complete
         finally:
             conn.unbind()
+
+    @staticmethod
+    def search_paged(
+        conn,
+        base_dn: str,
+        search_filter: str,
+        attributes: list[str],
+        page_size: int,
+        max_entries: int,
+    ) -> tuple[list, bool]:
+        ldap = LdapClient.load()
+        remaining = list(attributes)
+        while remaining:
+            entries = []
+            cookie = None
+            try:
+                while True:
+                    ok = conn.search(
+                        base_dn,
+                        search_filter,
+                        search_scope=ldap["SUBTREE"],
+                        attributes=remaining,
+                        size_limit=0,
+                        paged_size=page_size,
+                        paged_cookie=cookie,
+                    )
+                    result = conn.result or {}
+                    if not ok or int(result.get("result", 0)) != 0:
+                        raise ValueError(f"LDAP paged search failed: {result.get('description') or result}")
+                    entries.extend(list(conn.entries))
+                    if len(entries) > max_entries:
+                        raise ValueError(f"LDAP sync exceeded sync_max_users={max_entries}")
+                    controls = result.get("controls") or {}
+                    page_control = controls.get("1.2.840.113556.1.4.319") or {}
+                    cookie = ((page_control.get("value") or {}).get("cookie"))
+                    if not cookie:
+                        return entries, True
+            except Exception as exc:
+                bad_attr = LdapClient.invalid_attribute_from_error(exc)
+                if not bad_attr or bad_attr not in remaining:
+                    raise ValueError(LdapClient.friendly_ldap_error(exc)) from exc
+                remaining.remove(bad_attr)
+        raise ValueError("All requested LDAP attributes are invalid")
 
     @staticmethod
     def attributes(config: dict) -> list[str]:

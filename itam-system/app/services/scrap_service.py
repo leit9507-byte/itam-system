@@ -197,7 +197,7 @@ class ScrapService:
 
     @staticmethod
     def create_request(db: Session, asset_id: str, payload: dict, operator: str = "资产管理员", user_context: dict | None = None) -> ScrapRequest:
-        asset = AssetService.get_scoped_asset(db, asset_id, user_context)
+        asset = AssetService.get_scoped_asset_for_update(db, asset_id, user_context)
         existed = db.query(ScrapRequest).filter(ScrapRequest.asset_id == asset_id, ScrapRequest.status.in_(["待处置", "审批中", "已通过"])).first()
         if existed:
             retirement_flow_no = (payload.get("retirement_flow_no") or "").strip()
@@ -232,8 +232,10 @@ class ScrapService:
             status="待处置",
         )
         from_status = asset.status
-        AssetService.validate_transition(from_status, "pending_scrap")
-        asset.status = "pending_scrap"
+        AssetService.apply_status_transition(
+            db, asset, "pending_scrap", operator, remark=request.reason,
+            event_type="SCRAP_REQUEST", record_lifecycle=False, allow_workflow_statuses=True,
+        )
         db.add(request)
         LifecycleService.record(
             db,
@@ -278,18 +280,18 @@ class ScrapService:
     def dispose(db: Session, request_id: int, payload: dict, operator: str, user_context: dict | None = None) -> ScrapRequest:
         request = ScrapService.apply_data_scope(
             db.query(ScrapRequest).filter(ScrapRequest.id == request_id), user_context
-        ).first()
+        ).with_for_update().first()
         if not request:
             raise ValueError("scrap request not found")
+        if request.disposed_at is not None:
+            raise ValueError("scrap disposal has already been registered")
+        if request.status == "已处置":
+            raise ValueError("scrap disposal has already been registered")
         if request.status not in {"待处置", "审批中", "已通过", "已处置"}:
             raise ValueError("只有待处置的报废单可以登记处置")
-        asset = AssetService.get_scoped_asset(db, request.asset_id, user_context)
-        if asset and asset.status == "disposed":
-            request.status = "已处置"
-            asset.status = "scrapped"
-            db.commit()
-            db.refresh(request)
-            return request
+        asset = AssetService.get_scoped_asset_for_update(db, request.asset_id, user_context)
+        if asset.status == "disposed":
+            raise ValueError("disposed assets cannot be registered again")
         if asset and asset.status not in {"pending_scrap", "scrapped", "ready_scrap"}:
             raise ValueError("资产不是待报废或已报废状态，不能登记处置")
 
@@ -339,8 +341,14 @@ class ScrapService:
         if asset:
             from_status = asset.status
             if from_status != "scrapped":
-                AssetService.validate_transition(from_status, "scrapped")
-            asset.status = "scrapped"
+                AssetService.apply_status_transition(
+                    db, asset, "scrapped", operator,
+                    remark=disposal_remark or disposal_method,
+                    event_type="SCRAP_DISPOSE", record_lifecycle=False, allow_workflow_statuses=True,
+                )
+            else:
+                asset.owner_user_id = None
+                AssetService.close_open_checkout(db, asset, operator, asset.location, disposal_remark or disposal_method)
             recipient_label = request.dispose_recipient_name or request.dispose_recipient_user_id or "-"
             dispose_reason = request.disposal_remark or request.disposal_method or "报废资产已完成处置归档"
             if request.disposal_method == "员工领用":

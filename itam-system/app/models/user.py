@@ -24,6 +24,7 @@ class UserDirectory(Base):
     external_id = Column(String(128), nullable=True, index=True)
     last_login_at = Column(UTCDateTime, nullable=True)
     last_synced_at = Column(UTCDateTime, nullable=True)
+    ldap_missing_sync_count = Column(Integer, default=0, nullable=False)
     created_at = Column(UTCDateTime, default=utc_now, nullable=False)
 
 
