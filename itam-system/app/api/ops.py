@@ -46,9 +46,10 @@ def ops_health(db: Session = Depends(get_db)):
     database_message = "ok"
     try:
         db.execute(text("SELECT 1"))
-    except Exception as exc:
+    except Exception:
         database_ok = False
-        database_message = str(exc)
+        # 公开健康端点不暴露数据库错误细节
+        database_message = "unavailable"
     upload_dir = Path(get_settings().upload_dir)
     connection_count = None
     try:
@@ -194,18 +195,19 @@ def export_operation_logs(
         .all()
     )
     output = StringIO()
+    output.write("\ufeff")
     writer = csv.writer(output)
     writer.writerow(["id", "module", "action", "target_type", "target_id", "operator", "summary", "detail", "created_at"])
     for row in rows:
         writer.writerow([
             row.id,
-            row.module,
-            row.action,
-            row.target_type or "",
-            row.target_id or "",
-            row.operator,
-            row.summary or "",
-            row.detail or "",
+            csv_safe_cell(row.module),
+            csv_safe_cell(row.action),
+            csv_safe_cell(row.target_type or ""),
+            csv_safe_cell(row.target_id or ""),
+            csv_safe_cell(row.operator),
+            csv_safe_cell(row.summary or ""),
+            csv_safe_cell(row.detail or ""),
             row.created_at.isoformat(sep=" ", timespec="seconds") if row.created_at else "",
         ])
     return PlainTextResponse(
@@ -215,13 +217,25 @@ def export_operation_logs(
     )
 
 
+def csv_safe_cell(value) -> str:
+    """防止 CSV 公式注入：以 = + - @ 等开头的单元格加单引号前缀。"""
+    text = "" if value is None else str(value)
+    if text.startswith(("=", "+", "-", "@", "\t", "\r")):
+        return "'" + text
+    return text
+
+
 def parse_log_datetime(value: str, fallback_time) -> datetime:
     clean = (value or "").strip()
     if not clean:
         return app_datetime_to_utc(datetime.combine(app_today(), fallback_time))
-    if len(clean) == 10:
-        return app_datetime_to_utc(datetime.combine(datetime.fromisoformat(clean).date(), fallback_time))
-    return app_datetime_to_utc(datetime.fromisoformat(clean.replace("Z", "+00:00")))
+    try:
+        if len(clean) == 10:
+            return app_datetime_to_utc(datetime.combine(datetime.fromisoformat(clean).date(), fallback_time))
+        return app_datetime_to_utc(datetime.fromisoformat(clean.replace("Z", "+00:00")))
+    except ValueError:
+        # 非法日期格式不抛 500，回退到业务时区的当日
+        return app_datetime_to_utc(datetime.combine(app_today(), fallback_time))
 
 
 @router.get("/jobs")

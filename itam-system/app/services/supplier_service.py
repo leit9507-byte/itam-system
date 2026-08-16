@@ -114,12 +114,28 @@ class SupplierService:
 
     @staticmethod
     def ensure_from_business_data(db: Session) -> None:
-        purchases = db.query(Purchase).all()
-        assets = db.query(Asset).all()
-        scraps = db.query(ScrapRequest).filter(ScrapRequest.disposal_method == "变卖").all()
-        names = {purchase.supplier_name for purchase in purchases if purchase.supplier_name}
-        names.update(asset.purchase_supplier_name for asset in assets if asset.purchase_supplier_name)
-        names.update(scrap.dispose_recipient_name for scrap in scraps if scrap.dispose_recipient_name)
+        # 仅取不重复的供应商名，避免全表加载整行对象
+        names = {
+            name
+            for (name,) in db.query(Purchase.supplier_name).filter(Purchase.supplier_name.isnot(None), Purchase.supplier_name != "").distinct().all()
+            if name
+        }
+        names.update(
+            name
+            for (name,) in db.query(Asset.purchase_supplier_name)
+            .filter(Asset.purchase_supplier_name.isnot(None), Asset.purchase_supplier_name != "")
+            .distinct()
+            .all()
+            if name
+        )
+        names.update(
+            name
+            for (name,) in db.query(ScrapRequest.dispose_recipient_name)
+            .filter(ScrapRequest.disposal_method == "变卖", ScrapRequest.dispose_recipient_name.isnot(None), ScrapRequest.dispose_recipient_name != "")
+            .distinct()
+            .all()
+            if name
+        )
         changed = False
         for name in names:
             if not db.query(Supplier).filter(Supplier.name == name).first():

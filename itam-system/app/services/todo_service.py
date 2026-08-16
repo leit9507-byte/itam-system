@@ -2,11 +2,12 @@ import re
 import time
 from datetime import date, datetime, timedelta
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from app.core.time import app_today, utc_now
+from app.core.time import app_today
 from app.core.security import can_view_all_data, is_department_manager, scoped_dept_id, scoped_user_identities
 from app.models.asset import Asset
+from app.models.purchase import Purchase
 from app.models.repair import RepairRecord
 from app.models.user import UserDirectory
 from app.services.asset_service import AssetService
@@ -56,33 +57,35 @@ class TodoService:
 
     @staticmethod
     def build_todos(db: Session, user_context: dict) -> list[dict]:
-        purchase_result = PurchaseService.list_purchases(db, page=1, page_size=0, user_context=user_context)
+        # 采购：只查待验收单，并一次性 joinedload items，避免全量采购单加载 + 逐单懒加载（N+1）。
+        purchases = (
+            PurchaseService.apply_data_scope(db.query(Purchase), user_context)
+            .options(joinedload(Purchase.items))
+            .filter(Purchase.status == "pending_acceptance")
+            .order_by(Purchase.id.desc())
+            .all()
+        )
         scrap_result = ScrapService.list_requests(db, page=1, page_size=0, status="待处置", user_context=user_context)
         repair_result = RepairService.list_records(db, page=1, page_size=0, status="维修中", user_context=user_context)
-        asset_query = AssetService.apply_data_scope(db.query(Asset), user_context)
-
-        purchases = purchase_result["list"]
-        scraps = scrap_result["list"]
-        repairs = repair_result["list"]
+        # 一次加载全部相关状态的资产，在内存中按用途切分，替代原先 3 次资产表查询。
         assets = (
-            asset_query
-            .filter(Asset.status.in_(["borrowed", "ready_scrap"]))
+            AssetService.apply_data_scope(db.query(Asset), user_context)
+            .filter(Asset.status.in_(["borrowed", "ready_scrap", "in_use", "out_stock", "repair"]))
             .order_by(Asset.created_at.desc())
             .all()
         )
-        offboarding_assets = TodoService.offboarding_assets_from_db(db, user_context)
         users = TodoService.scoped_users(db, user_context)
         inactive_user_map = TodoService.inactive_user_map(users)
-        assigned_user_ids = TodoService.assigned_user_ids_from_db(db, user_context)
+        assigned_user_ids = TodoService.assigned_user_ids(assets)
 
         rows = [
             *TodoService.onboarding_todos(users, assigned_user_ids),
             *TodoService.purchase_todos(purchases),
-            *TodoService.scrap_todos(scraps),
+            *TodoService.scrap_todos(scrap_result["list"]),
             *TodoService.ready_scrap_todos(assets),
-            *TodoService.offboarding_todos(offboarding_assets, inactive_user_map),
+            *TodoService.offboarding_todos(assets, inactive_user_map),
             *TodoService.borrow_due_todos(assets),
-            *TodoService.repair_todos(repairs),
+            *TodoService.repair_todos(repair_result["list"]),
         ]
         return sorted(rows, key=lambda item: (-TodoService.priority_weight(item.get("priority")), -TodoService.date_value(item.get("created_at"))))
 
@@ -230,15 +233,6 @@ class TodoService:
         return rows
 
     @staticmethod
-    def offboarding_assets_from_db(db: Session, user_context: dict) -> list[Asset]:
-        return (
-            AssetService.apply_data_scope(db.query(Asset), user_context)
-            .filter(Asset.status.in_(["in_use", "borrowed", "out_stock", "repair"]))
-            .filter(Asset.owner_user_id.isnot(None), Asset.owner_user_id != "")
-            .all()
-        )
-
-    @staticmethod
     def borrow_due_todos(assets: list[Asset]) -> list[dict]:
         today = app_today()
         soon_deadline = today + timedelta(days=TodoService.BORROW_DUE_SOON_DAYS)
@@ -308,21 +302,6 @@ class TodoService:
                 continue
             if asset.owner_user_id:
                 ids.update(TodoService.identity_keys(asset.owner_user_id))
-        return ids
-
-    @staticmethod
-    def assigned_user_ids_from_db(db: Session, user_context: dict) -> set[str]:
-        query = AssetService.apply_data_scope(db.query(Asset.owner_user_id), user_context)
-        rows = (
-            query
-            .filter(Asset.status.in_(["in_use", "borrowed", "out_stock"]))
-            .filter(Asset.owner_user_id.isnot(None), Asset.owner_user_id != "")
-            .distinct()
-            .all()
-        )
-        ids: set[str] = set()
-        for row in rows:
-            ids.update(TodoService.identity_keys(row[0]))
         return ids
 
     @staticmethod

@@ -54,11 +54,17 @@ def list_lifecycles(
             )
         )
     if start_date:
-        start, _ = app_day_bounds(datetime.fromisoformat(start_date))
-        query = query.filter(Lifecycle.timestamp >= start)
+        try:
+            start, _ = app_day_bounds(datetime.fromisoformat(start_date))
+            query = query.filter(Lifecycle.timestamp >= start)
+        except ValueError:
+            pass
     if end_date:
-        _, end = app_day_bounds(datetime.fromisoformat(end_date))
-        query = query.filter(Lifecycle.timestamp <= end)
+        try:
+            _, end = app_day_bounds(datetime.fromisoformat(end_date))
+            query = query.filter(Lifecycle.timestamp <= end)
+        except ValueError:
+            pass
     total = query.count()
     query = query.order_by(Lifecycle.timestamp.desc())
     if page_size and page_size > 0:

@@ -1,15 +1,17 @@
 from collections import Counter, defaultdict
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.time import TimezoneModel
 from app.core.time import utc_now
 from app.core.database import get_db
+from app.core.security import user_context_from_request
 from app.models.asset import Asset
 from app.models.company import Company
+from app.services.asset_service import AssetService
 
 
 router = APIRouter(prefix="/company", tags=["Company"])
@@ -50,10 +52,11 @@ ASSET_STATUS_LABELS = {
 
 
 @router.get("/list")
-def list_companies(db: Session = Depends(get_db)):
+def list_companies(request: Request, db: Session = Depends(get_db)):
     companies = db.query(Company).order_by(Company.id.asc()).all()
     stats = (
-        db.query(
+        AssetService.apply_data_scope(db.query(Asset), user_context_from_request(request))
+        .with_entities(
             Asset.company,
             Asset.status,
             func.count(Asset.asset_id),
@@ -165,12 +168,13 @@ def list_company_assets(
     keyword: str | None = None,
     page: int = 1,
     page_size: int = 20,
+    request: Request = None,
     db: Session = Depends(get_db),
 ):
     page = max(page, 1)
     page_size = min(max(page_size, 1), 100)
     company_name = normalize_company(company)
-    query = db.query(Asset)
+    query = AssetService.apply_data_scope(db.query(Asset), user_context_from_request(request))
     if company_name == DEFAULT_COMPANY:
         query = query.filter(
             or_(

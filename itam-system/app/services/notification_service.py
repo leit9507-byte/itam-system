@@ -1,7 +1,9 @@
 import base64
+import concurrent.futures
 import hashlib
 import hmac
 import json
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -54,6 +56,19 @@ class NotificationService:
         "risk": "red",
     }
 
+    # 飞书 webhook 后台发送线程池；最多保留 100 个排队任务，超出直接丢弃，避免故障期间无限堆积。
+    _webhook_executor: concurrent.futures.ThreadPoolExecutor | None = None
+    _webhook_semaphore = threading.BoundedSemaphore(100)
+
+    @staticmethod
+    def _get_webhook_executor() -> concurrent.futures.ThreadPoolExecutor:
+        if NotificationService._webhook_executor is None:
+            NotificationService._webhook_executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=2,
+                thread_name_prefix="feishu-webhook",
+            )
+        return NotificationService._webhook_executor
+
     @staticmethod
     def get_setting(db: Session) -> NotificationSetting:
         setting = db.query(NotificationSetting).filter(NotificationSetting.channel == NotificationService.CHANNEL).first()
@@ -87,14 +102,54 @@ class NotificationService:
         if not setting.webhook_url:
             return False
 
-        try:
-            NotificationService.send_event_message_with_setting(setting, event_type, title, lines)
-            return True
-        except Exception as exc:
-            setting.last_test_status = "failed"
-            setting.last_test_message = str(exc)[:255]
-            db.commit()
+        # 快照出线程内所需数据，避免在后台线程使用请求作用域的 db session
+        snapshot = {
+            "webhook_url": setting.webhook_url,
+            "secret": setting.secret,
+        }
+        # 飞书 webhook 发送放到有界线程池，避免飞书慢响应阻塞业务请求；
+        # 排队超过上限时丢弃本次通知，防止 webhook 故障期间无限堆积。
+        if not NotificationService._webhook_semaphore.acquire(blocking=False):
             return False
+        try:
+            NotificationService._get_webhook_executor().submit(
+                NotificationService._send_event_background,
+                snapshot,
+                event_type,
+                title,
+                lines or [],
+            )
+            return True
+        except Exception:
+            NotificationService._webhook_semaphore.release()
+            return False
+
+    @staticmethod
+    def _send_event_background(snapshot: dict, event_type: str, title: str, lines: list[str]) -> None:
+        try:
+            from app.models.notification import NotificationSetting
+
+            setting = NotificationSetting()
+            setting.webhook_url = snapshot.get("webhook_url")
+            setting.secret = snapshot.get("secret")
+            NotificationService.send_event_message_with_setting(setting, event_type, title, lines)
+        except Exception as exc:
+            import logging
+
+            logging.getLogger("itam.notification").exception("Feishu notification background send failed")
+            # 后台失败时用独立 session 记录状态，供排障；不影响主请求
+            try:
+                from app.core.database import SessionLocal
+
+                with SessionLocal() as db:
+                    row = NotificationService.get_setting(db)
+                    row.last_test_status = "failed"
+                    row.last_test_message = str(exc)[:255]
+                    db.commit()
+            except Exception:
+                logging.getLogger("itam.notification").exception("Failed to persist notification failure status")
+        finally:
+            NotificationService._webhook_semaphore.release()
 
     @staticmethod
     def asset_identity_lines(asset=None, fallback_asset_id: str | None = None) -> list[str]:

@@ -11,7 +11,7 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils.exceptions import InvalidFileException
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import and_, func, or_, text
+from sqlalchemy import and_, case, func, or_, text
 from sqlalchemy.orm import Session
 
 from app.core.time import app_datetime_to_utc, app_end_of_day, app_now, format_app_datetime, utc_now
@@ -37,6 +37,7 @@ from app.services.notification_service import NotificationService
 from app.services.number_service import NumberService
 from app.services.supplier_service import SupplierService
 from app.core.security import can_view_all_data, is_department_manager, scoped_dept_id
+from app.core.auth import validate_asset_id
 
 
 class AssetValidationError(ValueError):
@@ -215,6 +216,10 @@ class AssetService:
             (user.dept_id or user.dept_name) if user else payload.dept_id, user_context
         )
         asset_id = getattr(payload, "asset_id", None) or AssetService.generate_asset_id(db)
+        try:
+            asset_id = validate_asset_id(asset_id)
+        except ValueError as exc:
+            raise AssetValidationError(str(exc)) from exc
         asset_no = AssetService.normalize_asset_no(payload.asset_no, asset_id)
         sn = AssetService.normalize_blank(payload.sn) or None
         AssetService.validate_asset_identity_unique(db, asset_no=asset_no, sn=sn)
@@ -1295,14 +1300,28 @@ class AssetService:
             category or "其他": count
             for category, count in db.query(Asset.category, func.count(Asset.asset_id)).filter(Asset.asset_id.in_(scoped_ids)).group_by(Asset.category).all()
         }
-        managed_status_counts = {
-            status or "unknown": count
-            for status, count in db.query(Asset.status, func.count(Asset.asset_id)).filter(Asset.asset_id.in_(scoped_ids), managed_filter).group_by(Asset.status).all()
-        }
-        managed_category_counts = {
-            category or "其他": count
-            for category, count in db.query(Asset.category, func.count(Asset.asset_id)).filter(Asset.asset_id.in_(scoped_ids), managed_filter).group_by(Asset.category).all()
-        }
+        # 合并 managed 状态/类别统计：一次 GROUP BY 同时产出 managed 与非 managed 计数，减少一半查询
+        managed_marker = case((~Asset.status.in_(["scrapped", "disposed", "lost"]) | Asset.status.is_(None), 1), else_=0)
+        managed_status_rows = (
+            db.query(Asset.status, managed_marker, func.count(Asset.asset_id))
+            .filter(Asset.asset_id.in_(scoped_ids))
+            .group_by(Asset.status, managed_marker)
+            .all()
+        )
+        managed_category_rows = (
+            db.query(Asset.category, managed_marker, func.count(Asset.asset_id))
+            .filter(Asset.asset_id.in_(scoped_ids))
+            .group_by(Asset.category, managed_marker)
+            .all()
+        )
+        managed_status_counts: dict[str, int] = {}
+        managed_category_counts: dict[str, int] = {}
+        for status, marker, count in managed_status_rows:
+            if marker:
+                managed_status_counts[status or "unknown"] = count
+        for category, marker, count in managed_category_rows:
+            if marker:
+                managed_category_counts[category or "其他"] = count
         return {
             "total": total,
             "total_value": float(total_value),
@@ -1460,6 +1479,10 @@ class AssetService:
 
     @staticmethod
     def rename_asset_id(db: Session, asset: Asset, old_asset_id: str, new_asset_id: str, operator: str) -> None:
+        try:
+            new_asset_id = validate_asset_id(new_asset_id)
+        except ValueError as exc:
+            raise AssetValidationError(str(exc)) from exc
         if not new_asset_id:
             raise AssetValidationError("资产编号不能为空")
         if len(new_asset_id) > 64:

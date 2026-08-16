@@ -56,8 +56,14 @@ def list_repairs(
     request: Request = None,
     db: Session = Depends(get_db),
 ):
-    start = app_day_bounds(datetime.fromisoformat(start_date))[0] if start_date else None
-    end = app_day_bounds(datetime.fromisoformat(end_date))[1] if end_date else None
+    start = None
+    end = None
+    try:
+        start = app_day_bounds(datetime.fromisoformat(start_date))[0] if start_date else None
+        end = app_day_bounds(datetime.fromisoformat(end_date))[1] if end_date else None
+    except ValueError:
+        # 非法日期格式不抛 500，视为未传
+        start = end = None
     return RepairService.list_records(db, page, page_size, keyword, status, start, end, sort_by, sort_order, user_context_from_request(request))
 
 

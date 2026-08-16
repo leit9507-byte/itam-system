@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, defer, joinedload
 
 from app.core.time import app_day_bounds, app_datetime_to_utc, utc_now
 from app.core.security import can_view_all_data, is_department_manager, scoped_dept_id, scoped_user_identities
@@ -53,7 +53,14 @@ class DashboardService:
         now = utc_now()
         summary = AssetService.asset_summary(db, user_context)
         managed_query = AssetService.apply_data_scope(db.query(Asset), user_context).filter(or_(Asset.status.is_(None), ~Asset.status.in_(["scrapped", "disposed", "lost"])))
-        assets_for_detail = managed_query.options().all()
+        # 只加载仪表盘计算所需的列：跳过 remark/sn/审批单号/供应商等大字段，降低内存与网络开销
+        assets_for_detail = managed_query.options(
+            defer(Asset.remark),
+            defer(Asset.sn),
+            defer(Asset.company),
+            defer(Asset.purchase_approval_no),
+            defer(Asset.purchase_supplier_name),
+        ).all()
         products = db.query(ProductCatalog).all()
         product_index = DashboardService.product_retirement_index(products)
         products = product_index

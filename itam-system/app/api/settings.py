@@ -23,6 +23,7 @@ class AssetResidualConfigPayload(TimezoneModel):
     method: str = Field(default="straight_line", pattern="^(straight_line|double_declining|sum_of_years_digits|fixed_rate)$")
     minimum_residual_rate: float = Field(ge=0, le=1)
     missing_basis_policy: str = "original"
+    fixed_rate_value: float = Field(default=AssetResidualService.DEFAULT_FIXED_RATE_VALUE, ge=0, le=1)
     category_rates: list[CategoryResidualRate] = Field(default_factory=list)
 
 

@@ -25,7 +25,7 @@ class AuditEngine:
         if asset_ids is not None:
             response_query = response_query.filter(AuditResponse.asset_id.in_(asset_ids)) if asset_ids else response_query.filter(False)
         responses = {item.violation_key: item for item in response_query.all()}
-        violations = RuleEngine(self.db).run()
+        violations = RuleEngine(self.db).run(asset_ids=asset_ids)
         if asset_ids is not None:
             violations = [item for item in violations if item.get("asset_id") in asset_ids]
         enriched = [self._enrich_violation(item, asset_map, user_map, responses) for item in violations]

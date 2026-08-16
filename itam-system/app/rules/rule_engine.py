@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from itertools import groupby
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.time import app_today, utc_now
@@ -19,19 +20,27 @@ class RuleEngine:
         self.db = db
         self.settings = get_settings()
 
-    def run(self) -> list[dict]:
-        assets = self.db.query(Asset).all()
+    def run(self, asset_ids: set[str] | None = None) -> list[dict]:
+        asset_query = self.db.query(Asset)
+        if asset_ids is not None:
+            asset_query = asset_query.filter(Asset.asset_id.in_(asset_ids)) if asset_ids else asset_query.filter(False)
+        assets = asset_query.all()
         rules = self._rules_by_code()
+        # 一次性批量查询所涉资产的最后生命周期时间，替代 _last_event_time 的逐资产查询（N+1）。
+        lifecycle_query = self.db.query(Lifecycle.asset_id, func.max(Lifecycle.timestamp)).group_by(Lifecycle.asset_id)
+        if asset_ids is not None:
+            lifecycle_query = lifecycle_query.filter(Lifecycle.asset_id.in_(asset_ids)) if asset_ids else lifecycle_query.filter(False)
+        last_event_map = dict(lifecycle_query.all())
         violations: list[dict] = []
         violations.extend(self._user_asset_count_limit(assets, rules["USER_ASSET_COUNT_LIMIT"], "USER_ASSET_COUNT_LIMIT"))
         for code, rule in rules.items():
             if code.startswith("CUSTOM_PERSON_COUNT_"):
                 violations.extend(self._user_asset_count_limit(assets, rule, code))
         violations.extend(self._offboarding_assets_not_returned(assets, rules["OFFBOARDING_ASSET_NOT_RETURNED"]))
-        violations.extend(self._borrowed_assets_not_returned(assets, rules["BORROWED_ASSET_NOT_RETURNED"]))
+        violations.extend(self._borrowed_assets_not_returned(assets, rules["BORROWED_ASSET_NOT_RETURNED"], last_event_map))
         violations.extend(self._single_owner_value_limit(assets, rules["SINGLE_OWNER_VALUE_LIMIT"]))
         violations.extend(self._high_value_purchase(assets, rules["HIGH_VALUE_PURCHASE"]))
-        violations.extend(self._idle_assets_over_threshold(assets, rules["ASSET_IDLE_OVER_90_DAYS"]))
+        violations.extend(self._idle_assets_over_threshold(assets, rules["ASSET_IDLE_OVER_90_DAYS"], last_event_map))
         violations.extend(self._asset_retirement_overdue(assets, rules["ASSET_RETIREMENT_OVERDUE"]))
         violations.extend(self._device_fault_audit(assets, rules["DEVICE_FAULT_AUDIT"]))
         return violations
@@ -151,14 +160,8 @@ class RuleEngine:
             "message": message,
         }
 
-    def _last_event_time(self, asset: Asset) -> datetime:
-        last_event = (
-            self.db.query(Lifecycle)
-            .filter(Lifecycle.asset_id == asset.asset_id)
-            .order_by(Lifecycle.timestamp.desc())
-            .first()
-        )
-        return last_event.timestamp if last_event else asset.created_at
+    def _last_event_time(self, asset: Asset, last_event_map: dict) -> datetime:
+        return last_event_map.get(asset.asset_id) or asset.created_at
 
     def _retirement_due_date(self, asset: Asset) -> datetime | None:
         if not asset.purchase_date:
@@ -178,7 +181,8 @@ class RuleEngine:
     def _user_asset_count_limit(self, assets: list[Asset], rule: dict, rule_code: str) -> list[dict]:
         if not rule.get("enabled"):
             return []
-        threshold = int(rule.get("threshold_value") or self.settings.max_assets_per_user)
+        value = rule.get("threshold_value")
+        threshold = max(int(value), 0) if value is not None else self.settings.max_assets_per_user
         scope_category = rule.get("scope_category") or ""
         scoped_assets = self._category_assets(assets, scope_category)
         owned_assets = sorted([asset for asset in scoped_assets if asset.owner_user_id], key=lambda item: item.owner_user_id)
@@ -204,8 +208,10 @@ class RuleEngine:
     def _device_fault_audit(self, assets: list[Asset], rule: dict) -> list[dict]:
         if not rule.get("enabled"):
             return []
-        threshold = int(rule.get("threshold_value") or 2)
-        threshold_days = int(rule.get("threshold_days") or 180)
+        value = rule.get("threshold_value")
+        threshold = max(int(value), 0) if value is not None else 2
+        days_value = rule.get("threshold_days")
+        threshold_days = max(int(days_value), 0) if days_value is not None else 180
         cutoff = utc_now() - timedelta(days=threshold_days)
         asset_map = {asset.asset_id: asset for asset in self._category_assets(assets, rule.get("scope_category"))}
         if not asset_map:
@@ -239,7 +245,8 @@ class RuleEngine:
     def _asset_retirement_overdue(self, assets: list[Asset], rule: dict) -> list[dict]:
         if not rule.get("enabled"):
             return []
-        grace_days = int(rule.get("threshold_days") or 0)
+        days_value = rule.get("threshold_days")
+        grace_days = max(int(days_value), 0) if days_value is not None else 0
         active_statuses = {"in_use", "borrowed", "out_stock", "repair"}
         today = app_today()
         violations = []
@@ -280,16 +287,17 @@ class RuleEngine:
                 )
         return violations
 
-    def _borrowed_assets_not_returned(self, assets: list[Asset], rule: dict) -> list[dict]:
+    def _borrowed_assets_not_returned(self, assets: list[Asset], rule: dict, last_event_map: dict) -> list[dict]:
         if not rule.get("enabled"):
             return []
-        threshold_days = int(rule.get("threshold_days") or 30)
+        days_value = rule.get("threshold_days")
+        threshold_days = max(int(days_value), 0) if days_value is not None else 30
         cutoff = utc_now() - timedelta(days=threshold_days)
         violations = []
         for asset in self._category_assets(assets, rule.get("scope_category")):
             if asset.status != "borrowed":
                 continue
-            last_time = self._last_event_time(asset)
+            last_time = self._last_event_time(asset, last_event_map)
             if last_time < cutoff:
                 violations.append(
                     self._violation(
@@ -305,7 +313,8 @@ class RuleEngine:
     def _single_owner_value_limit(self, assets: list[Asset], rule: dict) -> list[dict]:
         if not rule.get("enabled"):
             return []
-        threshold = float(rule.get("threshold_value") or self.settings.high_value_threshold * 2)
+        value = rule.get("threshold_value")
+        threshold = max(float(value), 0) if value is not None else self.settings.high_value_threshold * 2
         owned_assets = sorted(
             [asset for asset in self._category_assets(assets, rule.get("scope_category")) if asset.owner_user_id],
             key=lambda item: item.owner_user_id,
@@ -332,7 +341,8 @@ class RuleEngine:
     def _high_value_purchase(self, assets: list[Asset], rule: dict) -> list[dict]:
         if not rule.get("enabled"):
             return []
-        threshold = float(rule.get("threshold_value") or self.settings.high_value_threshold)
+        value = rule.get("threshold_value")
+        threshold = max(float(value), 0) if value is not None else self.settings.high_value_threshold
         return [
             self._violation(
                 asset,
@@ -344,10 +354,11 @@ class RuleEngine:
             if (asset.purchase_price or 0) >= threshold
         ]
 
-    def _idle_assets_over_threshold(self, assets: list[Asset], rule: dict) -> list[dict]:
+    def _idle_assets_over_threshold(self, assets: list[Asset], rule: dict, last_event_map: dict) -> list[dict]:
         if not rule.get("enabled"):
             return []
-        threshold_days = int(rule.get("threshold_days") or self.settings.idle_days_threshold)
+        days_value = rule.get("threshold_days")
+        threshold_days = max(int(days_value), 0) if days_value is not None else self.settings.idle_days_threshold
         cutoff = utc_now() - timedelta(days=threshold_days)
         idle_assets = [
             asset
@@ -357,7 +368,7 @@ class RuleEngine:
         violations = []
 
         for asset in idle_assets:
-            last_time = self._last_event_time(asset)
+            last_time = self._last_event_time(asset, last_event_map)
             if last_time < cutoff:
                 violations.append(
                     self._violation(

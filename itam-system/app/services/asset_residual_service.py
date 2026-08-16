@@ -11,6 +11,7 @@ class AssetResidualService:
     DAYS_PER_YEAR = 365.2425
     VALID_MISSING_BASIS_POLICIES = {"original", "zero"}
     VALID_METHODS = {"straight_line", "double_declining", "sum_of_years_digits", "fixed_rate"}
+    DEFAULT_FIXED_RATE_VALUE = 0.5
 
     @staticmethod
     def get_config(db: Session | None = None) -> dict:
@@ -28,6 +29,12 @@ class AssetResidualService:
         if data.get("method") not in AssetResidualService.VALID_METHODS:
             data["method"] = "straight_line"
         data["minimum_residual_rate"] = AssetResidualService.clamp_rate(data.get("minimum_residual_rate"))
+        fixed_rate_value = data.get("fixed_rate_value")
+        data["fixed_rate_value"] = (
+            AssetResidualService.clamp_rate(fixed_rate_value)
+            if fixed_rate_value is not None
+            else AssetResidualService.DEFAULT_FIXED_RATE_VALUE
+        )
         if data.get("missing_basis_policy") not in AssetResidualService.VALID_MISSING_BASIS_POLICIES:
             data["missing_basis_policy"] = "original"
         category_rates = []
@@ -79,7 +86,16 @@ class AssetResidualService:
         minimum_value = original_value * residual_rate
         method = config.get("method", "straight_line")
         if method == "fixed_rate":
-            return round(minimum_value, 2)
+            if not purchase_date:
+                return round(original_value if config.get("missing_basis_policy") == "original" else 0, 2)
+            start_date = purchase_date.date() if isinstance(purchase_date, datetime) else purchase_date
+            current = as_of or date.today()
+            current_date = current.date() if isinstance(current, datetime) else current
+            elapsed_days = max((current_date - start_date).days, 0)
+            elapsed_years = elapsed_days / AssetResidualService.DAYS_PER_YEAR
+            rate = AssetResidualService.clamp_rate(config.get("fixed_rate_value"))
+            current_value = original_value * ((1 - rate) ** elapsed_years)
+            return round(max(minimum_value, min(current_value, original_value)), 2)
 
         if not purchase_date or useful_years <= 0:
             return round(original_value if config.get("missing_basis_policy") == "original" else 0, 2)

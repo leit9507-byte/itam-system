@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import func
+from sqlalchemy import bindparam, func, update
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -217,23 +217,28 @@ def delete_product(product_id: int, request: Request, db: Session = Depends(get_
 
 
 def sync_assets_from_product(db: Session, old_snapshot: dict, product: ProductCatalog, operator: str = "system") -> int:
-    assets = (
-        db.query(Asset)
-        .filter(
-            func.lower(func.trim(Asset.name)) == normalize_product_name(old_snapshot["product_name"]),
-        )
+    clean_name = normalize_product_name(old_snapshot["product_name"])
+    condition = func.lower(func.trim(Asset.name)) == clean_name
+    # 只加载需要同步与审计的列，避免整行 ORM 加载。
+    rows = (
+        db.query(Asset.asset_id, Asset.name, Asset.category, Asset.brand, Asset.model, Asset.config, Asset.location)
+        .filter(condition)
         .all()
     )
-    for asset in assets:
+    if not rows:
+        return 0
+
+    config_updates: list[dict] = []
+    for asset_id, name, category, brand, model, config_value, location in rows:
         previous = {
-            "name": asset.name,
-            "category": asset.category,
-            "brand": asset.brand,
-            "model": asset.model,
-            "spec": (asset.config or {}).get("spec"),
-            "retirement_years": (asset.config or {}).get("retirement_years"),
+            "name": name,
+            "category": category,
+            "brand": brand,
+            "model": model,
+            "spec": (config_value or {}).get("spec"),
+            "retirement_years": (config_value or {}).get("retirement_years"),
         }
-        config = dict(asset.config or {})
+        config = dict(config_value or {})
         config["spec"] = product.spec or ""
         if product.default_warehouse:
             config["warehouse"] = product.default_warehouse
@@ -241,18 +246,14 @@ def sync_assets_from_product(db: Session, old_snapshot: dict, product: ProductCa
             config["retirement_years"] = product.retirement_years
         else:
             config.pop("retirement_years", None)
-        asset.name = product.product_name
-        asset.category = product.device_type
-        asset.brand = product.brand
-        asset.model = product.model
-        asset.config = config
-        if product.default_warehouse and not asset.location:
-            asset.location = product.default_warehouse
+        new_location = location
+        if product.default_warehouse and not location:
+            new_location = product.default_warehouse
         current = {
-            "name": asset.name,
-            "category": asset.category,
-            "brand": asset.brand,
-            "model": asset.model,
+            "name": product.product_name,
+            "category": product.device_type,
+            "brand": product.brand,
+            "model": product.model,
             "spec": config.get("spec"),
             "retirement_years": config.get("retirement_years"),
         }
@@ -266,7 +267,7 @@ def sync_assets_from_product(db: Session, old_snapshot: dict, product: ProductCa
         }.items():
             AuditLogService.record_asset_change(
                 db,
-                asset.asset_id,
+                asset_id,
                 field_name,
                 previous[field_name],
                 current[field_name],
@@ -274,7 +275,29 @@ def sync_assets_from_product(db: Session, old_snapshot: dict, product: ProductCa
                 field_label,
                 "product_update",
             )
-    return len(assets)
+        config_updates.append({"asset_id": asset_id, "config": config, "location": new_location})
+
+    # 标量列用一条 SQL UPDATE 批量更新，不再全量加载资产 ORM 对象。
+    db.query(Asset).filter(condition).update(
+        {
+            "name": product.product_name,
+            "category": product.device_type,
+            "brand": product.brand,
+            "model": product.model,
+        },
+        synchronize_session=False,
+    )
+    # config/location 按行计算后以 executemany 批量写回。
+    db.execute(
+        update(Asset)
+        .where(Asset.asset_id == bindparam("asset_id"))
+        .values(config=bindparam("config"), location=bindparam("location")),
+        [
+            {"asset_id": entry["asset_id"], "config": entry["config"], "location": entry["location"]}
+            for entry in config_updates
+        ],
+    )
+    return len(rows)
 
 
 def sync_asset_retirement_years(
@@ -284,15 +307,16 @@ def sync_asset_retirement_years(
     operator: str,
 ) -> set[str]:
     clean_name = (product_name or "").strip().lower()
-    assets = db.query(Asset).filter(func.lower(func.trim(Asset.name)) == clean_name).all()
-    for asset in assets:
-        config = dict(asset.config or {})
+    condition = func.lower(func.trim(Asset.name)) == clean_name
+    rows = db.query(Asset.asset_id, Asset.config).filter(condition).all()
+    config_updates: list[dict] = []
+    for asset_id, config_value in rows:
+        config = dict(config_value or {})
         old_value = config.get("retirement_years")
         config["retirement_years"] = retirement_years
-        asset.config = config
         AuditLogService.record_asset_change(
             db,
-            asset.asset_id,
+            asset_id,
             "retirement_years",
             old_value,
             retirement_years,
@@ -300,7 +324,15 @@ def sync_asset_retirement_years(
             "退役年限",
             "product_batch_update",
         )
-    return {asset.asset_id for asset in assets}
+        config_updates.append({"asset_id": asset_id, "config": config})
+    if config_updates:
+        db.execute(
+            update(Asset)
+            .where(Asset.asset_id == bindparam("asset_id"))
+            .values(config=bindparam("config")),
+            [{"asset_id": entry["asset_id"], "config": entry["config"]} for entry in config_updates],
+        )
+    return {row[0] for row in rows}
 
 
 def normalize_product_name(value: str | None) -> str:

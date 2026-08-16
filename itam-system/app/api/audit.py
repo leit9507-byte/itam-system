@@ -203,13 +203,9 @@ def serialize_response(row: AuditResponse) -> dict:
 def list_audit_rules(db: Session = Depends(get_db)):
     persisted = {item.rule_code: item for item in db.query(AuditRule).all()}
     rows = []
-    changed = False
     for item in default_rules():
         saved = persisted.get(item["rule_code"])
         if saved:
-            if saved.name != item["name"]:
-                saved.name = item["name"]
-                changed = True
             rows.append(serialize_rule(saved, item))
         else:
             rows.append(item)
@@ -220,8 +216,6 @@ def list_audit_rules(db: Session = Depends(get_db)):
         if item.rule_code not in default_codes
     ]
     rows.extend(sorted(custom_rows, key=lambda item: item["id"] or 0))
-    if changed:
-        db.commit()
     return rows
 
 
@@ -275,14 +269,11 @@ def save_audit_response(payload: AuditResponsePayload, request: Request, db: Ses
 
 @router.post("/run")
 def run_audit(request: Request, payload: AuditRunRequest | None = None, db: Session = Depends(get_db)):
-    global last_report_path, last_report_pdf_path
     asset_ids = set(
         row[0]
         for row in AssetService.apply_data_scope(db.query(Asset), user_context_from_request(request)).with_entities(Asset.asset_id).all()
     )
     result = AuditEngine(db).run(users=payload.users if payload else [], asset_ids=asset_ids)
-    last_report_path = AuditReportGenerator().generate(result)
-    last_report_pdf_path = None
     violations = result.get("violations") or []
     if payload and payload.notify and violations:
         summary = result.get("audit_summary") or {}
@@ -304,21 +295,26 @@ def run_audit(request: Request, payload: AuditRunRequest | None = None, db: Sess
 
 
 @router.get("/report")
-def get_audit_report(db: Session = Depends(get_db)):
-    global last_report_path
-    if not last_report_path:
-        result = AuditEngine(db).run()
-        last_report_path = AuditReportGenerator().generate(result)
-    return FileResponse(last_report_path, media_type="text/html", filename="audit_report.html")
+def get_audit_report(request: Request, db: Session = Depends(get_db)):
+    # 按当前用户数据范围生成报告，避免越权拉取全库明细
+    asset_ids = set(
+        row[0]
+        for row in AssetService.apply_data_scope(db.query(Asset), user_context_from_request(request)).with_entities(Asset.asset_id).all()
+    )
+    result = AuditEngine(db).run(asset_ids=asset_ids)
+    report_path = AuditReportGenerator().generate(result)
+    return FileResponse(report_path, media_type="text/html", filename="audit_report.html")
 
 
 @router.get("/report.pdf")
-def get_audit_report_pdf(db: Session = Depends(get_db)):
-    global last_report_pdf_path
-    if not last_report_pdf_path or not Path(last_report_pdf_path).exists():
-        result = AuditEngine(db).run()
-        last_report_pdf_path = generate_audit_pdf(result)
-    return FileResponse(last_report_pdf_path, media_type="application/pdf", filename="audit_report.pdf")
+def get_audit_report_pdf(request: Request, db: Session = Depends(get_db)):
+    asset_ids = set(
+        row[0]
+        for row in AssetService.apply_data_scope(db.query(Asset), user_context_from_request(request)).with_entities(Asset.asset_id).all()
+    )
+    result = AuditEngine(db).run(asset_ids=asset_ids)
+    report_pdf_path = generate_audit_pdf(result)
+    return FileResponse(report_pdf_path, media_type="application/pdf", filename="audit_report.pdf")
 
 
 def generate_audit_pdf(result: dict) -> str:

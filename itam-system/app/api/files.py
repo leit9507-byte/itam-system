@@ -25,11 +25,14 @@ async def upload_asset_file(asset_id: str, request: Request, file: UploadFile = 
     if not can_access_asset(db, asset_id, user_context_from_request(request)):
         raise HTTPException(status_code=404, detail="asset not found")
     settings = get_settings()
-    upload_root = Path(get_settings().upload_dir) / asset_id
+    upload_root = (Path(get_settings().upload_dir) / asset_id).resolve()
     upload_root.mkdir(parents=True, exist_ok=True)
     filename = secure_filename(file.filename or "attachment")
     validate_upload_file(filename)
-    storage_path = upload_root / filename
+    storage_path = (upload_root / filename).resolve()
+    # 防御性校验：确保最终路径仍位于 upload_root 内（防止 asset_id 或文件名带路径语义）
+    if not storage_path.is_relative_to(upload_root):
+        raise HTTPException(status_code=400, detail="invalid file path")
     content = await file.read()
     max_size = settings.max_upload_size_mb * 1024 * 1024
     if len(content) > max_size:

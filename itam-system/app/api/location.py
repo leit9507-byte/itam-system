@@ -1,6 +1,7 @@
 from collections import Counter
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -19,7 +20,12 @@ def list_locations(keyword: str | None = None, db: Session = Depends(get_db)):
         pattern = f"%{keyword.strip()}%"
         query = query.filter(Location.name.like(pattern))
     rows = query.order_by(Location.id.asc()).all()
-    counts = Counter(value for (value,) in db.query(Asset.location).all() if value)
+    # GROUP BY 聚合替代全表扫描，避免每次拉取全部资产行
+    counts = Counter(
+        value
+        for (value,) in db.query(Asset.location).filter(Asset.location.isnot(None), Asset.location != "").group_by(Asset.location).all()
+        if value
+    )
     return [LocationOut.model_validate(row).model_copy(update={"asset_count": counts.get(row.name, 0)}) for row in rows]
 
 

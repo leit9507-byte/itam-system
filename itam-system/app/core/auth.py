@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -85,3 +86,26 @@ def secure_filename(filename: str) -> str:
     keep = [char for char in filename if char.isalnum() or char in ("-", "_", ".", " ")]
     name = "".join(keep).strip().replace(" ", "_")
     return name or f"file-{secrets.token_hex(8)}"
+
+
+# 资产编号会被用作上传目录/文件名，必须禁止路径语义字符
+ASSET_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+
+def validate_asset_id(value: str | None) -> str | None:
+    """校验资产编号，禁止携带路径语义（..、/、\\、前导点等）。"""
+    if value is None:
+        return None
+    clean = str(value).strip()
+    if not clean:
+        raise ValueError("asset id cannot be empty")
+    if len(clean) > 64:
+        raise ValueError("asset id cannot exceed 64 characters")
+    if not ASSET_ID_PATTERN.fullmatch(clean):
+        raise ValueError(
+            "asset id may only contain letters, digits, dot, dash and underscore, "
+            "and must start with a letter or digit"
+        )
+    if clean in {".", ".."} or clean.startswith("."):
+        raise ValueError("asset id cannot be a dot path")
+    return clean

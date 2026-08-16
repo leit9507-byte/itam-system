@@ -2,8 +2,10 @@ from io import BytesIO
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import operator_from_request, user_context_from_request
 from app.models.asset import Asset
@@ -23,6 +25,9 @@ def create_asset(payload: AssetCreate, request: Request, db: Session = Depends(g
         return AssetService.create_asset(db, payload, operator_from_request(request), user_context_from_request(request))
     except AssetValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        # 并发创建同名资产/序列号时兜底，避免 500
+        raise HTTPException(status_code=409, detail="资产编号或序列号已存在，请刷新后重试") from exc
 
 
 @router.get("/list")
@@ -199,9 +204,11 @@ async def import_assets_from_excel(request: Request, operator: str = "asset-impo
     filename = file.filename or ""
     if not filename.lower().endswith((".xlsx", ".xlsm")):
         raise HTTPException(status_code=400, detail="请上传 .xlsx 或 .xlsm 格式的 Excel 文件")
+    content = await file.read()
+    enforce_import_size(content)
     try:
         return AssetService.import_assets_from_excel(
-            db, await file.read(), operator_from_request(request), overwrite=overwrite,
+            db, content, operator_from_request(request), overwrite=overwrite,
             user_context=user_context_from_request(request),
         )
     except AssetValidationError as exc:
@@ -215,12 +222,21 @@ async def preview_assets_from_excel(overwrite: bool = False, file: UploadFile = 
     filename = file.filename or ""
     if not filename.lower().endswith((".xlsx", ".xlsm")):
         raise HTTPException(status_code=400, detail="请上传 .xlsx 或 .xlsm 格式的 Excel 文件")
+    content = await file.read()
+    enforce_import_size(content)
     try:
-        return AssetService.preview_import_excel(db, await file.read(), overwrite=overwrite)
+        return AssetService.preview_import_excel(db, content, overwrite=overwrite)
     except AssetValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Excel 预览失败：{exc}") from exc
+
+
+def enforce_import_size(content: bytes) -> None:
+    """Excel 导入限制为上传上限的 3 倍，防止超大文件耗尽内存导致服务崩溃。"""
+    limit = get_settings().max_upload_size_mb * 1024 * 1024 * 3
+    if len(content) > limit:
+        raise HTTPException(status_code=413, detail=f"Excel 文件过大，最大 {limit // (1024 * 1024)} MB")
 
 
 @router.get("/import/template")

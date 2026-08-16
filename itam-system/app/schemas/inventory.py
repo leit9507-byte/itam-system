@@ -13,10 +13,10 @@ class InventoryItemBase(TimezoneModel):
     brand: Optional[str] = None
     model: Optional[str] = None
     spec: Optional[str] = None
-    total_qty: int = 0
-    available_qty: Optional[int] = None
-    min_qty: int = 0
-    unit_cost: float = 0
+    total_qty: int = Field(default=0, ge=0)
+    available_qty: Optional[int] = Field(default=None, ge=0)
+    min_qty: int = Field(default=0, ge=0)
+    unit_cost: float = Field(default=0, ge=0)
     license_key: Optional[str] = None
     expire_date: Optional[datetime] = None
     supplier: Optional[str] = None
@@ -37,10 +37,10 @@ class InventoryItemUpdate(TimezoneModel):
     brand: Optional[str] = None
     model: Optional[str] = None
     spec: Optional[str] = None
-    total_qty: Optional[int] = None
-    available_qty: Optional[int] = None
-    min_qty: Optional[int] = None
-    unit_cost: Optional[float] = None
+    total_qty: Optional[int] = Field(default=None, ge=0)
+    available_qty: Optional[int] = Field(default=None, ge=0)
+    min_qty: Optional[int] = Field(default=None, ge=0)
+    unit_cost: Optional[float] = Field(default=None, ge=0)
     license_key: Optional[str] = None
     expire_date: Optional[datetime] = None
     supplier: Optional[str] = None
@@ -62,7 +62,7 @@ class InventoryItemOut(InventoryItemBase):
 
 class InventoryLedgerCreate(TimezoneModel):
     action: str
-    quantity: int = 1
+    quantity: int = Field(default=1, ge=1)
     assignee_user_id: Optional[str] = None
     assignee_name: Optional[str] = None
     dept_id: Optional[str] = None

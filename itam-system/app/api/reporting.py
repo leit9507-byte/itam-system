@@ -519,40 +519,77 @@ def report_analytics(request: Request, db: Session = Depends(get_db)):
         for dept_id, asset_count, asset_value, owner_count in department_rows
     ]
     months = month_windows(6)
-    idle_trend = [
-        {
-            "month": month,
-            "count": db.query(func.count(Asset.asset_id))
-            .filter(Asset.asset_id.in_(scoped_asset_ids), Asset.status.in_(["idle", "in_stock"]), Asset.created_at <= end_at)
-            .scalar()
-            or 0,
-        }
-        for month, _start_at, end_at in months
-    ]
+    # 批量聚合替代每月一次查询（6 个月 × 3 个趋势 = 18 次 → 3 次）
+    month_labels = [label for label, _start, _end in months]
+
+    idle_rows = dict(
+        db.query(
+            func.date_format(Asset.created_at, "%Y-%m"),
+            func.count(Asset.asset_id),
+        )
+        .filter(
+            Asset.asset_id.in_(scoped_asset_ids),
+            Asset.status.in_(["idle", "in_stock"]),
+            Asset.created_at >= months[0][1],
+            Asset.created_at <= months[-1][2],
+        )
+        .group_by(func.date_format(Asset.created_at, "%Y-%m"))
+        .all()
+    )
+    # 窗口外（早于首月）创建、当前仍为 idle/in_stock 的资产作为基数，
+    # 与逐月 count(created_at <= 月末) 的原口径保持一致。
+    idle_base = int(
+        db.query(func.count(Asset.asset_id))
+        .filter(
+            Asset.asset_id.in_(scoped_asset_ids),
+            Asset.status.in_(["idle", "in_stock"]),
+            Asset.created_at < months[0][1],
+        )
+        .scalar()
+        or 0
+    )
+    idle_cumulative = idle_base
+    idle_trend = []
+    for month, _start_at, _end_at in months:
+        idle_cumulative += int(idle_rows.get(month, 0) or 0)
+        idle_trend.append({"month": month, "count": idle_cumulative})
+
+    repair_cost_rows = dict(
+        db.query(
+            func.date_format(RepairRecord.repair_time, "%Y-%m"),
+            func.coalesce(func.sum(RepairRecord.repair_cost), 0),
+        )
+        .filter(
+            RepairRecord.asset_id.in_(scoped_asset_ids),
+            RepairRecord.repair_time >= months[0][1],
+            RepairRecord.repair_time < months[-1][2],
+        )
+        .group_by(func.date_format(RepairRecord.repair_time, "%Y-%m"))
+        .all()
+    )
     repair_cost_trend = [
-        {
-            "month": month,
-            "cost": float(
-                db.query(func.coalesce(func.sum(RepairRecord.repair_cost), 0))
-                .filter(RepairRecord.asset_id.in_(scoped_asset_ids), RepairRecord.repair_time >= start_at, RepairRecord.repair_time < end_at)
-                .scalar()
-                or 0
-            ),
-        }
-        for month, start_at, end_at in months
+        {"month": month, "cost": float(repair_cost_rows.get(month, 0) or 0)}
+        for month, _start_at, _end_at in months
     ]
+
+    stocktake_diff_rows = dict(
+        db.query(
+            func.date_format(StocktakeTask.created_at, "%Y-%m"),
+            func.count(StocktakeItem.id),
+        )
+        .join(StocktakeTask, StocktakeItem.task_id == StocktakeTask.id)
+        .filter(
+            StocktakeItem.asset_id.in_(scoped_asset_ids),
+            StocktakeTask.created_at >= months[0][1],
+            StocktakeTask.created_at < months[-1][2],
+            StocktakeItem.result != "正常",
+        )
+        .group_by(func.date_format(StocktakeTask.created_at, "%Y-%m"))
+        .all()
+    )
     stocktake_diff_trend = [
-        {
-            "month": month,
-            "diff_count": int(
-                db.query(func.count(StocktakeItem.id))
-                .join(StocktakeTask, StocktakeItem.task_id == StocktakeTask.id)
-                .filter(StocktakeItem.asset_id.in_(scoped_asset_ids), StocktakeTask.created_at >= start_at, StocktakeTask.created_at < end_at, StocktakeItem.result != "正常")
-                .scalar()
-                or 0
-            ),
-        }
-        for month, start_at, end_at in months
+        {"month": month, "diff_count": int(stocktake_diff_rows.get(month, 0) or 0)}
+        for month, _start_at, _end_at in months
     ]
     return {
         "department_occupancy": department_occupancy,
@@ -606,12 +643,23 @@ def build_audit_workbook(result: dict) -> Workbook:
     return workbook
 
 
+CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def csv_safe(value) -> str:
+    """防止 CSV 公式注入：以 = + - @ 等开头的单元格加单引号前缀。"""
+    text = "" if value is None else str(value)
+    if text.startswith(CSV_FORMULA_PREFIXES):
+        return "'" + text
+    return text
+
+
 def csv_response(filename: str, headers: list[str], rows: list[list]) -> PlainTextResponse:
     output = StringIO()
     output.write("\ufeff")
     writer = csv.writer(output)
-    writer.writerow(headers)
-    writer.writerows(rows)
+    writer.writerow([csv_safe(header) for header in headers])
+    writer.writerows([[csv_safe(cell) for cell in row] for row in rows])
     return PlainTextResponse(
         output.getvalue(),
         media_type="text/csv; charset=utf-8",

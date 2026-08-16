@@ -1,8 +1,6 @@
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import Field
-from sqlalchemy import or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.time import TimezoneModel, app_now, format_app_datetime, utc_now
@@ -18,6 +16,8 @@ from app.services.number_service import NumberService
 
 
 router = APIRouter(prefix="/stocktake", tags=["Stocktake"])
+
+STOCKTAKE_ABNORMAL_RESULTS = {"盘盈", "盘亏", "位置不符", "使用人不符", "状态不符"}
 
 
 class StocktakeTaskCreate(TimezoneModel):
@@ -65,15 +65,31 @@ def list_tasks(
     include_items: bool = True,
 ):
     visible_asset_ids = visible_asset_id_set(db, request)
-    query = db.query(StocktakeTask).options(joinedload(StocktakeTask.items))
+    query = db.query(StocktakeTask)
+    if include_items:
+        # 前端桌面端/看板依赖 items 明细（前端契约），保留 joinedload + 完整序列化。
+        query = query.options(joinedload(StocktakeTask.items))
     if status:
         query = query.filter(StocktakeTask.status == status)
     tasks = query.order_by(StocktakeTask.created_at.desc()).all()
-    return [
-        row
-        for row in [serialize_task(task, visible_asset_ids, include_items=include_items) for task in tasks]
-        if row["total"] > 0
-    ]
+    if not tasks:
+        return []
+    if include_items:
+        return [
+            row
+            for row in [serialize_task(task, visible_asset_ids, include_items=True) for task in tasks]
+            if row["total"] > 0
+        ]
+    # 轻量路径（include_items=false）：只加载任务行 + 聚合计数，不加载 items 明细。
+    task_ids = [task.id for task in tasks]
+    visible_counts = task_item_count_map(db, task_ids, visible_asset_ids)
+    all_counts = task_item_count_map(db, task_ids, None)
+    rows = []
+    for task in tasks:
+        total, checked, abnormal = visible_counts.get(task.id, (0, 0, 0))
+        total_all, _, _ = all_counts.get(task.id, (0, 0, 0))
+        rows.append(serialize_task_summary(task, total, checked, abnormal, is_partial=total_all != total))
+    return [row for row in rows if row["total"] > 0]
 
 
 @router.post("/tasks")
@@ -103,9 +119,16 @@ def create_task(payload: StocktakeTaskCreate, request: Request, db: Session = De
         )
     db.add(task)
     AuditLogService.record_operation(db, "stocktake", "create_task", operator_from_request(request), "stocktake_task", task.id, f"创建盘点任务 {task.id}", payload.model_dump())
+    items = list(task.items)
+    total = len(items)
+    checked = len([item for item in items if item.result != "未盘"])
+    abnormal = len([item for item in items if item.result in STOCKTAKE_ABNORMAL_RESULTS])
+    visible_asset_ids = visible_asset_id_set(db, request)
+    is_partial = any(item.asset_id not in visible_asset_ids for item in items)
     db.commit()
     db.refresh(task)
-    return serialize_task(task, visible_asset_id_set(db, request))
+    # 前端创建后立即重新拉取列表，不依赖本响应的 items 明细；这里只返回任务摘要，避免序列化全部 items。
+    return serialize_task_summary(task, total, checked, abnormal, is_partial)
 
 
 @router.post("/tasks/{task_id}/start")
@@ -456,7 +479,7 @@ def serialize_task(
     items = [item for item in task.items if visible_asset_ids is None or item.asset_id in visible_asset_ids]
     is_partial = visible_asset_ids is not None and len(items) != len(task.items)
     checked = len([item for item in items if item.result != "未盘"])
-    abnormal = len([item for item in items if item.result in {"盘盈", "盘亏", "位置不符", "使用人不符", "状态不符"}])
+    abnormal = len([item for item in items if item.result in STOCKTAKE_ABNORMAL_RESULTS])
     return {
         "id": task.id,
         "name": task.name,
@@ -469,6 +492,47 @@ def serialize_task(
         "checked": checked,
         "abnormal": abnormal,
         "items": [serialize_item(item) for item in items] if include_items else [],
+    }
+
+
+def task_item_count_map(db: Session, task_ids: list[str], asset_filter: set[str] | None) -> dict[str, tuple[int, int, int]]:
+    """按任务分组统计 items：total / checked / abnormal。asset_filter 为 None 时统计全部。"""
+    if not task_ids:
+        return {}
+    query = db.query(
+        StocktakeItem.task_id,
+        func.count(StocktakeItem.id),
+        func.sum(case((StocktakeItem.result != "未盘", 1), else_=0)),
+        func.sum(case((StocktakeItem.result.in_(STOCKTAKE_ABNORMAL_RESULTS), 1), else_=0)),
+    ).filter(StocktakeItem.task_id.in_(task_ids))
+    if asset_filter is not None:
+        query = query.filter(StocktakeItem.asset_id.in_(asset_filter))
+    return {
+        row[0]: (int(row[1] or 0), int(row[2] or 0), int(row[3] or 0))
+        for row in query.group_by(StocktakeItem.task_id).all()
+    }
+
+
+def serialize_task_summary(
+    task: StocktakeTask,
+    total: int,
+    checked: int,
+    abnormal: int,
+    is_partial: bool = False,
+) -> dict:
+    """与 serialize_task 结构一致但不携带 items 明细（items 恒为空列表），用于列表轻量路径。"""
+    return {
+        "id": task.id,
+        "name": task.name,
+        "scope": task.scope,
+        "target": "当前数据范围" if is_partial else task.target or "",
+        "owner": task.owner or "",
+        "status": task.status,
+        "created_at": task.created_at.date().isoformat() if task.created_at else "",
+        "total": total,
+        "checked": checked,
+        "abnormal": abnormal,
+        "items": [],
     }
 
 

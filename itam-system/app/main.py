@@ -1,5 +1,6 @@
 import time
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from alembic.config import Config
@@ -39,11 +40,21 @@ def init_database_with_retry(retries: int = 20, delay: float = 2.0) -> None:
         raise last_error
 
 
+PLACEHOLDER_SECRETS = {"change-this", "change-me", "itam_root", "itam_pass", "dev-init-token", "Admin@123456", "Auditor@123456"}
+
+
+def looks_like_placeholder(value: str | None) -> bool:
+    if not value:
+        return True
+    lowered = value.strip().lower()
+    return any(token in lowered for token in PLACEHOLDER_SECRETS) or lowered in {"admin", "password", "123456"}
+
+
 def validate_production_settings(settings) -> None:
     app_timezone()
     if not settings.production_mode:
         return
-    if not settings.jwt_secret or len(settings.jwt_secret) < 32 or settings.jwt_secret.startswith("change-this"):
+    if not settings.jwt_secret or len(settings.jwt_secret) < 32 or settings.jwt_secret.startswith("change-this") or settings.jwt_secret.startswith("change-me"):
         raise RuntimeError("Production requires a long random JWT_SECRET")
     if not settings.cors_origins or "*" in settings.cors_origins:
         raise RuntimeError("Production requires explicit CORS_ORIGINS")
@@ -51,6 +62,12 @@ def validate_production_settings(settings) -> None:
         raise RuntimeError("Production requires MySQL DATABASE_URL or DB_HOST/DB_NAME settings")
     if settings.db_pool_size < 1 or settings.db_max_overflow < 0:
         raise RuntimeError("Production database pool settings are invalid")
+    if looks_like_placeholder(settings.initial_admin_password):
+        raise RuntimeError("Production requires a real INITIAL_ADMIN_PASSWORD (placeholder or default rejected)")
+    if looks_like_placeholder(settings.initial_auditor_password):
+        raise RuntimeError("Production requires a real INITIAL_AUDITOR_PASSWORD (placeholder or default rejected)")
+    if not settings.init_database_token or looks_like_placeholder(settings.init_database_token):
+        raise RuntimeError("Production requires a random INIT_DATABASE_TOKEN")
 
 
 def validate_migration_state() -> None:
@@ -73,6 +90,17 @@ def validate_migration_state() -> None:
         raise RuntimeError(f"Database migration mismatch: current={sorted(current_heads) or ['<none>']} expected={sorted(expected_heads)}. Run alembic upgrade head before starting production.")
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 启动后台任务（LDAP 每日同步）
+    task = start_daily_ldap_sync()
+    app.state.ldap_sync_task = task
+    try:
+        yield
+    finally:
+        task.cancel()
+
+
 def create_app() -> FastAPI:
     init_database_with_retry()
     settings = get_settings()
@@ -83,6 +111,7 @@ def create_app() -> FastAPI:
         title="Enterprise ITAM System",
         description="企业级 IT 资产全生命周期管理系统",
         version="1.0.0",
+        lifespan=lifespan,
     )
     app.add_middleware(
         CORSMiddleware,
@@ -141,16 +170,6 @@ def create_app() -> FastAPI:
     @app.get("/")
     def health_check():
         return {"ok": True, "service": "itam-system"}
-
-    @app.on_event("startup")
-    async def start_background_jobs():
-        app.state.ldap_sync_task = start_daily_ldap_sync()
-
-    @app.on_event("shutdown")
-    async def stop_background_jobs():
-        task = getattr(app.state, "ldap_sync_task", None)
-        if task:
-            task.cancel()
 
     return app
 

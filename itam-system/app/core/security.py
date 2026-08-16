@@ -14,7 +14,9 @@ PUBLIC_PATHS = {
     "/redoc",
     "/auth/login",
     "/auth/me/permissions",
+    "/ops/health",
     "/ops/database-status",
+    # 初始化接口保持公开以便首次部署时调用，但受 X-Init-Token 保护（见 ops.validate_init_token）
     "/ops/init-database",
 }
 
@@ -59,10 +61,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse({"detail": "Invalid or expired token"}, status_code=401)
 
         with SessionLocal() as db:
-            user = db.get(UserDirectory, payload["sub"])
+            try:
+                user = db.get(UserDirectory, payload["sub"])
+            except Exception:
+                # 数据库连接中断等临时故障：不让鉴权失败拖垮所有业务接口
+                return JSONResponse({"detail": "Service temporarily unavailable"}, status_code=503)
             if not user or user.status != "active":
                 return JSONResponse({"detail": "User disabled or not found"}, status_code=403)
-            if not has_permission(db, user.role, request.url.path, method_to_action(request.method)):
+            try:
+                allowed = has_permission(db, user.role, request.url.path, method_to_action(request.method))
+            except Exception:
+                return JSONResponse({"detail": "Service temporarily unavailable"}, status_code=503)
+            if not allowed:
                 return JSONResponse({"detail": "Permission denied"}, status_code=403)
             request.state.user = {
                 "user_id": user.user_id,
@@ -81,7 +91,9 @@ def is_public_path(path: str) -> bool:
 
 
 def method_to_action(method: str) -> str:
-    return {"GET": "read", "POST": "write", "PUT": "write", "PATCH": "write", "DELETE": "delete"}.get(method.upper(), "read")
+    # DELETE 归入 write：种子权限只授 read/write，前端也按 write 显示删除按钮，
+    # 若单独映射 delete 会让所有非 admin 的删除接口一律 403。
+    return {"GET": "read", "POST": "write", "PUT": "write", "PATCH": "write", "DELETE": "write"}.get(method.upper(), "read")
 
 
 def resource_for_path(path: str) -> str:

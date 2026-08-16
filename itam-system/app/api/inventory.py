@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.time import utc_now
@@ -95,6 +95,10 @@ def create_item(payload: InventoryItemCreate, request: Request, db: Session = De
     user_context = user_context_from_request(request)
     dept_id = writable_inventory_dept(payload.dept_id, user_context)
     available_qty = payload.total_qty if payload.item_type == "license" else payload.available_qty if payload.available_qty is not None else payload.total_qty
+    if available_qty < 0 or payload.total_qty < 0:
+        raise HTTPException(status_code=400, detail="库存数量不能为负数")
+    if available_qty > payload.total_qty:
+        raise HTTPException(status_code=400, detail=f"可用数量（{available_qty}）不能超过总数量（{payload.total_qty}）")
     item = InventoryItem(**payload.model_dump(exclude={"available_qty", "dept_id"}), dept_id=dept_id, available_qty=available_qty, assigned_qty=max(payload.total_qty - available_qty, 0))
     db.add(item)
     db.flush()
@@ -110,7 +114,7 @@ def create_item(payload: InventoryItemCreate, request: Request, db: Session = De
 @router.put("/items/{item_id}", response_model=InventoryItemOut)
 def update_item(item_id: int, payload: InventoryItemUpdate, request: Request, db: Session = Depends(get_db)):
     user_context = user_context_from_request(request)
-    item = require_item(db, item_id, user_context)
+    item = require_item_for_update(db, item_id, user_context)
     writable_inventory_dept(item.dept_id, user_context)
     data = payload.model_dump(exclude_unset=True)
     if "item_type" in data:
@@ -130,7 +134,14 @@ def update_item(item_id: int, payload: InventoryItemUpdate, request: Request, db
         reconcile_license_seats(db, item, int(license_total if license_total is not None else item.total_qty), operator_from_request(request))
         sync_license_counts(db, item)
     else:
-        item.assigned_qty = max((item.total_qty or 0) - (item.available_qty or 0), 0)
+        # 数量不变量：available_qty 不得超过 total_qty，且三者均非负
+        total_qty = int(item.total_qty or 0)
+        available_qty = int(item.available_qty or 0)
+        if total_qty < 0 or available_qty < 0:
+            raise HTTPException(status_code=400, detail="库存数量不能为负数")
+        if available_qty > total_qty:
+            raise HTTPException(status_code=400, detail=f"可用数量（{available_qty}）不能超过总数量（{total_qty}）")
+        item.assigned_qty = max(total_qty - available_qty, 0)
     db.commit()
     db.refresh(item)
     return item
@@ -147,7 +158,7 @@ def item_ledger(item_id: int, request: Request, limit: int = 200, db: Session = 
 @router.post("/items/{item_id}/ledger", response_model=InventoryItemOut)
 def operate_item(item_id: int, payload: InventoryLedgerCreate, request: Request, db: Session = Depends(get_db)):
     user_context = user_context_from_request(request)
-    item = require_item(db, item_id, user_context)
+    item = require_item_for_update(db, item_id, user_context)
     writable_inventory_dept(item.dept_id, user_context)
     validate_inventory_targets(db, payload, user_context)
     quantity = max(int(payload.quantity or 1), 1)
@@ -156,28 +167,33 @@ def operate_item(item_id: int, payload: InventoryLedgerCreate, request: Request,
         raise HTTPException(status_code=400, detail="软件许可请在授权席位中执行分配或回收")
     if item.item_type == "license" and action in {"in", "adjust_add", "out", "adjust_sub"}:
         target_total = item.total_qty + quantity if action in {"in", "adjust_add"} else item.total_qty - quantity
+        if target_total < 0:
+            raise HTTPException(status_code=400, detail="库存总量不能为负数")
         reconcile_license_seats(db, item, target_total, operator_from_request(request), payload.remark)
         sync_license_counts(db, item)
     elif action in {"in", "adjust_add"}:
-        item.total_qty += quantity
-        item.available_qty += quantity
+        item.total_qty = (item.total_qty or 0) + quantity
+        item.available_qty = (item.available_qty or 0) + quantity
     elif action in {"out", "adjust_sub"}:
         ensure_available(item, quantity)
-        item.total_qty -= quantity
-        item.available_qty -= quantity
+        item.total_qty = (item.total_qty or 0) - quantity
+        item.available_qty = (item.available_qty or 0) - quantity
     elif action in ASSIGN_ACTIONS:
         ensure_available(item, quantity)
-        item.available_qty -= quantity
-        item.assigned_qty += quantity
+        item.available_qty = (item.available_qty or 0) - quantity
+        item.assigned_qty = (item.assigned_qty or 0) + quantity
     elif action in RETURN_ACTIONS:
         if item.item_type == "component" and action == "uninstall":
             update_component_installation(db, item, payload, quantity, operator_from_request(request), installing=False)
-        item.available_qty += quantity
-        item.assigned_qty = max(item.assigned_qty - quantity, 0)
+        item.available_qty = (item.available_qty or 0) + quantity
+        item.assigned_qty = max((item.assigned_qty or 0) - quantity, 0)
     else:
         raise HTTPException(status_code=400, detail="不支持的库存操作")
     if item.item_type == "component" and action == "install":
         update_component_installation(db, item, payload, quantity, operator_from_request(request), installing=True)
+    # 数量不变量校验：available_qty 不能超过 total_qty
+    if (item.available_qty or 0) > (item.total_qty or 0):
+        raise HTTPException(status_code=400, detail="可用数量不能超过总数量，请检查库存数据")
     ledger_payload = payload.model_copy(update={"dept_id": writable_inventory_dept(payload.dept_id or item.dept_id, user_context)})
     add_ledger(db, item, ledger_payload, operator_from_request(request))
     db.commit()
@@ -476,6 +492,19 @@ def require_item(db: Session, item_id: int, user_context: dict | None = None) ->
     return item
 
 
+def require_item_for_update(db: Session, item_id: int, user_context: dict | None = None) -> InventoryItem:
+    """带行锁读取库存对象，防止并发领用/调拨导致超卖或数量为负。"""
+    item = (
+        apply_inventory_scope(db.query(InventoryItem), db, user_context)
+        .filter(InventoryItem.id == item_id)
+        .with_for_update()
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="库存对象不存在")
+    return item
+
+
 def apply_inventory_scope(query, db: Session, user_context: dict | None):
     if can_manage_all_inventory(user_context):
         return query
@@ -558,16 +587,24 @@ def build_summary(db: Session, user_context: dict | None = None, item_type: str 
         type_values = [value.strip() for value in item_types.split(",") if value.strip()]
         if type_values:
             query = query.filter(InventoryItem.item_type.in_(type_values))
-    rows = query.all()
     expiring_deadline = utc_now() + timedelta(days=90)
+    # SQL 聚合替代全表加载：COUNT/SUM 下推，避免把全部行拉到内存
+    total = query.count()
+    type_counts = dict(
+        query.with_entities(InventoryItem.item_type, func.count(InventoryItem.id)).group_by(InventoryItem.item_type).all()
+    )
+    assigned_qty = query.with_entities(func.coalesce(func.sum(InventoryItem.assigned_qty), 0)).scalar() or 0
+    total_available_qty = query.with_entities(func.coalesce(func.sum(InventoryItem.available_qty), 0)).scalar() or 0
+    low_stock = query.filter(InventoryItem.available_qty <= InventoryItem.min_qty).count()
+    expiring = query.filter(InventoryItem.expire_date.isnot(None), InventoryItem.expire_date <= expiring_deadline).count()
     return {
-        "total": len(rows),
-        "license": sum(1 for item in rows if item.item_type == "license"),
-        "consumable": sum(1 for item in rows if item.item_type == "consumable"),
-        "accessory": sum(1 for item in rows if item.item_type == "accessory"),
-        "component": sum(1 for item in rows if item.item_type == "component"),
-        "low_stock": sum(1 for item in rows if item.available_qty <= item.min_qty),
-        "assigned_qty": sum(item.assigned_qty or 0 for item in rows),
-        "total_available_qty": sum(item.available_qty or 0 for item in rows),
-        "expiring": sum(1 for item in rows if item.expire_date and item.expire_date <= expiring_deadline),
+        "total": total,
+        "license": type_counts.get("license", 0),
+        "consumable": type_counts.get("consumable", 0),
+        "accessory": type_counts.get("accessory", 0),
+        "component": type_counts.get("component", 0),
+        "low_stock": low_stock,
+        "assigned_qty": int(assigned_qty or 0),
+        "total_available_qty": int(total_available_qty or 0),
+        "expiring": expiring,
     }
