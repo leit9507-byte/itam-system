@@ -1,0 +1,15 @@
+.git
+.gitignore
+*.md
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.production
+backups/
+itam-system/uploads/
+itam-system/runtime/
+itam-system/audit_report.html
+itam-frontend/node_modules/

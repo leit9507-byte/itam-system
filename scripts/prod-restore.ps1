@@ -5,6 +5,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+  Write-Error "This script requires PowerShell 7+ (Windows PowerShell 5.1 corrupts binary backups). Install pwsh from https://github.com/PowerShell/PowerShell"
+  exit 1
+}
 $Root = Split-Path -Parent $PSScriptRoot
 $ResolvedBackup = Resolve-Path $BackupPath
 $DbFile = Join-Path $ResolvedBackup "database.sql"
@@ -27,7 +31,12 @@ try {
       throw "uploads.tar.gz not found in $ResolvedBackup"
     }
     Write-Host "Restoring uploads from $UploadsFile"
-    Get-Content $UploadsFile -Raw | docker compose -p $ProjectName -f docker-compose.prod.yml --env-file .env.production exec -T backend sh -c 'mkdir -p /app/uploads && cd /app/uploads && tar -xzf -'
+    # uploads.tar.gz is a binary tar archive; PowerShell pipes are not binary-safe.
+    # Extract the archive on the host and copy it into the container with docker cp, e.g.:
+    #   tar -xzf "$UploadsFile" -C "$env:TEMP/itam-uploads"
+    #   docker compose -p $ProjectName -f docker-compose.prod.yml --env-file .env.production exec -T backend sh -c 'mkdir -p /app/uploads'
+    #   docker cp "$env:TEMP/itam-uploads/." itam-prod-backend:/app/uploads/
+    Write-Host "Skipping automatic uploads restore. Please extract $UploadsFile manually and use docker cp (see instructions in $($MyInvocation.MyCommand.Path))."
   }
 
   Write-Host "Restore completed from: $ResolvedBackup"

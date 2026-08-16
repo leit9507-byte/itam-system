@@ -1,5 +1,5 @@
-#!/bin/sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
 
 INTERVAL="${BACKUP_INTERVAL_SECONDS:-86400}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
@@ -25,8 +25,17 @@ backup_once() {
     --events \
     "$DB_NAME" | gzip > "$target/database.sql.gz"
 
+  if [ ! -s "$target/database.sql.gz" ]; then
+    echo "Backup failed: database.sql.gz is empty" >&2
+    exit 1
+  fi
+
   if [ -d /uploads ]; then
     tar -czf "$target/uploads.tar.gz" -C /uploads .
+    if [ ! -s "$target/uploads.tar.gz" ]; then
+      echo "Backup failed: uploads.tar.gz is empty" >&2
+      exit 1
+    fi
   fi
 
   cat > "$target/manifest.json" <<EOF

@@ -4,6 +4,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+  Write-Error "This script requires PowerShell 7+ (Windows PowerShell 5.1 corrupts binary backups). Install pwsh from https://github.com/PowerShell/PowerShell"
+  exit 1
+}
 $Root = Split-Path -Parent $PSScriptRoot
 $EnvFile = Join-Path $Root ".env.production"
 if (!(Test-Path $EnvFile)) {
