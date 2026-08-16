@@ -290,7 +290,8 @@ async function saveProduct() {
 }
 
 async function removeProduct(row) {
-  await ElMessageBox.confirm(`确认删除产品档案「${row.product_name} / ${row.model || '-'}」？已有资产不会被删除。`, '删除产品档案', { type: 'warning' })
+  const confirmed = await ElMessageBox.confirm(`确认删除产品档案「${row.product_name} / ${row.model || '-'}」？已有资产不会被删除。`, '删除产品档案', { type: 'warning' }).then(() => true).catch(() => false)
+  if (!confirmed) return
   await deleteProduct(row.id)
   if (productForm.id === row.id) resetProductForm()
   ElMessage.success('产品档案已删除')

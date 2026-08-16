@@ -1,17 +1,23 @@
-﻿<template>
+<template>
   <div class="page asset-detail-page">
     <div class="page-header asset-detail-header">
       <div>
         <h2 class="page-title">资产详情</h2>
         <p class="page-subtitle">{{ detail.asset?.asset_no || '-' }} / {{ detail.asset?.name }}</p>
       </div>
-      <div class="header-actions">
+      <div v-if="!loadError" class="header-actions">
         <el-button type="primary" @click="openEdit">编辑资产</el-button>
         <el-button @click="$router.back()">返回</el-button>
       </div>
     </div>
 
-    <div class="detail-grid">
+    <el-result v-if="loadError" icon="warning" title="资产不存在或已删除" sub-title="该资产可能已被删除，或当前账号没有访问权限。">
+      <template #extra>
+        <el-button type="primary" @click="router.push('/asset/list')">返回资产列表</el-button>
+      </template>
+    </el-result>
+
+    <div v-if="!loadError" class="detail-grid">
       <main class="detail-main">
         <el-card shadow="never" class="risk-card">
           <template #header>
@@ -318,6 +324,7 @@ import { getUsers } from '../../api/user'
 const route = useRoute()
 const router = useRouter()
 const detail = reactive({ asset: null, scrapInfo: null, scrapRequests: [], lifecycles: [], changes: [], checkouts: [], timeline: [], usageRecords: [], inventoryRecords: [], risks: [] })
+const loadError = ref(false)
 const attachments = ref([])
 const categories = ref([])
 const products = ref([])
@@ -387,11 +394,24 @@ watch(historyFilter, () => {
 })
 
 onMounted(async () => {
-  await Promise.all([loadReferenceData(), loadDetail(route.params.id), loadAttachments(route.params.id), loadScanBindings(route.params.id)])
+  await Promise.all([
+    loadReferenceData().catch(err => console.error('加载参考数据失败', err)),
+    loadDetail(route.params.id).catch(err => console.error('加载资产详情失败', err)),
+    loadAttachments(route.params.id).catch(err => console.error('加载附件失败', err)),
+    loadScanBindings(route.params.id).catch(err => console.error('加载扫码绑定失败', err))
+  ])
 })
 
 async function loadDetail(assetId = route.params.id) {
-  Object.assign(detail, await getAssetDetail(assetId))
+  try {
+    Object.assign(detail, await getAssetDetail(assetId))
+    loadError.value = false
+  } catch (error) {
+    console.error('加载资产详情失败', error)
+    detail.asset = null
+    loadError.value = true
+    ElMessage.error('资产不存在或已删除')
+  }
 }
 
 async function loadReferenceData() {
@@ -446,7 +466,8 @@ function parseScanRawLines(value) {
 }
 
 async function removeScanBinding(row) {
-  await ElMessageBox.confirm(`确认解绑该二维码内容？解绑后现场扫码将不再直接关联 ${row.asset_id}。`, '解绑二维码', { type: 'warning' })
+  const confirmed = await ElMessageBox.confirm(`确认解绑该二维码内容？解绑后现场扫码将不再直接关联 ${row.asset_id}。`, '解绑二维码', { type: 'warning' }).then(() => true).catch(() => false)
+  if (!confirmed) return
   await deleteAssetScanBinding(row.id)
   ElMessage.success('二维码绑定已解绑')
   await loadScanBindings(detail.asset?.asset_id)
@@ -611,7 +632,8 @@ async function restoreFile(row) {
 }
 
 async function removeFile(row) {
-  await ElMessageBox.confirm(`确认删除附件 ${row.filename}？文件会标记为删除并保留审计追踪。`, '删除附件', { type: 'warning' })
+  const confirmed = await ElMessageBox.confirm(`确认删除附件 ${row.filename}？文件会标记为删除并保留审计追踪。`, '删除附件', { type: 'warning' }).then(() => true).catch(() => false)
+  if (!confirmed) return
   await deleteAssetFile(row.id)
   ElMessage.success('附件已删除')
   await loadAttachments()

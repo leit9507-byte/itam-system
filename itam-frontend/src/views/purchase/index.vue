@@ -211,12 +211,12 @@ const departments = computed(() => {
 onMounted(load)
 
 async function load() {
-  await loadPurchases()
-  products.value = await getProducts()
-  companies.value = await getCompanies()
-  suppliers.value = await getSuppliers()
-  locations.value = await getLocations()
-  users.value = await getUsers()
+  await loadPurchases().catch(err => console.error('加载采购单失败', err))
+  products.value = await getProducts().catch(err => { console.error('加载产品失败', err); return [] })
+  companies.value = await getCompanies().catch(err => { console.error('加载公司失败', err); return [] })
+  suppliers.value = await getSuppliers().catch(err => { console.error('加载供应商失败', err); return [] })
+  locations.value = await getLocations().catch(err => { console.error('加载位置失败', err); return [] })
+  users.value = await getUsers().catch(err => { console.error('加载用户失败', err); return [] })
 }
 
 async function loadPurchases() {

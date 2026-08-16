@@ -138,7 +138,10 @@ const trendRows = computed(() => [
 ])
 
 onMounted(async () => {
-  const [reportRows, analyticsResult] = await Promise.all([getReports(), getReportAnalytics()])
+  const [reportRows, analyticsResult] = await Promise.all([
+    getReports().catch(err => { console.error('加载审计报告列表失败', err); return [] }),
+    getReportAnalytics().catch(err => { console.error('加载报表分析数据失败', err); return {} })
+  ])
   reports.value = reportRows
   Object.assign(analytics, analyticsResult)
 })

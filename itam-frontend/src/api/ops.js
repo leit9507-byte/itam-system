@@ -20,7 +20,7 @@ export async function exportOperationLogs(params = {}) {
   link.href = url
   link.download = `operation-logs-${timestamp}.csv`
   link.click()
-  URL.revokeObjectURL(url)
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 export function getScheduledJobs() {

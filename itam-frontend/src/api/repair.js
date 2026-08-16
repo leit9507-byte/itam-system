@@ -1,4 +1,5 @@
 import request from '../utils/request'
+import { cachedRequest, clearCache } from './cache'
 import { getAssets } from './asset'
 
 const REPAIR_DASHBOARD_LIMIT = 500
@@ -33,15 +34,17 @@ export async function createRepairRecords(assets, payload) {
 }
 
 export function getRepairFaultTypes() {
-  return request.get('/repair/fault-types')
+  return cachedRequest('repair:fault-types', () => request.get('/repair/fault-types'))
 }
 
 export function saveRepairFaultType(payload) {
+  clearCache('repair:fault-types')
   if (payload.id) return request.put(`/repair/fault-types/${payload.id}`, payload)
   return request.post('/repair/fault-types', payload)
 }
 
 export function deleteRepairFaultType(id) {
+  clearCache('repair:fault-types')
   return request.delete(`/repair/fault-types/${id}`)
 }
 

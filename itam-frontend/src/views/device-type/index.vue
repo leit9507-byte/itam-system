@@ -135,7 +135,8 @@ async function saveType() {
 }
 
 async function removeType(row) {
-  await ElMessageBox.confirm(`确认删除设备类型「${row.name}」？已有资产不会被删除。`, '删除设备类型', { type: 'warning' })
+  const confirmed = await ElMessageBox.confirm(`确认删除设备类型「${row.name}」？已有资产不会被删除。`, '删除设备类型', { type: 'warning' }).then(() => true).catch(() => false)
+  if (!confirmed) return
   await deleteDeviceType(row.id)
   if (form.id === row.id) resetForm()
   ElMessage.success('设备类型已删除')

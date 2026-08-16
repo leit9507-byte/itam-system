@@ -7,6 +7,9 @@ const request = axios.create({
   timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS || 30000)
 })
 
+// 会话过期跳转只执行一次，避免多个并发 401 反复提示/跳转
+let redirectingToLogin = false
+
 request.interceptors.request.use(config => {
   const token = getStorageItem('itam_token')
   if (token) {
@@ -15,6 +18,12 @@ request.interceptors.request.use(config => {
   return config
 })
 
+function clearSessionStorage() {
+  removeStorageItem('itam_token')
+  removeStorageItem('itam_user')
+  removeStorageItem('itam_readable_resources')
+}
+
 request.interceptors.response.use(
   response => response.data,
   error => {
@@ -22,12 +31,16 @@ request.interceptors.response.use(
     error.userMessage = message
     const isLoginRequest = (error.config?.url || '').includes('/auth/login')
     if (error.response?.status === 401 && !isLoginRequest) {
-      // 会话过期：清理凭证并回到登录页
-      removeStorageItem('itam_token')
-      removeStorageItem('itam_user')
-      if (window.location.pathname !== '/login') {
-        ElMessage.error('登录状态已过期，请重新登录')
-        window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`
+      // 会话过期：清理凭证并回到登录页（仅处理一次）
+      if (!redirectingToLogin) {
+        redirectingToLogin = true
+        clearSessionStorage()
+        if (window.location.pathname !== '/login') {
+          ElMessage.error('登录状态已过期，请重新登录')
+          const redirect = encodeURIComponent(window.location.pathname + window.location.search)
+          window.location.href = `/login?redirect=${redirect}`
+        }
+        window.setTimeout(() => { redirectingToLogin = false }, 2000)
       }
     } else if (!error.config?.silentError) {
       // 登录接口本身的 401（密码错误等）走正常错误提示

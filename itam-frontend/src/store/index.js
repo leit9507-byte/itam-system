@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { getCurrentPermissions } from '../api/user'
+import { clearCache } from '../api/cache'
 import { getStorageItem, getStorageJson, removeStorageItem, setStorageItem } from '../utils/storage'
 
 const savedUser = getStorageJson('itam_user', null)
@@ -53,6 +54,7 @@ export const useAppStore = defineStore('app', {
       this.user = nextUser
       this.readableResources = []
       this.permissionsLoaded = false
+      clearCache()
       setStorageItem('itam_token', this.token)
       setStorageItem('itam_user', JSON.stringify(nextUser))
     },
@@ -80,6 +82,7 @@ export const useAppStore = defineStore('app', {
       this.user = { ...guestUser }
       this.readableResources = []
       this.permissionsLoaded = false
+      clearCache()
       removeStorageItem('itam_token')
       removeStorageItem('itam_user')
       removeStorageItem('itam_readable_resources')

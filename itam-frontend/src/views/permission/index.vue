@@ -578,7 +578,7 @@ const selectedRole = ref('user')
 const permissionSaving = ref(false)
 const providerForm = reactive(defaultProviderForm())
 const providerConfig = reactive(defaultConfig())
-const loginForm = reactive({ provider: 'local', username: 'admin', password: 'admin' })
+const loginForm = reactive({ provider: 'local', username: '', password: '' })
 const accountDialog = reactive({ visible: false, form: defaultLocalUserForm() })
 const userPermissionDialog = reactive({ visible: false, user: null, status: 'active', saving: false })
 const permissionDraft = reactive({})
@@ -863,17 +863,24 @@ function hasPendingReclaim(row) {
 }
 
 async function markNoAssetRequired(row) {
-  await ElMessageBox.confirm(
+  const confirmed = await ElMessageBox.confirm(
     `确认将“${row.display_name || row.username}”标记为不需要分配公司资产？后续入职待办将不再提醒。`,
     '无需资产分配',
     { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' }
-  )
+  ).then(() => true).catch(() => false)
+  if (!confirmed) return
   await updateUserAssetAssignment(row.user_id, { asset_assignment_required: false })
   ElMessage.success('已标记为无需分配公司资产')
   await loadUsers()
 }
 
 async function markAssetRequired(row) {
+  const confirmed = await ElMessageBox.confirm(
+    `确认恢复“${row.display_name || row.username}”的公司资产分配要求？后续入职待办将重新提醒。`,
+    '恢复资产分配',
+    { confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning' }
+  ).then(() => true).catch(() => false)
+  if (!confirmed) return
   await updateUserAssetAssignment(row.user_id, { asset_assignment_required: true })
   ElMessage.success('已恢复为需要资产分配')
   await loadUsers()
@@ -1043,10 +1050,13 @@ async function syncFromProvider(row = null) {
 }
 
 async function submitLogin() {
+  if (!loginForm.username || !loginForm.password) {
+    ElMessage.warning('请输入账号和密码')
+    return
+  }
+  // 登录测试仅校验凭据，不写入本地会话，避免覆盖当前管理员登录态
   loginResult.value = await login(loginForm)
-  store.setSession(loginResult.value)
-  ElMessage.success('登录成功，JWT 已写入本地会话')
-  await loadUsers()
+  ElMessage.success('登录测试成功：凭据有效')
 }
 
 function paginate(rows, pagination) {

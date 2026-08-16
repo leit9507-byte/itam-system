@@ -14,7 +14,7 @@
           end-placeholder="结束日期"
           value-format="YYYY-MM-DD"
           clearable
-          @change="refresh"
+          @change="refreshDashboardAndList"
         />
         <el-button @click="downloadRepairsCsv">导出维修台账</el-button>
         <el-button @click="openFaultTypeDialog">故障类型设置</el-button>
@@ -68,7 +68,7 @@
         <div class="card-header">
           <span>维修记录</span>
           <div class="table-tools">
-            <el-input v-model="filters.keyword" clearable placeholder="搜索资产/序列号/故障原因/维修商" style="width: 280px" @input="refresh" />
+            <el-input v-model="filters.keyword" clearable placeholder="搜索资产/序列号/故障原因/维修商" style="width: 280px" @input="debouncedRefresh" />
             <el-select v-model="filters.status" clearable placeholder="维修状态" style="width: 140px" @change="refresh">
               <el-option label="维修中" value="维修中" />
               <el-option label="已完成" value="已完成" />
@@ -209,16 +209,49 @@ const dashboard = reactive({ total: 0, inProgress: 0, completed: 0, totalCost: 0
 const faultTypeDialog = reactive({ visible: false, form: defaultFaultTypeForm() })
 const finishDialog = reactive({ visible: false, row: null, form: defaultFinishForm() })
 
-onMounted(load)
-onUnmounted(() => charts.forEach(chart => chart.dispose()))
+onMounted(() => {
+  isActive = true
+  load()
+  loadDashboard()
+})
+onUnmounted(() => {
+  isActive = false
+  if (searchTimer) window.clearTimeout(searchTimer)
+  charts.forEach(chart => chart.dispose())
+  charts.length = 0
+})
+
+let isActive = true
+let searchTimer = null
+function debouncedSearch(fn) {
+  return function(...args) {
+    if (searchTimer) window.clearTimeout(searchTimer)
+    searchTimer = window.setTimeout(() => fn.apply(this, args), 350)
+  }
+}
+const debouncedRefresh = debouncedSearch(refresh)
 
 async function load() {
   const result = await getRepairRecords({ ...filters, ...repairSortParams(), page: pagination.page, page_size: pagination.pageSize })
+  if (!isActive) return
   records.value = result.list
   pagination.total = result.total
-  Object.assign(dashboard, await getRepairDashboard(filters))
   faultTypes.value = await getRepairFaultTypes()
+  if (!isActive) return
   await nextTick()
+  if (!isActive) return
+  renderCharts()
+}
+
+// 仪表盘（含 500 条维修 + 2000 台资产统计）仅挂载时加载一次，避免列表刷新/翻页反复重算
+let dashboardLoaded = false
+async function loadDashboard() {
+  if (dashboardLoaded) return
+  dashboardLoaded = true
+  Object.assign(dashboard, await getRepairDashboard(filters))
+  if (!isActive) return
+  await nextTick()
+  if (!isActive) return
   renderCharts()
 }
 
@@ -236,6 +269,14 @@ function handlePageSizeChange() {
 function refresh() {
   pagination.page = 1
   load()
+}
+
+// 日期范围影响仪表盘统计，需要列表与仪表盘一起刷新；其他筛选只刷新列表
+function refreshDashboardAndList() {
+  dashboardLoaded = false
+  pagination.page = 1
+  load()
+  loadDashboard()
 }
 
 function renderCharts() {
@@ -379,7 +420,8 @@ async function saveFaultType() {
 }
 
 async function removeFaultType(row) {
-  await ElMessageBox.confirm(`确认删除故障类型“${row.name}”？已有维修记录不会受影响。`, '删除故障类型', { type: 'warning' })
+  const confirmed = await ElMessageBox.confirm(`确认删除故障类型“${row.name}”？已有维修记录不会受影响。`, '删除故障类型', { type: 'warning' }).then(() => true).catch(() => false)
+  if (!confirmed) return
   await deleteRepairFaultType(row.id)
   ElMessage.success('故障类型已删除')
   if (faultTypeDialog.form.id === row.id) faultTypeDialog.form = defaultFaultTypeForm()

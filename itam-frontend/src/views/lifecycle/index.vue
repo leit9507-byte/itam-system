@@ -11,7 +11,7 @@
           <el-radio-button label="daily_inventory">日常出入库</el-radio-button>
           <el-radio-button label="other">其他操作</el-radio-button>
         </el-radio-group>
-        <el-input v-model="keyword" clearable placeholder="搜索资产编号/名称/公司/操作人" style="width: 280px" @input="refresh" />
+        <el-input v-model="keyword" clearable placeholder="搜索资产编号/名称/公司/操作人" style="width: 280px" @input="debouncedRefresh" />
         <el-date-picker
           v-model="dateRange"
           type="daterange"
@@ -58,7 +58,7 @@
 </template>
 
 <script setup>
-import { reactive, onMounted, ref } from 'vue'
+import { reactive, onMounted, onUnmounted, ref } from 'vue'
 import { getLifecycleList } from '../../api/asset'
 import { downloadLifecycleCsv } from '../../api/reporting'
 
@@ -69,6 +69,18 @@ const operationType = ref('all')
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 })
 
 onMounted(load)
+onUnmounted(() => {
+  if (searchTimer) window.clearTimeout(searchTimer)
+})
+
+let searchTimer = null
+function debouncedSearch(fn) {
+  return function(...args) {
+    if (searchTimer) window.clearTimeout(searchTimer)
+    searchTimer = window.setTimeout(() => fn.apply(this, args), 350)
+  }
+}
+const debouncedRefresh = debouncedSearch(refresh)
 
 async function load() {
   const [start_date, end_date] = dateRange.value || []

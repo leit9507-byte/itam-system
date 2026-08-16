@@ -337,6 +337,7 @@ const purchaseScrapRef = ref(null)
 const retirementTrendRef = ref(null)
 const charts = []
 let resizeTimer = null
+let isActive = true
 const dashboardDateRange = ref([])
 const dashboardLoading = ref(false)
 const todos = ref([])
@@ -471,11 +472,13 @@ const detailDialogTitle = computed(() => ({
 })[detailDialog.type] || '详情')
 
 onMounted(() => {
+  isActive = true
   window.addEventListener('resize', resizeCharts)
   load()
 })
 
 onUnmounted(() => {
+  isActive = false
   window.removeEventListener('resize', resizeCharts)
   if (resizeTimer) window.clearTimeout(resizeTimer)
   charts.forEach(chart => chart.dispose())
@@ -490,7 +493,9 @@ async function load() {
     ])
     if (dashboardResult.status === 'fulfilled') Object.assign(data, dashboardResult.value)
     if (todoResult.status === 'fulfilled') todos.value = todoResult.value
+    if (!isActive) return
     await nextTick()
+    if (!isActive) return
     renderCharts()
   } finally {
     dashboardLoading.value = false
@@ -531,9 +536,15 @@ function recentRange(days) {
   return [start, end]
 }
 
+function getChart(target) {
+  const existing = echarts.getInstanceByDom(target)
+  if (existing) return existing
+  const chart = echarts.init(target)
+  charts.push(chart)
+  return chart
+}
+
 function renderCharts() {
-  charts.forEach(chart => chart.dispose())
-  charts.length = 0
   renderDonut(statusRef.value, statusDistribution.value, statusColors, `${formatValue(totalAssets.value)}\n在管资产`)
   renderDonut(categoryRef.value, categoryLegend.value, categoryColors, '')
   renderPersonnelTrend()
@@ -544,7 +555,7 @@ function renderCharts() {
 
 function renderDonut(target, rows, colors, centerText) {
   if (!target) return
-  const chart = echarts.init(target)
+  const chart = getChart(target)
   chart.setOption({
     color: colors,
     tooltip: { trigger: 'item' },
@@ -563,8 +574,7 @@ function renderDonut(target, rows, colors, centerText) {
       labelLine: { show: false },
       data: rows.map(item => ({ name: item.name, value: item.value }))
     }]
-  })
-  charts.push(chart)
+  }, { notMerge: true })
 }
 
 function renderPurchaseScrapTrend() {
@@ -572,7 +582,7 @@ function renderPurchaseScrapTrend() {
   const purchase = data.purchaseTrend || {}
   const scrap = data.scrapTrend || {}
   const months = purchase.months?.length ? purchase.months : scrap.months || []
-  const chart = echarts.init(purchaseScrapRef.value)
+  const chart = getChart(purchaseScrapRef.value)
   chart.setOption({
     color: ['#2478ff', '#ff9345', '#dc2626'],
     tooltip: { trigger: 'axis' },
@@ -588,14 +598,13 @@ function renderPurchaseScrapTrend() {
       { name: '采购数量', type: 'line', yAxisIndex: 1, smooth: true, symbolSize: 6, data: purchase.quantity || [] },
       { name: '报废通过', type: 'line', yAxisIndex: 1, smooth: true, symbolSize: 6, data: scrap.approved || [] }
     ]
-  })
-  charts.push(chart)
+  }, { notMerge: true })
 }
 
 function renderRetirementTrend() {
   if (!retirementTrendRef.value) return
   const trend = data.retirementTrend || {}
-  const chart = echarts.init(retirementTrendRef.value)
+  const chart = getChart(retirementTrendRef.value)
   chart.setOption({
     color: ['#7657e8', '#f04438'],
     tooltip: { trigger: 'axis' },
@@ -607,14 +616,13 @@ function renderRetirementTrend() {
       { name: '预计退役', type: 'bar', barMaxWidth: 30, data: trend.due || [], itemStyle: { borderRadius: [4, 4, 0, 0] } },
       { name: '已超期', type: 'line', smooth: true, symbolSize: 7, data: (trend.months || []).map((_, index) => index === 0 ? Number(trend.overdue || 0) : 0) }
     ]
-  })
-  charts.push(chart)
+  }, { notMerge: true })
 }
 
 function renderPersonnelTrend() {
   if (!peopleRef.value) return
   const trend = data.personnelTrend || {}
-  const chart = echarts.init(peopleRef.value)
+  const chart = getChart(peopleRef.value)
   chart.setOption({
     color: ['#2478ff', '#ff9345'],
     tooltip: { trigger: 'axis' },
@@ -626,11 +634,11 @@ function renderPersonnelTrend() {
       { name: '入职', type: 'bar', barMaxWidth: 28, data: trend.onboarding || [] },
       { name: '离职', type: 'line', smooth: true, symbolSize: 7, data: trend.offboarding || [] }
     ]
-  })
-  charts.push(chart)
+  }, { notMerge: true })
 }
 
 function resizeCharts() {
+  if (!isActive) return
   if (resizeTimer) window.clearTimeout(resizeTimer)
   resizeTimer = window.setTimeout(() => {
     charts.forEach(chart => chart.resize())

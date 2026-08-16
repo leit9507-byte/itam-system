@@ -475,7 +475,8 @@ async function dispose() {
   }
   const recipientText = disposalRecipientConfirmText()
   const targetText = rows.length > 1 ? `${rows.length} 台资产` : `${rows[0].asset_no || rows[0].asset_id}`
-  await ElMessageBox.confirm(`确认登记 ${targetText} 的报废处置？退役时间：${disposeDialog.form.retirement_date}，实际处置方式：${disposeDialog.form.disposal_method}${recipientText}。登记后资产状态保持已报废，报废单标记为已处置。`, '确认登记', { type: 'warning' })
+  const confirmed = await ElMessageBox.confirm(`确认登记 ${targetText} 的报废处置？退役时间：${disposeDialog.form.retirement_date}，实际处置方式：${disposeDialog.form.disposal_method}${recipientText}。登记后资产状态保持已报废，报废单标记为已处置。`, '确认登记', { type: 'warning' }).then(() => true).catch(() => false)
+  if (!confirmed) return
   await disposeScrapRequest(rows[0].id, { ...disposeDialog.form, retirement_flow_no: rows[0].retirement_flow_no || rows[0].flow_no || '' })
   ElMessage.success('报废资产已处置归档')
   disposeDialog.visible = false
@@ -491,7 +492,8 @@ async function disposeItems(rows) {
     ElMessage.warning(`请补全 ${invalid.asset_no || invalid.asset_id} 的退役时间、审批单号、处置方式和必要接收方`)
     return
   }
-  await ElMessageBox.confirm(`确认逐条登记 ${rows.length} 台资产的报废处置？每台资产会按表格中填写的处置方式、接收方和实际残值保存。`, '确认登记', { type: 'warning' })
+  const confirmed = await ElMessageBox.confirm(`确认逐条登记 ${rows.length} 台资产的报废处置？每台资产会按表格中填写的处置方式、接收方和实际残值保存。`, '确认登记', { type: 'warning' }).then(() => true).catch(() => false)
+  if (!confirmed) return
   let success = 0
   const errors = []
   for (const row of rows) {

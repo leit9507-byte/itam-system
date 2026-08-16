@@ -115,7 +115,12 @@ const initializingDb = ref(false)
 onMounted(loadAll)
 
 async function loadAll() {
-  const [healthResult, jobsResult, dbConfigResult, dbStatusResult] = await Promise.all([getOpsHealth(), getScheduledJobs(), getDatabaseConfig(), getDatabaseStatus()])
+  const [healthResult, jobsResult, dbConfigResult, dbStatusResult] = await Promise.all([
+    getOpsHealth().catch(err => { console.error('加载健康检查失败', err); return null }),
+    getScheduledJobs().catch(err => { console.error('加载定时任务失败', err); return [] }),
+    getDatabaseConfig().catch(err => { console.error('加载数据库配置失败', err); return {} }),
+    getDatabaseStatus().catch(err => { console.error('加载数据库状态失败', err); return {} })
+  ])
   health.value = healthResult
   jobs.value = jobsResult
   dbConfig.value = dbConfigResult

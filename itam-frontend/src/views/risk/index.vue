@@ -43,7 +43,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import echarts from '../../utils/echarts'
 import { getRiskAnalytics } from '../../api/audit'
 
@@ -56,20 +56,50 @@ const pagedDeptRank = computed(() => {
   return analytics.deptRank.slice(start, start + pagination.pageSize)
 })
 
+const charts = []
+let isActive = true
+
 onMounted(async () => {
-  Object.assign(analytics, await getRiskAnalytics())
-  await nextTick()
-  echarts.init(trendRef.value).setOption({
+  window.addEventListener('resize', resizeCharts)
+  try {
+    Object.assign(analytics, await getRiskAnalytics())
+    if (!isActive) return
+    await nextTick()
+    if (!isActive) return
+    renderCharts()
+  } catch (error) {
+    console.error('风险分析数据加载失败', error)
+  }
+})
+
+onUnmounted(() => {
+  isActive = false
+  window.removeEventListener('resize', resizeCharts)
+  charts.forEach(chart => chart.dispose())
+  charts.length = 0
+})
+
+function renderCharts() {
+  if (!trendRef.value || !idleRef.value) return
+  const trend = echarts.init(trendRef.value)
+  trend.setOption({
     tooltip: { trigger: 'axis' },
     xAxis: { type: 'category', data: ['1月', '2月', '3月', '4月', '5月', '6月', '7月'] },
     yAxis: { type: 'value', max: 100 },
     series: [{ type: 'line', smooth: true, data: analytics.trend, areaStyle: {} }]
   })
-  echarts.init(idleRef.value).setOption({
+  const idle = echarts.init(idleRef.value)
+  idle.setOption({
     tooltip: { trigger: 'item' },
     series: [{ type: 'pie', radius: '65%', data: analytics.idleStats }]
   })
-})
+  charts.push(trend, idle)
+}
+
+function resizeCharts() {
+  if (!isActive) return
+  charts.forEach(chart => chart.resize())
+}
 </script>
 
 <style scoped>

@@ -46,5 +46,5 @@ export async function downloadAssetFile(row) {
   link.href = url
   link.download = row.filename || `attachment-${row.id}`
   link.click()
-  URL.revokeObjectURL(url)
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

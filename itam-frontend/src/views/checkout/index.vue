@@ -107,7 +107,7 @@
     <el-dialog v-model="checkoutDialog.visible" title="批量借用" width="720px">
       <el-form :model="checkoutDialog.form" label-width="96px">
         <el-form-item label="选择资产" required>
-          <el-select v-model="checkoutDialog.assetIds" multiple filterable collapse-tags collapse-tags-tooltip style="width: 100%" placeholder="选择在库或闲置资产">
+          <el-select v-model="checkoutDialog.assetIds" multiple filterable remote collapse-tags collapse-tags-tooltip style="width: 100%" placeholder="输入关键字搜索在库或闲置资产" :remote-method="searchAvailableAssets" :loading="availableAssetsLoading">
             <el-option v-for="asset in availableAssets" :key="asset.asset_id" :label="assetOptionLabel(asset)" :value="asset.asset_id" />
           </el-select>
         </el-form-item>
@@ -152,7 +152,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { batchCheckinAssets, batchCheckoutAssets, getAssets, getCheckoutRecords } from '../../api/asset'
@@ -168,6 +168,8 @@ const records = ref([])
 const users = ref([])
 const locations = ref([])
 const availableAssets = ref([])
+const availableAssetsLoading = ref(false)
+let availableAssetsTimer = null
 const selectedRows = ref([])
 const checkoutRange = ref([])
 const dueRange = ref([])
@@ -207,6 +209,9 @@ onMounted(async () => {
   await loadAvailableAssets()
   await loadRecords()
 })
+onUnmounted(() => {
+  if (availableAssetsTimer) window.clearTimeout(availableAssetsTimer)
+})
 
 function applyRouteQuery() {
   filters.keyword = typeof route.query.keyword === 'string' ? route.query.keyword : ''
@@ -234,9 +239,30 @@ async function loadRecords() {
   }
 }
 
-async function loadAvailableAssets() {
-  const result = await getAssets({ page: 1, page_size: 500 })
-  availableAssets.value = result.list.filter(asset => ['in_stock', 'idle'].includes(asset.status))
+async function fetchAvailableAssets(keyword = '') {
+  const result = await getAssets({ page: 1, page_size: 500, keyword })
+  return result.list.filter(asset => ['in_stock', 'idle'].includes(asset.status))
+}
+
+async function loadAvailableAssets(keyword = '') {
+  availableAssets.value = await fetchAvailableAssets(keyword)
+}
+
+function searchAvailableAssets(query) {
+  if (availableAssetsTimer) window.clearTimeout(availableAssetsTimer)
+  availableAssetsTimer = window.setTimeout(async () => {
+    availableAssetsLoading.value = true
+    try {
+      const rows = await fetchAvailableAssets(String(query || '').trim())
+      const selected = availableAssets.value.filter(item => checkoutDialog.assetIds.includes(item.asset_id))
+      const merged = rows.concat(selected.filter(item => !rows.some(row => row.asset_id === item.asset_id)))
+      availableAssets.value = merged
+    } catch (err) {
+      console.error('搜索可借用资产失败', err)
+    } finally {
+      availableAssetsLoading.value = false
+    }
+  }, 250)
 }
 
 function refresh() {

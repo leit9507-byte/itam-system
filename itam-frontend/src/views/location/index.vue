@@ -10,7 +10,7 @@
 
     <el-card shadow="never">
       <div class="toolbar">
-        <el-input v-model="keyword" clearable placeholder="搜索位置名称" style="width: 280px" @input="refresh" />
+        <el-input v-model="keyword" clearable placeholder="搜索位置名称" style="width: 280px" @input="debouncedRefresh" />
       </div>
       <el-table :data="pagedLocations" border stripe>
         <el-table-column label="位置名称" min-width="220" show-overflow-tooltip>
@@ -69,7 +69,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { createLocation, getLocations, updateLocation } from '../../api/location'
@@ -85,6 +85,18 @@ const pagedLocations = computed(() => {
 })
 
 onMounted(load)
+onUnmounted(() => {
+  if (searchTimer) window.clearTimeout(searchTimer)
+})
+
+let searchTimer = null
+function debouncedSearch(fn) {
+  return function(...args) {
+    if (searchTimer) window.clearTimeout(searchTimer)
+    searchTimer = window.setTimeout(() => fn.apply(this, args), 350)
+  }
+}
+const debouncedRefresh = debouncedSearch(refresh)
 
 async function load() {
   locations.value = await getLocations(keyword.value)

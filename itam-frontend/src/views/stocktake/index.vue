@@ -320,8 +320,12 @@ const targetPlaceholder = computed(() => {
   return '全部资产无需选择范围'
 })
 
+let isActive = true
 onMounted(load)
-onUnmounted(() => charts.forEach(chart => chart.dispose()))
+onUnmounted(() => {
+  isActive = false
+  charts.forEach(chart => chart.dispose())
+})
 
 async function load() {
   loading.value = true
@@ -332,7 +336,9 @@ async function load() {
     taskPagination.page = Math.min(taskPagination.page, Math.max(1, Math.ceil(tasks.value.length / taskPagination.pageSize) || 1))
     abnormalPagination.page = Math.min(abnormalPagination.page, Math.max(1, Math.ceil(dashboard.abnormalItems.length / abnormalPagination.pageSize) || 1))
     syncCurrentTask()
+    if (!isActive) return
     await nextTick()
+    if (!isActive) return
     renderCharts()
   } finally {
     loading.value = false
@@ -600,7 +606,8 @@ function handleItemSizeChange() {
 
 async function finish(row) {
   if (!row) return
-  await ElMessageBox.confirm(`确认完成盘点任务 ${row.id}？完成后将汇总差异结果。`, '完成盘点', { type: 'warning' })
+  const confirmed = await ElMessageBox.confirm(`确认完成盘点任务 ${row.id}？完成后将汇总差异结果。`, '完成盘点', { type: 'warning' }).then(() => true).catch(() => false)
+  if (!confirmed) return
   await finishStocktakeTask(row.id)
   selectedTaskId.value = row.id
   ElMessage.success('盘点任务已完成')

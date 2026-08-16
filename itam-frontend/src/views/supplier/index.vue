@@ -36,7 +36,7 @@
         <template #header>
           <div class="card-header">
             <span>供应商列表</span>
-            <el-input v-model="keyword" clearable placeholder="搜索供应商" style="width: 240px" @input="refreshSuppliers" />
+            <el-input v-model="keyword" clearable placeholder="搜索供应商" style="width: 240px" @input="debouncedRefreshSuppliers" />
           </div>
         </template>
         <el-table :data="suppliers" border stripe>
@@ -94,7 +94,7 @@
 
 <script setup>
 import { ElMessage } from 'element-plus'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getSuppliersPaged, saveSupplier } from '../../api/supplier'
 
@@ -112,6 +112,18 @@ const summary = computed(() => suppliers.value.reduce((acc, item) => {
 }, { purchaseCount: 0, deviceCount: 0, totalAmount: 0, recycleAmount: 0 }))
 
 onMounted(load)
+onUnmounted(() => {
+  if (searchTimer) window.clearTimeout(searchTimer)
+})
+
+let searchTimer = null
+function debouncedSearch(fn) {
+  return function(...args) {
+    if (searchTimer) window.clearTimeout(searchTimer)
+    searchTimer = window.setTimeout(() => fn.apply(this, args), 350)
+  }
+}
+const debouncedRefreshSuppliers = debouncedSearch(refreshSuppliers)
 
 async function load() {
   const result = await getSuppliersPaged({ keyword: keyword.value, page: supplierPagination.page, page_size: supplierPagination.pageSize })

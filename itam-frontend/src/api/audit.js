@@ -88,19 +88,10 @@ export async function getReports(params = {}) {
 }
 
 export async function generateReport() {
+  // 后端 /reports/audit-reports 会生成归档报告并返回完整对象：
+  // { id: report_no, name, type, status, created_at, risk_score, violation_count, html, ... }
+  // 报告预览直接使用返回的 html，列表用 id 拉取 PDF/Excel。
   return request.post('/reports/audit-reports')
-  const result = await request.post('/audit/run', { users: [], notify: false })
-  const html = await request.get('/audit/report', { responseType: 'text' })
-  return {
-    id: `AR-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}`,
-    name: '即时资产审计报告',
-    type: '审计报告',
-    status: '已生成',
-    created_at: new Date().toISOString().slice(0, 10),
-    total_assets: result.total_assets,
-    risk_score: result.risk_score,
-    html
-  }
 }
 
 export function getReportHtml(reportId) {
@@ -114,7 +105,8 @@ export async function downloadArchivedAuditReport(reportId, type = 'pdf') {
   link.href = url
   link.download = `${reportId}.${type === 'xlsx' ? 'xlsx' : 'pdf'}`
   link.click()
-  URL.revokeObjectURL(url)
+  // 延迟回收，避免大文件下载被中断
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 function normalizeViolations(rows, assets, users, rules, responses) {

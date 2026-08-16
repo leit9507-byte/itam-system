@@ -54,8 +54,8 @@
 
     <el-card shadow="never">
       <el-alert v-if="selected.length" :title="`已选择 ${selected.length} 个资产`" type="info" show-icon :closable="false" class="selection-alert" />
-      <el-table :data="assets" border stripe @selection-change="selected = $event">
-        <el-table-column type="selection" width="48" />
+      <el-table ref="assetTableRef" :data="assets" border stripe row-key="asset_id" :reserve-selection="true" @selection-change="selected = $event">
+        <el-table-column type="selection" width="48" reserve-selection />
         <template v-for="column in orderedAssetColumns" :key="column.key">
           <el-table-column v-if="column.key === 'product'" label="产品信息" min-width="240">
             <template #default="{ row }">
@@ -486,7 +486,7 @@
 
 <script setup>
 import { ArrowDown } from '@element-plus/icons-vue'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { assetStatuses, batchCheckinAssets, batchCheckoutAssets, batchCreateScrapRequests, batchUpdateAssets, downloadAssetImportTemplate, editableAssetStatuses, getAssets, importAssets, previewAssetsFromExcel, previewAssetsFromText, statusMap, updateAsset } from '../../api/asset'
@@ -502,6 +502,7 @@ const router = useRouter()
 const route = useRoute()
 const assets = ref([])
 const selected = ref([])
+const assetTableRef = ref(null)
 const categories = ref([])
 const products = ref([])
 const companies = ref([])
@@ -646,10 +647,15 @@ async function loadAssets() {
   const data = await getAssets({ ...filters, page: pagination.page, page_size: pagination.pageSize })
   assets.value = data.list
   pagination.total = data.total
+}
+
+function clearAssetSelection() {
   selected.value = []
+  nextTick(() => assetTableRef.value?.clearSelection())
 }
 
 function refreshAssets() {
+  clearAssetSelection()
   pagination.page = 1
   loadAssets()
 }
@@ -796,12 +802,12 @@ function defaultBatchEditForm() {
     brand: '',
     model: '',
     spec: '',
-    price: 0,
-    purchase_date: '',
+    price: null,
+    purchase_date: null,
     purchase_approval_no: '',
     purchase_supplier_name: '',
-    warranty_years: 0,
-    retirement_years: 0,
+    warranty_years: null,
+    retirement_years: null,
     owner_user_id: '',
     owner_name: '',
     dept_id: '',
@@ -1028,23 +1034,55 @@ function resetBatchEditFields() {
 
 async function submitBatchEdit() {
   const payload = {}
+  const emptyOverwriteFields = []
   Object.keys(batchEdit.fields).forEach(key => {
-    if (batchEdit.fields[key]) payload[key] = batchEdit.form[key]
+    if (!batchEdit.fields[key]) return
+    const value = batchEdit.form[key]
+    // 数字/日期字段为空值时视为“未填写”，阻止静默清空资产数据
+    if (value === null || value === undefined || value === '') {
+      emptyOverwriteFields.push(key)
+      return
+    }
+    payload[key] = value
   })
   if (batchEdit.fields.owner_user_id) {
-    payload.dept_id = batchEdit.form.dept_id
-    payload.location = batchEdit.form.location
+    if (batchEdit.form.owner_user_id) {
+      payload.owner_user_id = batchEdit.form.owner_user_id
+    } else {
+      emptyOverwriteFields.push('owner_user_id')
+    }
+    if (batchEdit.form.dept_id) payload.dept_id = batchEdit.form.dept_id
+    if (batchEdit.form.location) payload.location = batchEdit.form.location
   }
-  if (!Object.keys(payload).length) {
-    ElMessage.warning('请至少勾选一个要更新的字段')
+  if (emptyOverwriteFields.length) {
+    const labels = emptyOverwriteFields.map(key => batchEditFieldLabel(key)).filter(Boolean).join('、')
+    ElMessage.warning(`字段【${labels}】未填写内容，为避免清空原数据已跳过。请填写后重新提交，或取消勾选该字段。`)
     return
   }
-  if ((batchEdit.fields.status || batchEdit.fields.owner_user_id) && selected.value.some(row => !validateStatusOwner({ ...row, ...payload }))) return
+  if (!Object.keys(payload).length) {
+    ElMessage.warning('请至少勾选并填写一个要更新的字段')
+    return
+  }
+  if ((batchEdit.fields.status || payload.owner_user_id) && selected.value.some(row => !validateStatusOwner({
+    ...row,
+    original_status: row.status,
+    original_owner_user_id: row.owner_user_id || row.owner || '',
+    ...payload
+  }))) return
   await batchUpdateAssets(selected.value, payload)
   batchEdit.visible = false
-  selected.value = []
+  clearAssetSelection()
   ElMessage.success('批量编辑完成')
   await loadAssets()
+}
+
+function batchEditFieldLabel(key) {
+  return ({
+    name: '资产名称', company: '所属公司', sn: '序列号', category: '设备类型', status: '状态',
+    brand: '品牌', model: '型号', spec: '规格', price: '价值', purchase_date: '采购时间',
+    purchase_approval_no: '审批单号', purchase_supplier_name: '供应商', warranty_years: '维保年限',
+    retirement_years: '退役年限', owner_user_id: '责任人', dept_id: '部门', location: '位置', remark: '备注'
+  })[key] || key
 }
 
 function openRepair(row) {
@@ -1077,7 +1115,7 @@ async function submitRepair() {
   }
   const result = await createRepairRecords(repairDialog.assets, repairDialog.form)
   repairDialog.visible = false
-  selected.value = []
+  clearAssetSelection()
   if (result?.failed) {
     showBatchOperationResult(normalizeBatchResult(result, repairDialog.assets.map(asset => asset.asset_id)))
   } else {
@@ -1460,13 +1498,13 @@ async function submitBatch() {
   if (results.some(item => !item.ok)) {
     showBatchOperationResult(results)
     batch.visible = false
-    selected.value = []
+    clearAssetSelection()
     await loadAssets()
     return
   }
   ElMessage.success(`${batchTitle.value}完成`)
   batch.visible = false
-  selected.value = []
+  clearAssetSelection()
   await loadAssets()
 }
 

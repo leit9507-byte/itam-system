@@ -80,6 +80,7 @@ const pendingTodos = ref([])
 const todoLoading = ref(false)
 const todoAssetActionsRef = ref(null)
 let todoTimer = null
+let pendingTodosTimer = null
 
 const today = new Intl.DateTimeFormat('zh-CN', {
   year: 'numeric',
@@ -106,19 +107,21 @@ const topPendingTodos = computed(() => pendingTodos.value.slice(0, 5))
 
 onMounted(async () => {
   try {
-    const result = await request.get('/')
-    backendOnline.value = Boolean(result?.ok)
+    // /ops/health 返回 JSON 健康状态；根路径在 SPA 下会被 nginx 回退到 index.html
+    const result = await request.get('/ops/health', { silentError: true })
+    backendOnline.value = Boolean(result?.service && result?.database?.ok !== false)
     backendLabel.value = backendOnline.value ? '后端已连接' : '后端异常'
   } catch {
     backendOnline.value = false
     backendLabel.value = '后端未连接'
   }
-  window.setTimeout(loadPendingTodos, 800)
+  pendingTodosTimer = window.setTimeout(loadPendingTodos, 800)
   todoTimer = window.setInterval(loadPendingTodos, 300000)
 })
 
 onUnmounted(() => {
   if (todoTimer) window.clearInterval(todoTimer)
+  if (pendingTodosTimer) window.clearTimeout(pendingTodosTimer)
 })
 
 function handleUserCommand(command) {

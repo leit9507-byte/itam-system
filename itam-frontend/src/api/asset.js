@@ -99,7 +99,7 @@ export async function downloadAssetImportTemplate() {
   document.body.appendChild(link)
   link.click()
   link.remove()
-  window.URL.revokeObjectURL(url)
+  window.setTimeout(() => window.URL.revokeObjectURL(url), 1000)
 }
 
 export async function importAssets(items, operator = 'asset-import', overwrite = false) {

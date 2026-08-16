@@ -125,7 +125,7 @@
           <template #default="{ row }">
             <div class="asset-expand">
               <div class="asset-expand-title">涉及资产 {{ row.assets.length }} 台</div>
-              <el-table :data="row.assets" size="small" border>
+              <el-table :data="row.assets" size="small" border max-height="360">
                 <el-table-column prop="asset_no" label="资产编号" width="140">
                   <template #default="{ row: asset }">{{ asset.asset_no || '-' }}</template>
                 </el-table-column>
@@ -371,6 +371,7 @@ const categories = ref([])
 const scoreRef = ref(null)
 const idleRef = ref(null)
 const charts = []
+let isActive = true
 const rulesDrawer = reactive({ visible: false, saving: false, scope: 'person', rules: [] })
 const ruleScopeOptions = [
   { label: '人员审计规则', value: 'person' },
@@ -435,9 +436,16 @@ const pagedPersonRows = computed(() => paginate(filteredPersonRows.value, result
 const pagedAssetRows = computed(() => paginate(filteredAssetRows.value, resultPagination))
 
 onMounted(async () => {
+  isActive = true
+  window.addEventListener('resize', resizeCharts)
   await loadCategories()
 })
-onUnmounted(() => charts.forEach(chart => chart.dispose()))
+onUnmounted(() => {
+  isActive = false
+  window.removeEventListener('resize', resizeCharts)
+  charts.forEach(chart => chart.dispose())
+  charts.length = 0
+})
 
 async function loadCategories() {
   const rows = await getDeviceTypes().catch(() => [])
@@ -451,6 +459,7 @@ async function handleRun(notify = false) {
     rulePagination.page = 1
     resultPagination.page = 1
     await nextTick()
+    if (!isActive) return
     renderCharts()
     ElMessage.success(notify ? '资产审计已完成，风险通知已按配置发送' : '资产审计已完成')
   } finally {
@@ -534,28 +543,38 @@ function groupPersonViolations(violations, responses) {
   return Object.values(map)
 }
 
+function getChart(target) {
+  const existing = echarts.getInstanceByDom(target)
+  if (existing) return existing
+  const chart = echarts.init(target)
+  charts.push(chart)
+  return chart
+}
+
 function renderCharts() {
-  charts.forEach(chart => chart.dispose())
-  charts.length = 0
   if (!result.value || !scoreRef.value || !idleRef.value) return
 
   const riskTrend = result.value.riskTrend?.length ? result.value.riskTrend : [{ name: '本次审计', value: result.value.risk_score || 0 }]
-  const score = echarts.init(scoreRef.value)
+  const score = getChart(scoreRef.value)
   score.setOption({
     tooltip: { trigger: 'axis' },
     grid: { left: 34, right: 16, top: 20, bottom: 28 },
     xAxis: { type: 'category', data: riskTrend.map(item => item.name) },
     yAxis: { type: 'value', min: 0, max: 100 },
     series: [{ name: '风险评分', type: 'bar', barWidth: 42, data: riskTrend.map(item => item.value), itemStyle: { color: '#dc2626', borderRadius: [4, 4, 0, 0] } }]
-  })
+  }, { notMerge: true })
 
-  const idle = echarts.init(idleRef.value)
+  const idle = getChart(idleRef.value)
   idle.setOption({
     tooltip: { trigger: 'item' },
     legend: { bottom: 0 },
     series: [{ type: 'pie', radius: ['45%', '70%'], center: ['50%', '44%'], data: result.value.idleStats }]
-  })
-  charts.push(score, idle)
+  }, { notMerge: true })
+}
+
+function resizeCharts() {
+  if (!isActive) return
+  charts.forEach(chart => chart.resize())
 }
 
 function openResponse(row) {
