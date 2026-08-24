@@ -915,6 +915,60 @@ class CoreWorkflowTest(unittest.TestCase):
         self.assertEqual(len(reclaim), 1)
         self.assertEqual(reclaim[0]["asset_ids"], ["ITAM-OFFBOARD-1"])
 
+    def test_offboarding_todo_does_not_steal_active_hyphenated_identity(self):
+        self.db.add_all([
+            UserDirectory(
+                user_id="U-OFFBOARD-CANDY",
+                username="v_candy",
+                display_name="v_candy-罗佳佳",
+                status="resigned",
+            ),
+            UserDirectory(
+                user_id="U-ACTIVE-CANDY-OPS",
+                username="v_candy-ops",
+                display_name="Candy Ops",
+                status="active",
+            ),
+            Asset(
+                asset_id="ITAM-ACTIVE-HYPHEN",
+                asset_no="ITAM-ACTIVE-HYPHEN",
+                name="Active user's laptop",
+                category="Laptop",
+                status="in_use",
+                owner_user_id="v_candy-ops",
+            ),
+        ])
+        self.db.commit()
+
+        todos = TodoService.list_todos(self.db, {"role": "admin"})
+
+        self.assertFalse(any(
+            item["type"] == "offboarding_reclaim" and "ITAM-ACTIVE-HYPHEN" in item.get("asset_ids", [])
+            for item in todos
+        ))
+
+    def test_offboarding_todo_skips_ambiguous_directory_name(self):
+        self.db.add_all([
+            UserDirectory(user_id="U-LEFT-SAME", username="left-same", display_name="Same Name", status="resigned"),
+            UserDirectory(user_id="U-ACTIVE-SAME", username="active-same", display_name="Same Name", status="active"),
+            Asset(
+                asset_id="ITAM-AMBIGUOUS-OWNER",
+                asset_no="ITAM-AMBIGUOUS-OWNER",
+                name="Ambiguous owner laptop",
+                category="Laptop",
+                status="in_use",
+                owner_user_id="Same Name",
+            ),
+        ])
+        self.db.commit()
+
+        todos = TodoService.list_todos(self.db, {"role": "admin"})
+
+        self.assertFalse(any(
+            item["type"] == "offboarding_reclaim" and "ITAM-AMBIGUOUS-OWNER" in item.get("asset_ids", [])
+            for item in todos
+        ))
+
     def test_offboarding_todo_is_not_limited_to_recent_asset_source(self):
         self.db.add(UserDirectory(user_id="U-OFFBOARD-OLD", username="old-user", display_name="Old User", status="resigned"))
         self.db.add(

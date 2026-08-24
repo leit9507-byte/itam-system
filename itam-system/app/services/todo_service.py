@@ -191,15 +191,15 @@ class TodoService:
         } for item in assets if item.status == "ready_scrap"]
 
     @staticmethod
-    def offboarding_todos(assets: list[Asset], inactive_user_map: dict[str, UserDirectory]) -> list[dict]:
+    def offboarding_todos(
+        assets: list[Asset],
+        inactive_user_map: dict[str, UserDirectory | None],
+    ) -> list[dict]:
         groups: dict[str, dict] = {}
         for asset in assets:
             if asset.status not in {"in_use", "borrowed", "out_stock", "repair"}:
                 continue
-            user = next(
-                (inactive_user_map.get(key) for key in TodoService.identity_keys(asset.owner_user_id) if inactive_user_map.get(key)),
-                None,
-            )
+            user = TodoService.resolve_inactive_user(asset.owner_user_id, inactive_user_map)
             if not user:
                 continue
             key = user.user_id or user.username or asset.owner_user_id
@@ -284,15 +284,43 @@ class TodoService:
         } for item in repairs if value(item, "status") == "维修中"]
 
     @staticmethod
-    def inactive_user_map(users: list[UserDirectory]) -> dict[str, UserDirectory]:
-        mapping = {}
+    def inactive_user_map(users: list[UserDirectory]) -> dict[str, UserDirectory | None]:
+        exact_candidates: dict[str, dict[str, UserDirectory]] = {}
+        alias_candidates: dict[str, dict[str, UserDirectory]] = {}
         for user in users:
-            if str(user.status or "").lower() not in TodoService.INACTIVE_STATUSES:
-                continue
+            identity = TodoService.identity_key(user.user_id or user.username)
             for value in [user.user_id, user.username, user.external_id, user.email, user.display_name]:
+                exact = TodoService.identity_key(value)
+                if not exact:
+                    continue
+                exact_candidates.setdefault(exact, {})[identity] = user
                 for key in TodoService.identity_keys(value):
-                    mapping[key] = user
+                    if key != exact:
+                        alias_candidates.setdefault(key, {})[identity] = user
+
+        mapping: dict[str, UserDirectory | None] = {}
+        for key in exact_candidates.keys() | alias_candidates.keys():
+            # A complete directory value is stronger than a derived alias such as
+            # the username part of "username-display name".  Ambiguous or active
+            # identities are deliberately blocked instead of being attributed to
+            # whichever resigned user happened to be loaded last.
+            candidates = exact_candidates.get(key) or alias_candidates.get(key, {})
+            if len(candidates) != 1:
+                mapping[key] = None
+                continue
+            user = next(iter(candidates.values()))
+            mapping[key] = user if str(user.status or "").lower() in TodoService.INACTIVE_STATUSES else None
         return mapping
+
+    @staticmethod
+    def resolve_inactive_user(
+        value: str | None,
+        inactive_user_map: dict[str, UserDirectory | None],
+    ) -> UserDirectory | None:
+        for key in TodoService.identity_lookup_keys(value):
+            if key in inactive_user_map:
+                return inactive_user_map[key]
+        return None
 
     @staticmethod
     def assigned_user_ids(assets: list[Asset]) -> set[str]:
@@ -320,19 +348,24 @@ class TodoService:
 
     @staticmethod
     def identity_keys(value: str | None) -> set[str]:
+        return set(TodoService.identity_lookup_keys(value))
+
+    @staticmethod
+    def identity_lookup_keys(value: str | None) -> tuple[str, ...]:
         raw = TodoService.identity_key(value)
         if not raw:
-            return set()
+            return ()
         ldap_cn = re.search(r"(?:^|[:,/])cn=([^,/:]+)", raw)
         if ldap_cn:
             # LDAP DN 中的 ou/dc 等片段由所有目录用户共享，不能作为人员别名。
-            return {raw, ldap_cn.group(1).strip().casefold()}
-        keys = {raw}
+            cn = ldap_cn.group(1).strip().casefold()
+            return (raw, cn) if cn and cn != raw else (raw,)
+        keys = [raw]
         if "-" in raw:
             username_prefix = raw.split("-", 1)[0].strip()
-            if username_prefix:
-                keys.add(username_prefix)
-        return keys
+            if username_prefix and username_prefix != raw:
+                keys.append(username_prefix)
+        return tuple(keys)
 
     @staticmethod
     def priority_weight(priority: str | None) -> int:
